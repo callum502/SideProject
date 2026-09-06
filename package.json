@@ -1,0 +1,2 @@
+{"name":"sideproj","version":"0.0.0","private":true,"type":"module","scripts":{"dev":"node --preserve-symlinks --preserve-symlinks-main server.mjs","build":"node --preserve-symlinks --preserve-symlinks-main build.mjs","preview":"node --preserve-symlinks --preserve-symlinks-main server.mjs --preview","test":"node --preserve-symlinks --preserve-symlinks-main --test tests/server.test.mjs tests/export.test.mjs"},"dependencies":{"react":"latest","react-dom":"latest"},"devDependencies":{"vite":"^6.4.3"}}
+
