@@ -23,10 +23,17 @@ test('guide, uploaded images and all annotation types persist; stale writes and 
     assert.equal(videoUpload.status, 201); const video = await videoUpload.json();
     const annotations = [{ type: 'line', x: 0, y: 0, x2: 1000, y2: 1000 }, { type: 'box', x: 700, y: 700, x2: 200, y2: 200 }, { type: 'freehand', points: [[0, 0], [500, 300], [1000, 1000]] }];
     const data = { ...initial, locations: [{ id: 'test-location', name: 'Test crag', region: 'Test region', latitude: '0', longitude: '0', approach: 'Walk from the gate.', boulders: [{ id: 'test-boulder', name: 'Test boulder', notes: 'Start on the left.', videos: [{ id: 'test-video', name: 'beta.mp4', url: video.url }], images: [{ id: 'test-image', name: 'test.png', url, annotations }] }] }] };
+    data.locations[0].boulders[0].problems = [{ id: 'test-problem', name: 'The arete', grade: '6A', description: 'Start low and climb the arete.', imageIds: ['test-image'], videoIds: ['test-video'] }];
     let response = await put(data); assert.equal(response.status, 200); const saved = await response.json();
     assert.equal(saved.revision, 1);
     response = await put(data); assert.equal(response.status, 409, 'stale write must not overwrite data');
     assert.deepEqual(await read(), saved);
+    const invalid = structuredClone(saved);
+    invalid.locations[0].boulders[0].problems[0].imageIds = ['another-boulders-photo'];
+    assert.equal((await put(invalid)).status, 400);
+    invalid.locations[0].boulders[0].problems[0].imageIds = ['test-image'];
+    invalid.locations[0].boulders[0].problems[0].grade = ' ';
+    assert.equal((await put(invalid)).status, 400);
     response = await put({ ...saved, locations: [{ ...saved.locations[0], latitude: '91' }] }); assert.equal(response.status, 400);
     response = await fetch(base + '/api/images', { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: '<script>bad</script>' }); assert.equal(response.status, 400);
     response = await fetch(base + '/api/guide', { method: 'PUT', headers: { Origin: 'https://example.com', 'Content-Type': 'application/json' }, body: JSON.stringify(saved) }); assert.equal(response.status, 403);

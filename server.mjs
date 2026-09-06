@@ -21,6 +21,14 @@ function validate(data) {
       id(b.id);
       if (!text(b.name, 120, true) || !text(b.notes, 10000) || !Array.isArray(b.images) || b.images.length > 200) throw fail('Invalid boulder.');
       if (b.videos !== undefined && (!Array.isArray(b.videos) || b.videos.length > 200)) throw fail('Invalid videos.');
+      if (b.problems !== undefined && (!Array.isArray(b.problems) || b.problems.length > 1000)) throw fail('Invalid problems.');
+      for (const problem of b.problems || []) {
+        id(problem.id);
+        if (!text(problem.name, 120, true) || !text(problem.grade, 40, true) || !text(problem.description, 10000, true)) throw fail('A problem needs a name, grade, and description.');
+        for (const [field, media] of [['imageIds', b.images], ['videoIds', b.videos || []]]) {
+          if (!Array.isArray(problem[field]) || problem[field].length > 200 || new Set(problem[field]).size !== problem[field].length || !problem[field].every(id => media.some(item => item.id === id))) throw fail('Problem attachments must belong to this boulder.');
+        }
+      }
       for (const video of b.videos || []) {
         id(video.id);
         if (!text(video.name, 255, true) || !/^\/uploads\/[a-f0-9-]+\.(mp4|webm)$/.test(video.url)) throw fail('Invalid video.');
