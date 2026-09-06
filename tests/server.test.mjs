@@ -21,9 +21,13 @@ test('guide, uploaded images and all annotation types persist; stale writes and 
     const videoBytes = Buffer.concat([Buffer.from([0,0,0,24]), Buffer.from('ftypisom'), Buffer.alloc(32)]);
     const videoUpload = await fetch(base + '/api/videos', { method: 'POST', headers: { 'Content-Type': 'video/mp4' }, body: videoBytes });
     assert.equal(videoUpload.status, 201); const video = await videoUpload.json();
+    const movUpload = await fetch(base + '/api/videos', { method: 'POST', headers: { 'Content-Type': 'video/quicktime' }, body: Buffer.concat([Buffer.from([0,0,0,24]), Buffer.from('ftypqt  '), Buffer.alloc(32)]) });
+    assert.equal(movUpload.status, 201); const mov = await movUpload.json();
+    assert.ok(mov.url.endsWith('.mov'));
     const annotations = [{ type: 'line', x: 0, y: 0, x2: 1000, y2: 1000 }, { type: 'box', x: 700, y: 700, x2: 200, y2: 200 }, { type: 'freehand', points: [[0, 0], [500, 300], [1000, 1000]] }];
     const data = { ...initial, locations: [{ id: 'test-location', name: 'Test crag', region: 'Test region', latitude: '0', longitude: '0', approach: 'Walk from the gate.', boulders: [{ id: 'test-boulder', name: 'Test boulder', notes: 'Start on the left.', videos: [{ id: 'test-video', name: 'beta.mp4', url: video.url }], images: [{ id: 'test-image', name: 'test.png', url, annotations }] }] }] };
     data.locations[0].boulders[0].problems = [{ id: 'test-problem', name: 'The arete', grade: '6A', description: 'Start low and climb the arete.', imageIds: ['test-image'], videoIds: ['test-video'] }];
+    data.locations[0].boulders[0].videos.push({ id: 'test-mov', name: 'beta.mov', url: mov.url });
     let response = await put(data); assert.equal(response.status, 200); const saved = await response.json();
     assert.equal(saved.revision, 1);
     response = await put(data); assert.equal(response.status, 409, 'stale write must not overwrite data');
@@ -41,6 +45,9 @@ test('guide, uploaded images and all annotation types persist; stale writes and 
     assert.deepEqual(await read(), saved, 'data survives a server restart');
     response = await fetch(base + url); assert.equal(response.status, 200); assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
     assert.equal(response.headers.get('content-type'), 'image/png');
+    const movResponse = await fetch(base + mov.url, { headers: { Range: 'bytes=4-11' } });
+    assert.equal(movResponse.status, 206); assert.equal(movResponse.headers.get('content-type'), 'video/quicktime');
+    assert.equal(await movResponse.text(), 'ftypqt  ');
     response = await fetch(base + video.url, { headers: { Range: 'bytes=4-11' } });
     assert.equal(response.status, 206); assert.equal(response.headers.get('content-type'), 'video/mp4');
     assert.equal(await response.text(), 'ftypisom');

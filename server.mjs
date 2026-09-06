@@ -31,7 +31,7 @@ function validate(data) {
       }
       for (const video of b.videos || []) {
         id(video.id);
-        if (!text(video.name, 255, true) || !/^\/uploads\/[a-f0-9-]+\.(mp4|webm)$/.test(video.url)) throw fail('Invalid video.');
+        if (!text(video.name, 255, true) || !/^\/uploads\/[a-f0-9-]+\.(mp4|webm|mov)$/.test(video.url)) throw fail('Invalid video.');
       }
       for (const image of b.images) {
         id(image.id);
@@ -98,13 +98,14 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
       }
       if (url.pathname === '/api/videos' && req.method === 'POST') {
         const mime = req.headers['content-type'];
-        if (!['video/mp4', 'video/webm'].includes(mime)) throw fail('Choose MP4 or WebM videos.');
+        if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(mime)) throw fail('Choose MP4, WebM, or MOV videos.');
         if (Number(req.headers['content-length']) > 100 * 1024 * 1024) throw fail('Each video must be smaller than 100 MB.', 413);
         const bytes = await body(req, 100 * 1024 * 1024);
         const mp4 = bytes.length >= 16 && bytes.toString('ascii', 4, 8) === 'ftyp';
+        const mov = bytes.length >= 16 && (mp4 || ['moov', 'mdat', 'wide', 'free', 'skip'].includes(bytes.toString('ascii', 4, 8)));
         const webm = bytes.length >= 16 && bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])) && bytes.subarray(0, 4096).includes(Buffer.from('webm'));
-        if (!(mime === 'video/mp4' && mp4 || mime === 'video/webm' && webm)) throw fail('The file is not a supported video.');
-        const filename = `${randomUUID()}.${mime === 'video/mp4' ? 'mp4' : 'webm'}`;
+        if (!(mime === 'video/mp4' && mp4 || mime === 'video/webm' && webm || mime === 'video/quicktime' && mov)) throw fail('The file is not a supported video.');
+        const filename = `${randomUUID()}.${mime === 'video/mp4' ? 'mp4' : mime === 'video/quicktime' ? 'mov' : 'webm'}`;
         await writeFile(path.join(dataDir, 'uploads', filename), bytes);
         return json(201, { url: `/uploads/${filename}` });
       }
@@ -114,14 +115,14 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
       if (req.method !== 'GET' && req.method !== 'HEAD') throw fail('Method not allowed.', 405);
       if (url.pathname.startsWith('/api/')) throw fail('Not found.', 404);
       const upload = url.pathname.startsWith('/uploads/');
-      if (upload && !/^\/uploads\/[a-f0-9-]+\.(png|jpg|webp|mp4|webm)$/.test(url.pathname)) throw fail('Not found.', 404);
+      if (upload && !/^\/uploads\/[a-f0-9-]+\.(png|jpg|webp|mp4|webm|mov)$/.test(url.pathname)) throw fail('Not found.', 404);
       const base = upload ? dataDir : distDir;
       const filename = path.resolve(base, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));
       if (!filename.startsWith(path.resolve(base) + path.sep)) throw fail('Not found.', 404);
-      if (upload && /\.(mp4|webm)$/.test(filename)) {
+      if (upload && /\.(mp4|webm|mov)$/.test(filename)) {
         let info; try { info = await stat(filename); } catch { throw fail('Not found.', 404); }
         let start = 0, end = info.size - 1, status = 200;
-        const headers = { 'Content-Type': filename.endsWith('.mp4') ? 'video/mp4' : 'video/webm', 'Accept-Ranges': 'bytes', 'X-Content-Type-Options': 'nosniff' };
+        const headers = { 'Content-Type': filename.endsWith('.mp4') ? 'video/mp4' : filename.endsWith('.mov') ? 'video/quicktime' : 'video/webm', 'Accept-Ranges': 'bytes', 'X-Content-Type-Options': 'nosniff' };
         if (req.headers.range) {
           const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
           if (!match || (!match[1] && !match[2])) { res.writeHead(416, { 'Content-Range': `bytes */${info.size}` }); return res.end(); }
