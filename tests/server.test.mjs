@@ -18,8 +18,11 @@ test('guide, uploaded images and all annotation types persist; stale writes and 
     const bytes = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aD1sAAAAASUVORK5CYII=', 'base64');
     const upload = await fetch(base + '/api/images', { method: 'POST', headers: { 'Content-Type': 'image/png' }, body: bytes });
     assert.equal(upload.status, 201); const { url } = await upload.json();
+    const videoBytes = Buffer.concat([Buffer.from([0,0,0,24]), Buffer.from('ftypisom'), Buffer.alloc(32)]);
+    const videoUpload = await fetch(base + '/api/videos', { method: 'POST', headers: { 'Content-Type': 'video/mp4' }, body: videoBytes });
+    assert.equal(videoUpload.status, 201); const video = await videoUpload.json();
     const annotations = [{ type: 'line', x: 0, y: 0, x2: 1000, y2: 1000 }, { type: 'box', x: 700, y: 700, x2: 200, y2: 200 }, { type: 'freehand', points: [[0, 0], [500, 300], [1000, 1000]] }];
-    const data = { ...initial, locations: [{ id: 'test-location', name: 'Test crag', region: 'Test region', latitude: '0', longitude: '0', approach: 'Walk from the gate.', boulders: [{ id: 'test-boulder', name: 'Test boulder', notes: 'Start on the left.', images: [{ id: 'test-image', name: 'test.png', url, annotations }] }] }] };
+    const data = { ...initial, locations: [{ id: 'test-location', name: 'Test crag', region: 'Test region', latitude: '0', longitude: '0', approach: 'Walk from the gate.', boulders: [{ id: 'test-boulder', name: 'Test boulder', notes: 'Start on the left.', videos: [{ id: 'test-video', name: 'beta.mp4', url: video.url }], images: [{ id: 'test-image', name: 'test.png', url, annotations }] }] }] };
     let response = await put(data); assert.equal(response.status, 200); const saved = await response.json();
     assert.equal(saved.revision, 1);
     response = await put(data); assert.equal(response.status, 409, 'stale write must not overwrite data');
@@ -31,6 +34,12 @@ test('guide, uploaded images and all annotation types persist; stale writes and 
     assert.deepEqual(await read(), saved, 'data survives a server restart');
     response = await fetch(base + url); assert.equal(response.status, 200); assert.deepEqual(Buffer.from(await response.arrayBuffer()), bytes);
     assert.equal(response.headers.get('content-type'), 'image/png');
+    response = await fetch(base + video.url, { headers: { Range: 'bytes=4-11' } });
+    assert.equal(response.status, 206); assert.equal(response.headers.get('content-type'), 'video/mp4');
+    assert.equal(await response.text(), 'ftypisom');
+    response = await fetch(base + video.url, { headers: { Range: 'bytes=9999-' } }); assert.equal(response.status, 416);
+    response = await fetch(base + '/api/videos', { method: 'POST', headers: { 'Content-Type': 'video/mp4' }, body: 'not a video' }); assert.equal(response.status, 400);
+    response = await fetch(base + '/api/videos', { method: 'POST', headers: { 'Content-Type': 'text/plain' }, body: 'bad' }); assert.equal(response.status, 400);
   } finally {
     if (app?.server.listening) await stop();
     if (!path.resolve(dataDir).startsWith(path.resolve(os.tmpdir()) + path.sep + 'sideproj-test-')) throw new Error('Unsafe test cleanup path');

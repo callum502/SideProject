@@ -30,3 +30,7 @@ Records are saved in data/guide.json. Original photos are saved in data/uploads/
     npm run preview
 
 Stop the development server before starting preview, as both use port 5173. Set PORT to choose a different port. The server binds only to 127.0.0.1. A hosted multi-user version will need authentication and managed storage.
+
+## Beta videos
+
+Each boulder has a Beta videos section. Upload MP4 or WebM clips up to 100 MB each, then play, seek, or download them. Videos are saved with the other uploads in data/uploads/. Browser playback depends on the codecs in the file. Exported HTML guides currently include photos and notes; share video originals using their Download links.

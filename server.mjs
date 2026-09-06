@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { createReadStream } from 'node:fs';
 import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -19,6 +20,11 @@ function validate(data) {
     for (const b of l.boulders) {
       id(b.id);
       if (!text(b.name, 120, true) || !text(b.notes, 10000) || !Array.isArray(b.images) || b.images.length > 200) throw fail('Invalid boulder.');
+      if (b.videos !== undefined && (!Array.isArray(b.videos) || b.videos.length > 200)) throw fail('Invalid videos.');
+      for (const video of b.videos || []) {
+        id(video.id);
+        if (!text(video.name, 255, true) || !/^\/uploads\/[a-f0-9-]+\.(mp4|webm)$/.test(video.url)) throw fail('Invalid video.');
+      }
       for (const image of b.images) {
         id(image.id);
         if (!text(image.name, 255, true) || !/^\/uploads\/[a-f0-9-]+\.(png|jpg|webp)$/.test(image.url) || !Array.isArray(image.annotations) || image.annotations.length > 1000) throw fail('Invalid image.');
@@ -59,8 +65,8 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
         const task = queue.then(async () => {
           const current = JSON.parse(await readFile(guidePath, 'utf8'));
           if (data.revision !== current.revision) throw fail('This guide changed in another tab. Reload the page before saving again.', 409);
-          for (const l of data.locations) for (const b of l.boulders) for (const image of b.images) {
-            try { await stat(path.join(dataDir, image.url)); } catch { throw fail('An uploaded image is missing. Please upload it again.'); }
+          for (const l of data.locations) for (const b of l.boulders) for (const image of [...b.images, ...(b.videos || [])]) {
+            try { await stat(path.join(dataDir, image.url)); } catch { throw fail('An uploaded file is missing. Please upload it again.'); }
           }
           const next = { revision: current.revision + 1, locations: data.locations };
           await writeFile(`${guidePath}.tmp`, JSON.stringify(next, null, 2));
@@ -82,16 +88,46 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
         await writeFile(path.join(dataDir, 'uploads', filename), bytes);
         return json(201, { url: `/uploads/${filename}` });
       }
+      if (url.pathname === '/api/videos' && req.method === 'POST') {
+        const mime = req.headers['content-type'];
+        if (!['video/mp4', 'video/webm'].includes(mime)) throw fail('Choose MP4 or WebM videos.');
+        if (Number(req.headers['content-length']) > 100 * 1024 * 1024) throw fail('Each video must be smaller than 100 MB.', 413);
+        const bytes = await body(req, 100 * 1024 * 1024);
+        const mp4 = bytes.length >= 16 && bytes.toString('ascii', 4, 8) === 'ftyp';
+        const webm = bytes.length >= 16 && bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])) && bytes.subarray(0, 4096).includes(Buffer.from('webm'));
+        if (!(mime === 'video/mp4' && mp4 || mime === 'video/webm' && webm)) throw fail('The file is not a supported video.');
+        const filename = `${randomUUID()}.${mime === 'video/mp4' ? 'mp4' : 'webm'}`;
+        await writeFile(path.join(dataDir, 'uploads', filename), bytes);
+        return json(201, { url: `/uploads/${filename}` });
+      }
       if (url.pathname === '/api/events' && live) {
         res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' }); res.write(': connected\n\n'); clients.add(res); req.on('close', () => clients.delete(res)); return;
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') throw fail('Method not allowed.', 405);
       if (url.pathname.startsWith('/api/')) throw fail('Not found.', 404);
       const upload = url.pathname.startsWith('/uploads/');
-      if (upload && !/^\/uploads\/[a-f0-9-]+\.(png|jpg|webp)$/.test(url.pathname)) throw fail('Not found.', 404);
+      if (upload && !/^\/uploads\/[a-f0-9-]+\.(png|jpg|webp|mp4|webm)$/.test(url.pathname)) throw fail('Not found.', 404);
       const base = upload ? dataDir : distDir;
       const filename = path.resolve(base, '.' + decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname));
       if (!filename.startsWith(path.resolve(base) + path.sep)) throw fail('Not found.', 404);
+      if (upload && /\.(mp4|webm)$/.test(filename)) {
+        let info; try { info = await stat(filename); } catch { throw fail('Not found.', 404); }
+        let start = 0, end = info.size - 1, status = 200;
+        const headers = { 'Content-Type': filename.endsWith('.mp4') ? 'video/mp4' : 'video/webm', 'Accept-Ranges': 'bytes', 'X-Content-Type-Options': 'nosniff' };
+        if (req.headers.range) {
+          const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range);
+          if (!match || (!match[1] && !match[2])) { res.writeHead(416, { 'Content-Range': `bytes */${info.size}` }); return res.end(); }
+          if (match[1]) { start = Number(match[1]); end = match[2] ? Math.min(Number(match[2]), end) : end; }
+          else { start = Math.max(0, info.size - Number(match[2])); }
+          if (start > end || start >= info.size || (!match[1] && Number(match[2]) === 0)) { res.writeHead(416, { 'Content-Range': `bytes */${info.size}` }); return res.end(); }
+          status = 206; headers['Content-Range'] = `bytes ${start}-${end}/${info.size}`;
+        }
+        headers['Content-Length'] = end - start + 1;
+        res.writeHead(status, headers);
+        if (req.method === 'HEAD') return res.end();
+        const stream = createReadStream(filename, { start, end });
+        stream.on('error', () => res.destroy()); res.on('close', () => stream.destroy()); stream.pipe(res); return;
+      }
       let bytes; try { bytes = await readFile(filename); } catch (e) { if (e.code === 'ENOENT') throw fail('Not found.', 404); throw e; }
       if (live && filename.endsWith('index.html')) bytes = Buffer.from(bytes.toString().replace('</body>', `<script>new EventSource('/api/events').onmessage=()=>location.reload()</script></body>`));
       res.writeHead(200, { 'Content-Type': types[path.extname(filename)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': upload ? 'public, max-age=31536000, immutable' : 'no-cache' });
