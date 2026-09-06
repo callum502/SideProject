@@ -15,3 +15,5 @@
 
 
 .app .workspace{margin-left:0;width:100%}.topbar{position:sticky;top:0;z-index:10;flex-wrap:wrap}.topbar .brand{flex-shrink:0;font-size:17px}.topbar .breadcrumbs{flex:1;min-width:0;max-width:none;white-space:normal;overflow-wrap:anywhere}.topbar .header-actions{margin-left:auto}@media(max-width:800px){.topbar .breadcrumbs{order:3;flex-basis:100%}.topbar .header-actions{flex:1}.topbar .brand{align-self:flex-start;margin-top:4px}}
+
+.location-actions{display:flex;gap:10px;flex-wrap:wrap}.banner-bottom .location-actions button:last-child{border-color:#c99b8e;color:#ffe0d6}.banner-bottom .location-actions button:last-child:hover{background:#673b32}
