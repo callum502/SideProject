@@ -1,4 +1,5 @@
 import http from 'node:http';
+import { assignLegacyOwners, authorizeChanges } from './ownership.mjs';
 import { createReadStream } from 'node:fs';
 import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -57,6 +58,14 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
   await mkdir(path.join(dataDir, 'uploads'), { recursive: true });
   const guidePath = path.join(dataDir, 'guide.json');
   try { await stat(guidePath); } catch (e) { if (e.code !== 'ENOENT') throw e; await writeFile(guidePath, JSON.stringify({ revision: 0, locations: [] })); }
+  const legacy = JSON.parse(await readFile(guidePath, 'utf8'));
+  if (assignLegacyOwners(legacy)) {
+    await writeFile(guidePath + '.before-accounts.bak', await readFile(guidePath));
+    legacy.revision += 1;
+    await writeFile(guidePath + '.tmp', JSON.stringify(legacy, null, 2));
+    await rename(guidePath + '.tmp', guidePath);
+  }
+  const sessions = new Map();
   let queue = Promise.resolve();
   const clients = new Set();
   const server = http.createServer(async (req, res) => {
@@ -66,6 +75,25 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
       if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) throw fail('Cross-origin requests are not allowed.', 403);
       if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host || '')) throw fail('Host not allowed.', 403);
       const url = new URL(req.url, 'http://localhost');
+      const token = (req.headers.cookie || '').split(';').map(c => c.trim()).find(c => c.startsWith('sideproj_session='))?.slice('sideproj_session='.length);
+      const session = sessions.get(token);
+      const user = session && session.expires > Date.now() ? session.user : null;
+      if (session && !user) sessions.delete(token);
+      if (url.pathname === '/api/session' && req.method === 'GET') return json(200, { user });
+      if (url.pathname === '/api/login' && req.method === 'POST') {
+        let credentials; try { credentials = JSON.parse((await body(req, 4096)).toString()); } catch { throw fail('Enter a username and password.'); }
+        if (!['Admin', 'Contributor'].includes(credentials?.username) || credentials.password !== 'Password') throw fail('Incorrect username or password.', 401);
+        if (token) sessions.delete(token);
+        for (const [key, value] of sessions) if (value.expires <= Date.now()) sessions.delete(key);
+        const identity = { name: credentials.username, role: credentials.username === 'Admin' ? 'admin' : 'contributor' };
+        const nextToken = randomUUID(); sessions.set(nextToken, { user: identity, expires: Date.now() + 86400000 });
+        res.setHeader('Set-Cookie', 'sideproj_session=' + nextToken + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400');
+        return json(200, { user: identity });
+      }
+      if (url.pathname === '/api/logout' && req.method === 'POST') {
+        sessions.delete(token); res.setHeader('Set-Cookie', 'sideproj_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'); return json(200, { user: null });
+      }
+      if (['/api/guide', '/api/images', '/api/videos'].includes(url.pathname) && ['PUT', 'POST', 'DELETE'].includes(req.method) && !user) throw fail('Log in to contribute.', 401);
       if (url.pathname === '/api/guide' && req.method === 'GET') return json(200, JSON.parse(await readFile(guidePath, 'utf8')));
       if (url.pathname === '/api/guide' && req.method === 'PUT') {
         let data; try { data = JSON.parse((await body(req, 12 * 1024 * 1024)).toString()); } catch (e) { if (e.status) throw e; throw fail('Invalid JSON.'); }
@@ -73,6 +101,7 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
         const task = queue.then(async () => {
           const current = JSON.parse(await readFile(guidePath, 'utf8'));
           if (data.revision !== current.revision) throw fail('This guide changed in another tab. Reload the page before saving again.', 409);
+          authorizeChanges(current, data, user);
           for (const l of data.locations) for (const b of l.boulders) for (const image of [...b.images, ...(b.videos || [])]) {
             try { await stat(path.join(dataDir, image.url)); } catch { throw fail('An uploaded file is missing. Please upload it again.'); }
           }
