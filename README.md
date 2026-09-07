@@ -1,36 +1,9 @@
-# SideProj
+SideProj - A platform used to share information around outdoor bouldering locations worldwide.
 
-A local React climbing field guide with a Node server and durable disk storage.
+As someone who enjoys bouldering both indoors and outdoors, I have noticed that information on outdoor bouldering locations can be very vague and hard to find. In the past I've found myself sinking hours into creating a google doc to collate information on a bouldering location from several vaguely worded sources. I developed this platform for myself and my local community to use as a simpler alternative to existing sites, forums and books.
 
-## Run
+This platform allows for and encourages uploading images and provides tools to annotate them in place, making it much easier to highlight the holds used for a specific problem. Each location also requires a set of coordinates and a link to the location on google maps is automatically generated from these making it much easier to understand how to travel to the location.
 
-    npm install
-    npm run dev
+https://github.com/user-attachments/assets/9119a983-bfc9-44ac-96bf-ada8451b3cb6
 
-Open http://127.0.0.1:5173. Source edits rebuild and refresh the page automatically. The project uses a Vite build watcher to work with the installed Node 20 environment.
-
-## Use
-
-1. Create a location with a name, optional region, latitude/longitude, and approach notes.
-2. Add boulders and route notes inside each location.
-3. Open a boulder and upload JPEG, PNG, or WebP photos (8 MB per photo).
-4. Open a photo and add red lines, boxes, or freehand marks. Undo or clear marks, then save. You can also focus the photo and use arrow keys and Enter to draw.
-5. Export guide downloads a standalone HTML file containing the selected location, boulders, photos, and annotations. Send that file to another person; it opens in their browser without this server. Map links require internet access.
-
-Copy local link links to the selected record on this computer. The app is not publicly hosted and does not include accounts or online collaboration.
-
-## Storage
-
-Records are saved in data/guide.json. Original photos are saved in data/uploads/. Back up the entire data folder together. These files are ignored by Git. Saves use revision checks to avoid overwriting a change from another browser tab. If a conflict is reported, reload before saving again.
-
-## Validate and preview
-
-    npm test
-    npm run build
-    npm run preview
-
-Stop the development server before starting preview, as both use port 5173. Set PORT to choose a different port. The server binds only to 127.0.0.1. A hosted multi-user version will need authentication and managed storage.
-
-## Beta videos
-
-Each boulder has a Beta videos section. Upload MP4 or WebM clips up to 100 MB each, then play, seek, or download them. Videos are saved with the other uploads in data/uploads/. Browser playback depends on the codecs in the file. Exported HTML guides currently include photos and notes; share video originals using their Download links.
+If you are curious about the name, a "project" is slang in bouldering communities meaning a climbing problem someone is working on. This is often shortened to "Proj". The name SideProj plays on this by referencing the fact that the platform is my personal side project while it collates information for the users bouldering projects.
