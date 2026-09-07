@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
-import { exportGuide } from './exportGuide';
+
 import LocationMap from './LocationMap';
 import LocationSearch from './LocationSearch';
 import { ProblemList, ProblemForm, ProblemPage, problemHref } from './Problems';
@@ -94,14 +94,10 @@ function App() {
       await updateBoulder({ videos: [...(boulder.videos || []), ...videos] });
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
-  async function download() {
-    setBusy(true); setError('');
-    try { await exportGuide(place); setToast('Guide exported with photos and annotations'); } catch (e) { setError(e.message); } finally { setBusy(false); }
-  }
   const home = !locationId;
   const goHome = () => { setLocationId(null); setBoulderId(null); setProblemId(null); location.hash = ''; };
   return <div className="app">
-    <div className="workspace"><header className="topbar"><a className="brand" href="#" aria-label="SideProj home"><span className="brand-mark" aria-hidden="true">△</span> Side<span className="brand-light">Proj</span></a><span className="breadcrumbs"><a href="#" onClick={goHome}>Find locations</a>{place && <> / <a href={`#${new URLSearchParams({ location: place.id })}`} onClick={() => choose(place.id)}>{place.name}</a></>}{boulder && <> / <a href={problemHref(place.id, boulder.id)}>{boulder.name}</a></>}{problem && <> / <span aria-current="page">{problem.name}</span></>}</span><div className="header-actions"><button className="primary small" disabled={!loaded || busy} onClick={() => { setError(''); setModal('location'); }}>+ Create location</button>{place && <button className="secondary small" disabled={busy} onClick={download}>↓ Export guide</button>}</div></header>
+    <div className="workspace"><header className="topbar"><a className="brand" href="#" aria-label="SideProj home"><span className="brand-mark" aria-hidden="true">△</span> Side<span className="brand-light">Proj</span></a><span className="breadcrumbs"><a href="#" onClick={goHome}>Find locations</a>{place && <> / <a href={`#${new URLSearchParams({ location: place.id })}`} onClick={() => choose(place.id)}>{place.name}</a></>}{boulder && <> / <a href={problemHref(place.id, boulder.id)}>{boulder.name}</a></>}{problem && <> / <span aria-current="page">{problem.name}</span></>}</span><div className="header-actions"><button className="primary small" disabled={!loaded || busy} onClick={() => { setError(''); setModal('location'); }}>+ Create location</button></div></header>
     <main className={home ? "search-home" : "location-page"}>
     {error && <div role="alert" className="error">{error}<button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
     {home ? <><LocationSearch locations={db.locations} loaded={loaded}/><LocationMap locations={db.locations} selectedId={null} onSelect={id => choose(id)}/></> : <><a className="back-to-search" href={problemId && boulder ? problemHref(place.id, boulder.id) : boulder ? `#${new URLSearchParams({ location: place.id })}` : "#"}>← Back to {problemId && boulder ? boulder.name : boulder ? place.name : 'search'}</a>
