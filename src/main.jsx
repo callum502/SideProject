@@ -43,7 +43,7 @@ function App() {
   const boulder = place?.boulders.find(b => b.id === boulderId);
   const problem = boulder?.problems?.find(p => p.id === problemId);
   const choose = (l, b = null, p = null) => { setLocationId(l); setBoulderId(b); setProblemId(p); location.hash = new URLSearchParams({ location: l, ...(b ? { boulder: b } : {}), ...(p ? { problem: p } : {}) }); };
-  async function logout() { try { await api('/api/logout', { method: 'POST' }); setUser(null); setModal(null); } catch (e) { setError(e.message); } }
+  async function logout() { try { await api('/api/logout', { method: 'POST' }); setUser(null); setModal(null); location.hash = '#login'; } catch (e) { setError(e.message); } }
   async function save(next) {
     setBusy(true); setError('');
     try { const result = await api('/api/guide', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next) }); setDb(result); setToast('Changes saved'); return true; }
