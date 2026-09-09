@@ -101,6 +101,10 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
         const task = queue.then(async () => {
           const current = JSON.parse(await readFile(guidePath, 'utf8'));
           if (data.revision !== current.revision) throw fail('This guide changed in another tab. Reload the page before saving again.', 409);
+          for (const location of data.locations) {
+            const previous = current.locations.find(item => item.id === location.id);
+            if ((!previous || previous.latitude !== location.latitude || previous.longitude !== location.longitude) && (!location.latitude.trim() || !location.longitude.trim())) throw fail('Latitude and longitude are required.');
+          }
           authorizeChanges(current, data, user);
           for (const l of data.locations) for (const b of l.boulders) for (const image of [...b.images, ...(b.videos || [])]) {
             try { await stat(path.join(dataDir, image.url)); } catch { throw fail('An uploaded file is missing. Please upload it again.'); }

@@ -56,7 +56,6 @@ export default function LocationMap({ locations, selectedId, onSelect }) {
     <div className="section-heading"><div><h2 id="map-heading">Locations map</h2><p>Click a marker to explore a location.</p></div><span className="count">{points.length} mapped</span></div>
     <div ref={container} className="location-map" aria-label="Map of climbing locations" />
     {!points.length && <p className="map-note">Add coordinates to a location to place it on the map.</p>}
-    {locations.length > points.length && points.length > 0 && <p className="map-note">{locations.length - points.length} locations need coordinates to appear on the map.</p>}
     {tileError && <p className="map-note" role="status">Map tiles could not load. Check your connection; you can still select locations using the search above.</p>}
   </section>;
 }

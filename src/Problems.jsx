@@ -17,9 +17,9 @@ export function ProblemForm({ boulder, problem, save, busy, error, cancel }) {
     await save({ ...fields, id: problem?.id || crypto.randomUUID() });
   }
   return <form onSubmit={submit}>{error && <p className="error" role="alert">{error}</p>}
-    <label>Problem name<input name="name" required autoFocus maxLength={120} defaultValue={problem?.name || ''}/></label>
-    <label>Grade<input name="grade" required maxLength={40} placeholder="e.g. 6A or V3" defaultValue={problem?.grade || ''}/></label>
-    <label>Description<textarea name="description" required maxLength={10000} rows={5} placeholder="Describe the start, the line, key moves, and finish..." defaultValue={problem?.description || ''}/></label>
+    <label>Problem name <span aria-hidden="true">*</span><input name="name" required autoFocus maxLength={120} defaultValue={problem?.name || ''}/></label>
+    <label>Grade <span aria-hidden="true">*</span><input name="grade" required maxLength={40} placeholder="e.g. 6A or V3" defaultValue={problem?.grade || ''}/></label>
+    <label>Description <span aria-hidden="true">*</span><textarea name="description" required maxLength={10000} rows={5} placeholder="Describe the start, the line, key moves, and finish..." defaultValue={problem?.description || ''}/></label>
     <fieldset className="media-picker"><legend>Link photos from this boulder</legend>{boulder.images.length ? boulder.images.map(image => <label key={image.id}><input type="checkbox" name="imageIds" value={image.id} defaultChecked={problem?.imageIds.includes(image.id)}/><img src={image.url} alt=""/><span>{image.name}</span></label>) : <p>Upload photos on the boulder page to link them here.</p>}</fieldset>
     <fieldset className="media-picker"><legend>Link beta videos from this boulder</legend>{boulder.videos?.length ? boulder.videos.map(video => <label key={video.id}><input type="checkbox" name="videoIds" value={video.id} defaultChecked={problem?.videoIds.includes(video.id)}/><span>{video.name}</span></label>) : <p>Upload videos on the boulder page to link them here.</p>}</fieldset>
     <div className="form-actions"><button type="button" className="secondary" disabled={busy} onClick={cancel}>Cancel</button><button className="primary" disabled={busy}>{busy ? 'Saving...' : 'Save problem'}</button></div>
