@@ -2,7 +2,7 @@ import React from 'react';
 import { problemHref } from './Problems';
 
 export default function PageNavigation({ place, boulder, problem, problemId }) {
-  const trail = [{ name: 'Find locations', kind: 'Explore', href: '#' }];
+  const trail = [{ name: 'Find locations', kind: 'Explore', href: '#explore' }];
   if (place) trail.push({ name: place.name, kind: 'Location', href: `#${new URLSearchParams({ location: place.id })}` });
   if (boulder) trail.push({ name: boulder.name, kind: 'Boulder', href: problemHref(place.id, boulder.id) });
   if (problemId && boulder) trail.push({ name: problem?.name || 'Problem not found', kind: 'Problem', href: problemHref(place.id, boulder.id, problemId) });

@@ -24,7 +24,7 @@ function Modal({ title, children, close }) {
   return <dialog ref={ref} onCancel={e => { e.preventDefault(); close(); }} onClick={e => { if (e.target === ref.current) close(); }}><div className="modal-heading"><h2>{title}</h2><button className="icon-button" aria-label="Close" onClick={close}>×</button></div>{children}</dialog>;
 }
 function App() {
-  const [user, setUser] = useState(null), [loginPage, setLoginPage] = useState(location.hash === '#login');
+  const [user, setUser] = useState(null), [loginPage, setLoginPage] = useState((!location.hash || location.hash === '#' || location.hash === '#login'));
   const canEdit = item => !!user && (user.role === 'admin' || item?.createdBy === user.name);
   useEffect(() => { const refresh = () => api('/api/session').then(data => setUser(data.user)).catch(() => setUser(null)); refresh(); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, []);
   const [db, setDb] = useState({ revision: 0, locations: [] }), [loaded, setLoaded] = useState(false);
@@ -35,7 +35,7 @@ function App() {
   useEffect(() => { api('/api/guide').then(data => { setDb(data); setLocationId(new URLSearchParams(location.hash.slice(1)).get('location')); setBoulderId(new URLSearchParams(location.hash.slice(1)).get('boulder')); setProblemId(new URLSearchParams(location.hash.slice(1)).get('problem')); setLoaded(true); }).catch(e => setError(e.message)); }, []);
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 3500); return () => clearTimeout(t); } }, [toast]);
   useEffect(() => {
-    const navigate = () => { setLoginPage(location.hash === '#login'); const params = new URLSearchParams(location.hash.slice(1)); setLocationId(params.get('location')); setBoulderId(params.get('boulder')); setProblemId(params.get('problem')); setModal(null); window.scrollTo(0, 0); };
+    const navigate = () => { setLoginPage((!location.hash || location.hash === '#' || location.hash === '#login')); const params = new URLSearchParams(location.hash.slice(1)); setLocationId(params.get('location')); setBoulderId(params.get('boulder')); setProblemId(params.get('problem')); setModal(null); window.scrollTo(0, 0); };
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
@@ -101,10 +101,10 @@ function App() {
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
   const home = !locationId;
-  const goHome = () => { setLocationId(null); setBoulderId(null); setProblemId(null); location.hash = ''; };
+  const goHome = () => { setLocationId(null); setBoulderId(null); setProblemId(null); location.hash = '#explore'; };
   return <div className="app">
     <div className="workspace"><header className="topbar"><a className="brand" href="#" aria-label="SideProj home"><span className="brand-mark" aria-hidden="true">△</span> Side<span className="brand-light">Proj</span></a><div className="header-actions">{user ? <><span className="signed-in">{user.name} <small>{user.role}</small></span><button className="secondary small" onClick={logout}>Log out</button></> : !loginPage && <a className="secondary small" href="#login">Log in</a>}</div></header>
-    {loginPage ? <LoginPage onLogin={identity => { setUser(identity); location.hash = ''; }}/>: <main className={home ? "search-home" : "location-page"}>
+    {loginPage ? <LoginPage onLogin={identity => { setUser(identity); location.hash = '#explore'; }}/>: <main className={home ? "search-home" : "location-page"}>
     {error && <div role="alert" className="error">{error}<button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
     {home ? <><LocationSearch locations={db.locations} loaded={loaded} canCreate={!!user} busy={busy} onCreate={() => { setError(''); setModal('location'); }}/><LocationMap locations={db.locations} selectedId={null} onSelect={id => choose(id)}/></> : <>
     <section id="location-details" className="detail-panel">{!place ? <div className="welcome"><PageNavigation place={place} boulder={boulder} problem={problem} problemId={problemId}/><h2>{loaded ? 'Location not found' : 'Loading location...'}</h2>{loaded && <p>This location may have been removed. Return to search to find another location.</p>}</div> : <>
