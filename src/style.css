@@ -33,3 +33,6 @@
 .detail-banner .page-navigation{margin:0 0 24px;padding:0 0 20px;border-top:0;border-bottom:1px solid #ffffff30}
 
 .coordinate-picker{margin-bottom:22px}.coordinate-help{font-size:14px;color:var(--muted);margin:0 0 12px}.coordinate-map{height:280px;border:1px solid var(--line);border-radius:8px;cursor:crosshair}.coordinate-picker .form-columns label{margin-bottom:12px}
+
+.account-options { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1.25rem 0; }
+.login-card small { display: block; margin-top: 0.4rem; }

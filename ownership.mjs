@@ -21,7 +21,7 @@ export function authorizeChanges(current, incoming, user) {
   index(current.locations, 'locations');
   function canDelete(item, type) {
     if (user.role === 'admin') return;
-    if (item.createdBy !== user.name) denied();
+    if (item.createdBy !== user.id) denied();
     for (const child of children[type]) for (const nested of item[child] || []) canDelete(nested, child);
   }
   function visit(oldItems, newItems, type) {
@@ -32,15 +32,30 @@ export function authorizeChanges(current, incoming, user) {
       const old = oldMap.get(item.id);
       if (!old) {
         if (allOld.has(item.id)) denied(); // Cannot move someone else's record to claim ownership.
-        item.createdBy = user.name;
+        item.createdBy = user.id;
+        item.createdByName = user.name;
       } else {
         if (item.createdBy && item.createdBy !== old.createdBy) denied();
         item.createdBy = old.createdBy;
+        if (old.createdByName) item.createdByName = old.createdByName;
+        else delete item.createdByName;
         const ownFields = value => Object.fromEntries(Object.entries(value).filter(([key]) => !children[type].includes(key)));
-        if (user.role !== 'admin' && old.createdBy !== user.name && !isDeepStrictEqual(ownFields(old), ownFields(item))) denied();
+        if (user.role !== 'admin' && old.createdBy !== user.id && !isDeepStrictEqual(ownFields(old), ownFields(item))) denied();
       }
       for (const child of children[type]) visit(old?.[child], item[child], child);
     }
   }
   visit(current.locations, incoming.locations, 'locations');
+}
+
+export function claimLegacyAdmin(guide, user) {
+  let changed = false;
+  function visit(items, type) {
+    for (const item of items || []) {
+      if (item.createdBy === 'Admin') { item.createdBy = user.id; item.createdByName = user.name; changed = true; }
+      for (const child of children[type]) visit(item[child], child);
+    }
+  }
+  visit(guide.locations, 'locations');
+  return changed;
 }

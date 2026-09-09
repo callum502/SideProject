@@ -3,3 +3,13 @@ dist/
 .env.local
 
 data/
+
+.env
+.env.*
+!.env.example
+
+# Local tooling and temporary output
+*.log
+*.tmp
+supabase/.temp/
+supabase/.branches/

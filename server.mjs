@@ -1,5 +1,6 @@
+import { createAuth } from './auth.mjs';
 import http from 'node:http';
-import { assignLegacyOwners, authorizeChanges } from './ownership.mjs';
+import { assignLegacyOwners, authorizeChanges, claimLegacyAdmin } from './ownership.mjs';
 import { createReadStream } from 'node:fs';
 import { mkdir, readFile, writeFile, rename, stat } from 'node:fs/promises';
 import path from 'node:path';
@@ -54,7 +55,7 @@ async function body(req, limit) {
   return Buffer.concat(chunks);
 }
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.json': 'application/json' };
-export async function createGuideServer({ dataDir = path.join(root, 'data'), distDir = path.join(root, 'dist'), live = false } = {}) {
+export async function createGuideServer({ dataDir = path.join(root, 'data'), distDir = path.join(root, 'dist'), live = false, auth = createAuth() } = {}) {
   await mkdir(path.join(dataDir, 'uploads'), { recursive: true });
   const guidePath = path.join(dataDir, 'guide.json');
   try { await stat(guidePath); } catch (e) { if (e.code !== 'ENOENT') throw e; await writeFile(guidePath, JSON.stringify({ revision: 0, locations: [] })); }
@@ -77,21 +78,44 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
       const url = new URL(req.url, 'http://localhost');
       const token = (req.headers.cookie || '').split(';').map(c => c.trim()).find(c => c.startsWith('sideproj_session='))?.slice('sideproj_session='.length);
       const session = sessions.get(token);
-      const user = session && session.expires > Date.now() ? session.user : null;
-      if (session && !user) sessions.delete(token);
+      let user = null;
+      if (session && session.cookieExpires <= Date.now()) sessions.delete(token);
+      else if (session && url.pathname.startsWith('/api/') && url.pathname !== '/api/logout') {
+        try { user = await auth.resolve(session); }
+        catch (error) { if (error.status !== 401) throw error; sessions.delete(token); }
+      }
       if (url.pathname === '/api/session' && req.method === 'GET') return json(200, { user });
-      if (url.pathname === '/api/login' && req.method === 'POST') {
-        let credentials; try { credentials = JSON.parse((await body(req, 4096)).toString()); } catch { throw fail('Enter a username and password.'); }
-        if (!['Admin', 'Contributor'].includes(credentials?.username) || credentials.password !== 'Password') throw fail('Incorrect username or password.', 401);
+      if (['/api/login', '/api/signup', '/api/confirm', '/api/recover', '/api/reset-password'].includes(url.pathname) && req.method === 'POST') {
+        let values; try { values = JSON.parse((await body(req, 4096)).toString()); } catch { throw fail('Enter valid account details.'); }
+        if (!values || typeof values !== 'object') throw fail('Enter valid account details.');
+        if (url.pathname !== '/api/login') {
+          const action = { '/api/confirm': 'confirm', '/api/signup': 'signup', '/api/recover': 'recover', '/api/reset-password': 'reset' }[url.pathname];
+          return json(200, await auth[action](values));
+        }
+        const nextSession = await auth.login(values);
+        const identity = nextSession.user;
+        // Claim old shared Admin records only after a verified, explicitly configured admin signs in.
+        const task = queue.then(async () => {
+          if (identity.role !== 'admin' || identity.email?.toLowerCase() !== auth.legacyAdminEmail) return;
+          const current = JSON.parse(await readFile(guidePath, 'utf8'));
+          if (!claimLegacyAdmin(current, identity)) return;
+          try { await writeFile(guidePath + '.before-individual-accounts.bak', await readFile(guidePath), { flag: 'wx' }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
+          current.revision += 1;
+          await writeFile(guidePath + '.tmp', JSON.stringify(current, null, 2));
+          await rename(guidePath + '.tmp', guidePath);
+        });
+        queue = task.catch(() => {}); await task;
         if (token) sessions.delete(token);
-        for (const [key, value] of sessions) if (value.expires <= Date.now()) sessions.delete(key);
-        const identity = { name: credentials.username, role: credentials.username === 'Admin' ? 'admin' : 'contributor' };
-        const nextToken = randomUUID(); sessions.set(nextToken, { user: identity, expires: Date.now() + 86400000 });
+        for (const [key, value] of sessions) if (value.cookieExpires <= Date.now()) sessions.delete(key);
+        const nextToken = randomUUID(); sessions.set(nextToken, { ...nextSession, cookieExpires: Date.now() + 86400000 });
         res.setHeader('Set-Cookie', 'sideproj_session=' + nextToken + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400');
         return json(200, { user: identity });
       }
       if (url.pathname === '/api/logout' && req.method === 'POST') {
-        sessions.delete(token); res.setHeader('Set-Cookie', 'sideproj_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'); return json(200, { user: null });
+        sessions.delete(token); res.setHeader('Set-Cookie', 'sideproj_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
+        // The local session is invalidated even if Supabase is temporarily unavailable.
+        await auth.logout(session).catch(() => {});
+        return json(200, { user: null });
       }
       if (['/api/guide', '/api/images', '/api/videos'].includes(url.pathname) && ['PUT', 'POST', 'DELETE'].includes(req.method) && !user) throw fail('Log in to contribute.', 401);
       if (url.pathname === '/api/guide' && req.method === 'GET') return json(200, JSON.parse(await readFile(guidePath, 'utf8')));

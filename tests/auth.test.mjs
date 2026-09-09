@@ -1,3 +1,4 @@
+import { fakeAuth } from './fake-auth.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, rm, writeFile, readFile } from 'node:fs/promises';
@@ -5,15 +6,16 @@ import os from 'node:os';
 import path from 'node:path';
 import { createGuideServer } from '../server.mjs';
 
-test('demo login, ownership, nested contributions, admin edits and logout are enforced by the API', async () => {
+test('individual login, ownership, nested contributions, admin edits and logout are enforced by the API', async () => {
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'sideproj-auth-'));
   const original = { revision: 0, locations: [{ id: 'location', name: 'Original crag', region: '', latitude: '', longitude: '', approach: '', boulders: [{ id: 'boulder', name: 'Original boulder', notes: '', images: [], videos: [] }] }] };
   await writeFile(path.join(dataDir, 'guide.json'), JSON.stringify(original));
-  const { server } = await createGuideServer({ dataDir });
+  const auth = fakeAuth(); auth.legacyAdminEmail = 'admin@example.com';
+  const { server } = await createGuideServer({ dataDir, auth });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
   const request = (route, method = 'GET', value, cookie) => fetch(base + route, { method, headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, ...(value ? { body: JSON.stringify(value) } : {}) });
-  const login = async username => { const r = await request('/api/login', 'POST', { username, password: 'Password' }); assert.equal(r.status, 200); return r.headers.get('set-cookie').split(';')[0]; };
+  const login = async username => { const r = await request('/api/login', 'POST', { email: username.toLowerCase() + '@example.com', password: 'test-password' }); assert.equal(r.status, 200); return r.headers.get('set-cookie').split(';')[0]; };
   const get = () => request('/api/guide').then(r => r.json());
   try {
     const migrated = await get();
@@ -22,7 +24,11 @@ test('demo login, ownership, nested contributions, admin edits and logout are en
     assert.equal((await request('/api/guide', 'PUT', migrated)).status, 401);
     assert.equal((await request('/api/images', 'POST', {})).status, 401);
     assert.equal((await request('/api/login', 'POST', { username: 'Admin', password: 'wrong' })).status, 401);
-    const contributor = await login('Contributor'), admin = await login('Admin');
+    const contributor = await login('Contributor');
+    assert.equal((await get()).locations[0].createdBy, 'Admin', 'contributor cannot claim legacy admin content');
+    const admin = await login('Admin'), other = await login('Other');
+    assert.equal((await get()).locations[0].createdBy, auth.users.Admin.id);
+    assert.equal(JSON.parse(await readFile(path.join(dataDir, 'guide.json.before-individual-accounts.bak'), 'utf8')).locations[0].createdBy, 'Admin');
     const session = await request('/api/session', 'GET', null, contributor).then(r => r.json());
     assert.equal(session.user.role, 'contributor');
     let next = await get(); next.locations[0].name = 'Unauthorised edit';
@@ -31,15 +37,16 @@ test('demo login, ownership, nested contributions, admin edits and logout are en
     assert.equal((await request('/api/guide', 'PUT', next, contributor)).status, 403);
     next = await get(); next.locations[0].boulders.push({ id: 'own-boulder', name: 'New boulder', notes: '', images: [], videos: [], createdBy: 'Admin' });
     let response = await request('/api/guide', 'PUT', next, contributor); assert.equal(response.status, 200);
-    next = await response.json(); assert.equal(next.locations[0].boulders[1].createdBy, 'Contributor');
+    next = await response.json(); assert.equal(next.locations[0].boulders[1].createdBy, '00000000-0000-4000-8000-000000000002');
     next.locations[0].boulders[0].problems = [{ id: 'own-problem', name: 'New line', grade: '6A', description: 'Follow the arete.', imageIds: [], videoIds: [] }];
     response = await request('/api/guide', 'PUT', next, contributor); assert.equal(response.status, 200);
-    next = await response.json(); assert.equal(next.locations[0].boulders[0].problems[0].createdBy, 'Contributor');
+    next = await response.json(); assert.equal(next.locations[0].boulders[0].problems[0].createdBy, '00000000-0000-4000-8000-000000000002');
     next.locations[0].boulders[0].problems[0].grade = '6B';
+    assert.equal((await request('/api/guide', 'PUT', next, other)).status, 403, 'same display name does not grant ownership');
     assert.equal((await request('/api/guide', 'PUT', next, contributor)).status, 200);
     next = await get(); next.locations[0].boulders[1].notes = 'Admin edit';
     assert.equal((await request('/api/guide', 'PUT', next, admin)).status, 200);
-    next = await get(); assert.equal(next.locations[0].boulders[1].createdBy, 'Contributor');
+    next = await get(); assert.equal(next.locations[0].boulders[1].createdBy, '00000000-0000-4000-8000-000000000002');
     next.locations = [];
     assert.equal((await request('/api/guide', 'PUT', next, contributor)).status, 403);
     assert.equal((await request('/api/guide', 'PUT', next, admin)).status, 200);
