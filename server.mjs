@@ -1,3 +1,4 @@
+import { createContentStore } from './content-store.mjs';
 import { createAuth } from './auth.mjs';
 import http from 'node:http';
 import { assignLegacyOwners, authorizeChanges, claimLegacyAdmin } from './ownership.mjs';
@@ -55,9 +56,10 @@ async function body(req, limit) {
   return Buffer.concat(chunks);
 }
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.json': 'application/json' };
-export async function createGuideServer({ dataDir = path.join(root, 'data'), distDir = path.join(root, 'dist'), live = false, auth = createAuth() } = {}) {
+export async function createGuideServer({ dataDir = path.join(root, 'data'), distDir = path.join(root, 'dist'), live = false, auth = createAuth(), contentStore = createContentStore() } = {}) {
   await mkdir(path.join(dataDir, 'uploads'), { recursive: true });
   const guidePath = path.join(dataDir, 'guide.json');
+  if (!contentStore) {
   try { await stat(guidePath); } catch (e) { if (e.code !== 'ENOENT') throw e; await writeFile(guidePath, JSON.stringify({ revision: 0, locations: [] })); }
   const legacy = JSON.parse(await readFile(guidePath, 'utf8'));
   if (assignLegacyOwners(legacy)) {
@@ -65,6 +67,7 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
     legacy.revision += 1;
     await writeFile(guidePath + '.tmp', JSON.stringify(legacy, null, 2));
     await rename(guidePath + '.tmp', guidePath);
+  }
   }
   const sessions = new Map();
   let queue = Promise.resolve();
@@ -96,7 +99,7 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
         const identity = nextSession.user;
         // Claim old shared Admin records only after a verified, explicitly configured admin signs in.
         const task = queue.then(async () => {
-          if (identity.role !== 'admin' || identity.email?.toLowerCase() !== auth.legacyAdminEmail) return;
+          if (contentStore || identity.role !== 'admin' || identity.email?.toLowerCase() !== auth.legacyAdminEmail) return;
           const current = JSON.parse(await readFile(guidePath, 'utf8'));
           if (!claimLegacyAdmin(current, identity)) return;
           try { await writeFile(guidePath + '.before-individual-accounts.bak', await readFile(guidePath), { flag: 'wx' }); } catch (error) { if (error.code !== 'EEXIST') throw error; }
@@ -118,10 +121,11 @@ export async function createGuideServer({ dataDir = path.join(root, 'data'), dis
         return json(200, { user: null });
       }
       if (['/api/guide', '/api/images', '/api/videos'].includes(url.pathname) && ['PUT', 'POST', 'DELETE'].includes(req.method) && !user) throw fail('Log in to contribute.', 401);
-      if (url.pathname === '/api/guide' && req.method === 'GET') return json(200, JSON.parse(await readFile(guidePath, 'utf8')));
+      if (url.pathname === '/api/guide' && req.method === 'GET') return json(200, contentStore ? await contentStore.read(user ? session.accessToken : undefined) : JSON.parse(await readFile(guidePath, 'utf8')));
       if (url.pathname === '/api/guide' && req.method === 'PUT') {
         let data; try { data = JSON.parse((await body(req, 12 * 1024 * 1024)).toString()); } catch (e) { if (e.status) throw e; throw fail('Invalid JSON.'); }
         validate(data);
+        if (contentStore) return json(200, await contentStore.save(data, user, session.accessToken, dataDir));
         const task = queue.then(async () => {
           const current = JSON.parse(await readFile(guidePath, 'utf8'));
           if (data.revision !== current.revision) throw fail('This guide changed in another tab. Reload the page before saving again.', 409);

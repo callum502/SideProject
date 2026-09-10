@@ -1,6 +1,6 @@
 ﻿# Step 2: create the SideProj database structure
 
-This folder prepares the SQL database. It does not switch the app away from JSON, import your content, create Storage buckets, or replace the demo login.
+This folder contains the versioned schema, account setup and content API. For existing installations with individual accounts, follow [Move climbing content to PostgreSQL](CONTENT.md). For account setup, see [ACCOUNTS.md](ACCOUNTS.md). The initial schema instructions below remain the starting point for a fresh project.
 
 ## Apply to your fresh Supabase development project
 
@@ -67,17 +67,9 @@ Verify exactly your intended account was updated. Users cannot promote themselve
 - Locations and boulders use restrictive foreign keys. Delete children in a transaction before deleting the parent. Row-level permissions prevent a contributor from silently deleting another user's descendants; administrators can delete the whole hierarchy explicitly.
 - Account deletion is blocked while its profile/content remains referenced. A deliberate account-deletion/anonymisation workflow is needed before public launch.
 
-## Connecting the Node backend comes next
+## Node backend integration
 
-The app still reads/writes JSON and uses demo sessions. This migration alone cannot change app behaviour.
-
-For the later SQL integration, authenticated API requests need a verified Supabase user identity. The policies expect `auth.uid()` to identify that user. With direct SQL, use a dedicated restricted connection role, verify the user's JWT on the Node server, then set the database role and verified request claims locally inside a transaction. Never accept role/creator claims from unverified request bodies. Always reset context through transaction scoping and use a connection pool correctly.
-
-Do not use the project `postgres` owner or a service-role key for ordinary user requests: privileged connections can bypass row-level security. This step deliberately does not create a login role, distribute credentials, or enable that connection yet.
-
-Use parameterised queries. Updates should include `WHERE id = $1 AND version = $2`; no returned row means a conflict or denied access. The update trigger increments the version. Write related changes in one transaction.
-
-Storage setup must separately enforce file ownership, MIME/signature validation, size limits, and bucket policies. This schema holds metadata only; it does not verify that an uploaded object exists. It permits 100 MB video metadata to match the app, but Supabase Free has a 50 MB per-file storage limit.
+The backend uses the Supabase REST RPC API with each authenticated user's token, preserving RLS without a privileged database connection. See [CONTENT.md](CONTENT.md) for migration, import and activation instructions. Media files remain local until the Storage step.
 
 ## JSON mapping for the later import
 

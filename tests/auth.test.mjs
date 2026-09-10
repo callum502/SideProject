@@ -11,7 +11,7 @@ test('individual login, ownership, nested contributions, admin edits and logout 
   const original = { revision: 0, locations: [{ id: 'location', name: 'Original crag', region: '', latitude: '', longitude: '', approach: '', boulders: [{ id: 'boulder', name: 'Original boulder', notes: '', images: [], videos: [] }] }] };
   await writeFile(path.join(dataDir, 'guide.json'), JSON.stringify(original));
   const auth = fakeAuth(); auth.legacyAdminEmail = 'admin@example.com';
-  const { server } = await createGuideServer({ dataDir, auth });
+  const { server } = await createGuideServer({ dataDir, contentStore: null, auth });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
   const request = (route, method = 'GET', value, cookie) => fetch(base + route, { method, headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) }, ...(value ? { body: JSON.stringify(value) } : {}) });

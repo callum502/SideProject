@@ -10,7 +10,7 @@ test('guide, uploaded images and all annotation types persist; stale writes and 
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'sideproj-test-'));
   let app, cookie;
   const fetch = (url, options = {}) => globalThis.fetch(url, { ...options, headers: { ...options.headers, ...(cookie ? { Cookie: cookie } : {}) } });
-  const start = async () => { app = await createGuideServer({ dataDir, auth: fakeAuth() }); await new Promise(r => app.server.listen(0, '127.0.0.1', r)); const base = 'http://127.0.0.1:' + app.server.address().port; const login = await globalThis.fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@example.com', password: 'test-password' }) }); cookie = login.headers.get('set-cookie').split(';')[0]; return base; };
+  const start = async () => { app = await createGuideServer({ dataDir, contentStore: null, auth: fakeAuth() }); await new Promise(r => app.server.listen(0, '127.0.0.1', r)); const base = 'http://127.0.0.1:' + app.server.address().port; const login = await globalThis.fetch(base + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: 'admin@example.com', password: 'test-password' }) }); cookie = login.headers.get('set-cookie').split(';')[0]; return base; };
   const stop = async () => { app.server.closeAllConnections(); await new Promise(r => app.server.close(r)); };
   try {
     let base = await start();

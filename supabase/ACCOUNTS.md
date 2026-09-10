@@ -1,6 +1,6 @@
 # Individual accounts setup
 
-The app now uses Supabase Auth for email/password accounts and reads trusted roles from PostgreSQL. Climbing content and uploads still live in `data/`; moving those is the next step. The old Admin/Password and Contributor/Password credentials no longer work.
+The app now uses Supabase Auth for email/password accounts and reads trusted roles from PostgreSQL. Climbing content can now use PostgreSQL; see [CONTENT.md](CONTENT.md) to migrate an existing JSON installation. Upload files remain local until the Storage step. The old Admin/Password and Contributor/Password credentials no longer work.
 
 ## 1. Apply the account migration
 
