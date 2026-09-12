@@ -71,3 +71,10 @@
 .annotation-toolbar .annotation-tool.active{outline:2px solid currentColor;outline-offset:2px}
 
 .problem-media-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.problem-page .section-heading.photos-heading{flex-wrap:wrap}.problem-media-actions .secondary{white-space:normal;overflow-wrap:anywhere;text-align:center}
+
+
+.photo-dropdown{position:relative}.photo-dropdown-options{position:absolute;right:0;top:calc(100% + 8px);z-index:5;width:min(350px,75vw);display:flex;flex-direction:column;gap:8px;padding:10px;background:var(--ink);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px #0005}.photo-dropdown-options .secondary{width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left;justify-content:flex-start}
+
+/* Let problem media menus extend past the card while preserving rounded banner corners. */
+.detail-panel:has(.problem-page){overflow:visible}
+.problem-page>.detail-banner{border-radius:11px 11px 0 0}
