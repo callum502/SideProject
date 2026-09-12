@@ -1,7 +1,6 @@
 ﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAuth } from '../auth.mjs';
-import { claimLegacyAdmin } from '../ownership.mjs';
 
 const env = { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'public-test-key' };
 function fixture({ confirmed = true } = {}) {
@@ -62,15 +61,4 @@ test('missing config and rejected authentication fail closed', async () => {
   await assert.rejects(auth.login({ email: 'a', password: 'b' }), error => error.status === 503);
   const rejected = createAuth({ env, fetchImpl: async () => new Response(JSON.stringify({ msg: 'Invalid login credentials' }), { status: 400 }) });
   await assert.rejects(rejected.login({ email: 'a', password: 'b' }), error => error.status === 401);
-});
-
-test('legacy ownership migration preserves contributor and individual authors', () => {
-  const guide = { locations: [{ createdBy: 'Admin', boulders: [{ createdBy: 'Contributor', problems: [{ createdBy: 'Admin' }], images: [{ createdBy: 'other-uuid' }] }] }] };
-  assert.equal(claimLegacyAdmin(guide, { id: 'admin-uuid', name: 'Callum' }), true);
-  assert.equal(guide.locations[0].createdBy, 'admin-uuid');
-  assert.equal(guide.locations[0].createdByName, 'Callum');
-  assert.equal(guide.locations[0].boulders[0].createdBy, 'Contributor');
-  assert.equal(guide.locations[0].boulders[0].problems[0].createdBy, 'admin-uuid');
-  assert.equal(guide.locations[0].boulders[0].images[0].createdBy, 'other-uuid');
-  assert.equal(claimLegacyAdmin(guide, { id: 'admin-uuid', name: 'Callum' }), false);
 });

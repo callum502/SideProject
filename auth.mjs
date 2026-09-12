@@ -28,7 +28,6 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     return { id: account.id, email: account.email, name: profile.display_name, role: profile.role };
   }
   return {
-    legacyAdminEmail: env.LEGACY_ADMIN_EMAIL?.toLowerCase(),
     async login(values) {
       if (typeof values.email !== 'string' || typeof values.password !== 'string') throw fail('Enter your email and password.', 401);
       const session = await request('/auth/v1/token?grant_type=password', { email: values.email.trim(), password: values.password });

@@ -1,6 +1,5 @@
-﻿import { loadEnv } from 'vite';
-import { stat } from 'node:fs/promises';
-import path from 'node:path';
+import { mediaReference, mediaUrl } from './media-reference.mjs';
+import { loadEnv } from 'vite';
 import { isDeepStrictEqual } from 'node:util';
 import { authorizeChanges } from './ownership.mjs';
 
@@ -13,8 +12,7 @@ export function toGuide(snapshot) {
   const names = new Map(snapshot.profiles.map(p => [p.id, p.display_name]));
   const owner = row => ({ createdBy: row.created_by, createdByName: names.get(row.created_by) || 'Climber' });
   const media = row => {
-    if (row.storage_bucket !== 'local' || !/^[a-f0-9-]+\.(png|jpg|webp|mp4|webm|mov)$/.test(row.storage_path)) throw fail('This media needs the Storage integration before it can be displayed.', 503);
-    return { id: row.id, name: row.name, url: `/uploads/${row.storage_path}`, ...owner(row), ...(row.kind === 'image' ? { annotations: row.annotations } : {}) };
+    return { id: row.id, name: row.name, url: mediaUrl(row.storage_bucket, row.storage_path), ...owner(row), ...(row.kind === 'image' ? { annotations: row.annotations } : {}) };
   };
   return { revision: snapshot.revision, locations: snapshot.locations.map(l => ({
     id: l.id, name: l.name, region: l.region, latitude: String(l.latitude), longitude: String(l.longitude), approach: l.approach_notes, ...owner(l),
@@ -32,7 +30,7 @@ export function toGuide(snapshot) {
   })) };
 }
 
-export async function toRows(guide, dataDir, previousMedia = []) {
+export async function toRows(guide, previousMedia = [], storage = null, token) {
   const rows = Object.fromEntries(tables.map(table => [table, []]));
   for (const l of guide.locations) {
     if (!l.latitude.trim() || !l.longitude.trim()) throw fail('Latitude and longitude are required.');
@@ -40,15 +38,19 @@ export async function toRows(guide, dataDir, previousMedia = []) {
     for (const b of l.boulders) {
       rows.boulders.push({ id: b.id, location_id: l.id, name: b.name, finding_notes: b.notes, created_by: b.createdBy });
       for (const [kind, items] of [['image', b.images], ['video', b.videos || []]]) for (const m of items) {
-        if (!/^\/uploads\/[a-f0-9-]+\.(png|jpg|webp|mp4|webm|mov)$/.test(m.url)) throw fail('Invalid uploaded file.');
-        const storage_path = m.url.slice('/uploads/'.length);
-        const old = previousMedia.find(row => row.id === m.id && row.storage_bucket === 'local' && row.storage_path === storage_path);
+        const ref = mediaReference(m.url);
+        if (!ref) throw fail('Invalid uploaded file.');
+        const storage_path = ref.path;
+        const old = previousMedia.find(row => row.id === m.id && row.storage_bucket === ref.bucket && row.storage_path === storage_path);
         let size = old?.size_bytes;
+        const mime = mimeTypes[storage_path.split('.').pop()];
         if (!size) {
-          try { const info = await stat(path.join(dataDir, 'uploads', storage_path)); if (!info.isFile()) throw new Error(); size = info.size; }
-          catch { throw fail('An uploaded file is missing. Please upload it again.'); }
+          if (!storage) throw fail('Enable Supabase Storage before saving uploads.',503);
+          const info = await storage.stat(storage_path, token);
+          if (info.mime !== mime) throw fail('Uploaded file type does not match.');
+          size = info.size;
         }
-        rows.media.push({ id: m.id, boulder_id: b.id, name: m.name, kind, storage_bucket: 'local', storage_path, mime_type: mimeTypes[storage_path.split('.').pop()], size_bytes: size, annotations: kind === 'image' ? m.annotations : [], created_by: m.createdBy });
+        rows.media.push({ id: m.id, boulder_id: b.id, name: m.name, kind, storage_bucket: ref.bucket, storage_path, mime_type: mime, size_bytes: size, annotations: kind === 'image' ? m.annotations : [], created_by: m.createdBy });
       }
       for (const p of b.problems || []) {
         rows.problems.push({ id: p.id, boulder_id: b.id, name: p.name, grade: p.grade, description: p.description, created_by: p.createdBy });
@@ -76,9 +78,7 @@ export function contentOperations(before, after) {
   return operations;
 }
 
-export function createContentStore({ env = { ...loadEnv('development', process.cwd(), ''), ...process.env }, fetchImpl = fetch } = {}) {
-  if (env.CONTENT_STORE === 'json') return null;
-  if (env.CONTENT_STORE && env.CONTENT_STORE !== 'supabase') throw new Error('CONTENT_STORE must be json or supabase.');
+export function createContentStore({ env = { ...loadEnv('development', process.cwd(), ''), ...process.env }, fetchImpl = fetch, storage = null } = {}) {
   async function rpc(name, values = {}, token) {
     if (!env.SUPABASE_URL || !env.SUPABASE_PUBLISHABLE_KEY) throw fail('Configure Supabase before loading content.', 503);
     let response;
@@ -97,11 +97,11 @@ export function createContentStore({ env = { ...loadEnv('development', process.c
   }
   return {
     async read(token) { return toGuide(await rpc('read_content', {}, token)); },
-    async save(incoming, user, token, dataDir) {
+    async save(incoming, user, token) {
       const snapshot = await rpc('read_content', {}, token);
       if (incoming.revision !== snapshot.revision) throw fail('This guide changed. Reload before saving again.', 409);
       authorizeChanges(toGuide(snapshot), incoming, user);
-      const rows = await toRows(incoming, dataDir, snapshot.media);
+      const rows = await toRows(incoming, snapshot.media, storage, token);
       const operations = contentOperations(snapshot, rows);
       return toGuide(await rpc('save_content', { expected_revision: incoming.revision, operations }, token));
     },

@@ -10,6 +10,6 @@ If you are curious about the name, a "project" is slang in bouldering communitie
 
 
 
-## Local setup and database content
+## Development setup
 
-Run `npm run dev` from this folder. Supabase account setup is documented in [ACCOUNTS.md](supabase/ACCOUNTS.md). To move existing JSON climbing content into PostgreSQL, follow [CONTENT.md](supabase/CONTENT.md). Configure `.env.local` from `.env.example`; `CONTENT_STORE=supabase` selects the database API, while `json` is the legacy local mode. Photos and videos still live locally until the Storage migration.
+Copy `.env.example` to `.env.local` and provide your Supabase URL and publishable key. Run `npm run dev` from this folder. Accounts, content and uploads always use Supabase. See [Supabase setup](supabase/README.md) for schema and account configuration. Run `npm test` and `npm run build` to check changes.

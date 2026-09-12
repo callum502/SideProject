@@ -1,6 +1,6 @@
 # Individual accounts setup
 
-The app now uses Supabase Auth for email/password accounts and reads trusted roles from PostgreSQL. Climbing content can now use PostgreSQL; see [CONTENT.md](CONTENT.md) to migrate an existing JSON installation. Upload files remain local until the Storage step. The old Admin/Password and Contributor/Password credentials no longer work.
+The app now uses Supabase Auth for email/password accounts and reads trusted roles from PostgreSQL. Content uses PostgreSQL and uploaded files use Supabase Storage.
 
 ## 1. Apply the account migration
 
@@ -21,7 +21,7 @@ Supabase's default email sender is restricted to project-team addresses and has 
 
 ## 3. Start the app and create your account
 
-Copy `.env.example` to `.env.local` and fill in your project URL, publishable key and legacy admin email. Existing installations can keep their configured `.env.local`. This file is ignored by Git. No secret/service-role key is used.
+Copy `.env.example` to `.env.local` and fill in your project URL and publishable key. Existing installations can keep their configured `.env.local`. This file is ignored by Git. No secret/service-role key is used.
 
 From the project folder run `npm run dev` (restart an already running server). Open http://127.0.0.1:5173, choose **Create an account**, and use **you@example.com** with your own password. Enter the emailed confirmation code. Use your own email address in place of this example.
 
@@ -29,7 +29,7 @@ From the project folder run `npm run dev` (restart an already running server). O
 
 Replace `you@example.com` in `set-admin.sql` with your confirmed email, then run the query in the SQL Editor. It only grants the role after that email is confirmed. Then log in to SideProj. You should see **admin** next to your name.
 
-On that login, the server backs up the JSON guide to `data/guide.json.before-individual-accounts.bak` and assigns existing `Admin` submissions to your unique account ID. Old shared `Contributor` submissions remain labelled Contributor and editable by admins until their individual owners can be identified. New contributors can add boulders/problems anywhere, but can edit only their own submissions. Display names do not control permissions.
+New contributors can add boulders/problems anywhere, but can edit only their own submissions. Display names do not control permissions.
 
 ## Quick checks
 
@@ -40,4 +40,4 @@ On that login, the server backs up the JSON guide to `data/guide.json.before-ind
 - Forgot password: sends a code; entering it with a new password enables login with the new password.
 - Logout: returns to the login screen and invalidates the app session.
 
-Passwords go to Supabase over HTTPS. Browser sessions use an HttpOnly, SameSite cookie; Supabase tokens stay in server memory. Sessions refresh while in use, last at most 24 hours, and end on server restart. Permissions are re-read for authenticated API requests, so changing a database role takes effect without creating a new account. This server remains bound to localhost; public deployment and shared climbing storage are separate steps.
+Passwords go to Supabase over HTTPS. Browser sessions use an HttpOnly, SameSite cookie; Supabase tokens stay in server memory. Sessions refresh while in use, last at most 24 hours, and end on server restart. Permissions are re-read for authenticated API requests, so changing a database role takes effect without creating a new account. This server remains bound to localhost; public deployment is a separate step.

@@ -3,18 +3,6 @@ import { isDeepStrictEqual } from 'node:util';
 const children = { locations: ['boulders'], boulders: ['problems', 'images', 'videos'], problems: [], images: [], videos: [] };
 const denied = () => { throw Object.assign(new Error('You can only edit or remove your own submissions. Parent removal cannot delete other contributors’ submissions.'), { status: 403 }); };
 
-export function assignLegacyOwners(guide) {
-  let changed = false;
-  function visit(items, type) {
-    for (const item of items || []) {
-      if (!item.createdBy) { item.createdBy = 'Admin'; changed = true; }
-      for (const child of children[type]) visit(item[child], child);
-    }
-  }
-  visit(guide.locations, 'locations');
-  return changed;
-}
-
 export function authorizeChanges(current, incoming, user) {
   const allOld = new Set();
   function index(items, type) { for (const item of items || []) { allOld.add(item.id); for (const child of children[type]) index(item[child], child); } }
@@ -46,16 +34,4 @@ export function authorizeChanges(current, incoming, user) {
     }
   }
   visit(current.locations, incoming.locations, 'locations');
-}
-
-export function claimLegacyAdmin(guide, user) {
-  let changed = false;
-  function visit(items, type) {
-    for (const item of items || []) {
-      if (item.createdBy === 'Admin') { item.createdBy = user.id; item.createdByName = user.name; changed = true; }
-      for (const child of children[type]) visit(item[child], child);
-    }
-  }
-  visit(guide.locations, 'locations');
-  return changed;
 }
