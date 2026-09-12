@@ -22,7 +22,7 @@ async function api(path, options) {
 function Modal({ title, children, close }) {
   const ref = useRef();
   useEffect(() => { ref.current.showModal(); }, []);
-  return <dialog ref={ref} onCancel={e => { e.preventDefault(); close(); }} onClick={e => { if (e.target === ref.current) close(); }}><div className="modal-heading"><h2>{title}</h2><button className="icon-button" aria-label="Close" onClick={close}>×</button></div>{children}</dialog>;
+  return <dialog ref={ref} onCancel={e => e.preventDefault()}><div className="modal-heading"><h2>{title}</h2><button className="icon-button" aria-label="Close" onClick={close}>×</button></div>{children}</dialog>;
 }
 function App() {
   const videoMaxMB = 100;
