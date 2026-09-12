@@ -26,13 +26,27 @@ export function ProblemForm({ boulder, problem, save, busy, error, cancel }) {
   </form>;
 }
 
-export function ProblemPage({ problem, boulder, edit, remove, busy, Shapes, navigation, canEdit, annotate }) {
+export function ProblemPage({ problem, boulder, edit, remove, busy, Shapes, navigation, canEdit, annotate, upload, uploadVideos, attach }) {
   if (!problem) return <div className="welcome">{navigation}<h2>Problem not found</h2><p>Return to the boulder to choose another problem.</p></div>;
   const images = boulder.images.filter(i => problem.imageIds.includes(i.id));
   const videos = (boulder.videos || []).filter(v => problem.videoIds.includes(v.id));
   return <article className="problem-page"><div className="detail-banner problem-banner">{navigation}<div className="eyebrow">PROBLEM</div><h1>{problem.grade} - {problem.name}</h1><p className="created-by">Created by {problem.createdByName || problem.createdBy || 'Climber'}</p><div className="banner-bottom"><span>{images.length} {images.length === 1 ? 'photo' : 'photos'} · {videos.length} {videos.length === 1 ? 'video' : 'videos'}</span><div className="location-actions"><button disabled={busy || !canEdit} onClick={edit}>Edit problem</button><button className="banner-remove" disabled={busy || !canEdit} onClick={remove}>Remove problem</button></div></div></div>
     <div className="notes-block"><h3>Description</h3><p className="preserve">{problem.description}</p></div>
-    <div className="photos-heading"><h3>Photos & Topos</h3></div>{images.length ? <div className="photo-grid">{images.map(image => <figure className="problem-photo" key={image.id}><div className="photo-thumb"><img src={image.url} alt={image.name}/><Shapes items={problem.photoAnnotations?.[image.id] || []}/></div><figcaption><a href={image.url} target="_blank" rel="noreferrer">{image.name}</a>{canEdit && <button className="secondary small" disabled={busy} onClick={() => annotate(image)}>Annotate</button>}</figcaption></figure>)}</div> : <p className="problem-empty">No photos linked yet.</p>}
-    <div className="photos-heading"><h3>Beta videos</h3></div>{videos.length ? <div className="video-grid">{videos.map(video => <figure className="video-card" key={video.id}><video controls playsInline preload="metadata" src={video.url} aria-label={video.name}/><figcaption>{video.name}<a href={`${video.url}?download=${encodeURIComponent(video.name)}`} download={video.name}>Download</a></figcaption></figure>)}</div> : <p className="problem-empty">No videos linked yet.</p>}
+    <div className="section-heading photos-heading"><div><h3>Photos & Topos</h3><p>JPEG, PNG, WebP · up to 8 MB each</p></div>{canEdit && <div className="problem-media-actions"><label className={`secondary small upload ${busy ? 'disabled' : ''}`}>+ Upload images<input type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={upload}/></label><button className="secondary small" disabled={busy} onClick={() => attach('photo')}>Add photo from {boulder.name} page</button></div>}</div>{images.length ? <div className="photo-grid">{images.map(image => <figure className="problem-photo" key={image.id}><div className="photo-thumb"><img src={image.url} alt={image.name}/><Shapes items={problem.photoAnnotations?.[image.id] || []}/></div><figcaption><a href={image.url} target="_blank" rel="noreferrer">{image.name}</a>{canEdit && <button className="secondary small" disabled={busy} onClick={() => annotate(image)}>Annotate</button>}</figcaption></figure>)}</div> : <p className="problem-empty">No photos yet. Upload photos here or add existing photos from the boulder.</p>}
+    <div className="section-heading photos-heading"><div><h3>Beta videos</h3><p>MP4, WebM, or MOV · up to 100 MB each</p></div>{canEdit && <div className="problem-media-actions"><label className={`secondary small upload ${busy ? 'disabled' : ''}`}>+ Upload video<input type="file" accept="video/mp4,video/webm,video/quicktime,.mov" multiple disabled={busy} onChange={uploadVideos}/></label><button className="secondary small" disabled={busy} onClick={() => attach('video')}>Add video from {boulder.name} page</button></div>}</div>{videos.length ? <div className="video-grid">{videos.map(video => <figure className="video-card" key={video.id}><video controls playsInline preload="metadata" src={video.url} aria-label={video.name}/><figcaption>{video.name}<a href={`${video.url}?download=${encodeURIComponent(video.name)}`} download={video.name}>Download</a></figcaption></figure>)}</div> : <p className="problem-empty">No videos yet. Upload videos here or add existing videos from the boulder.</p>}
   </article>;
+}
+
+export function AttachMediaForm({ boulder, problem, kind, busy, error, cancel, save }) {
+  const photo = kind === 'photo', field = photo ? 'imageIds' : 'videoIds';
+  const available = (photo ? boulder.images : boulder.videos || []).filter(item => !problem[field].includes(item.id));
+  const [selected, setSelected] = React.useState([]);
+  return <form onSubmit={e => { e.preventDefault(); if (selected.length) save(field, selected); }}>
+    {error && <p className="error" role="alert">{error}</p>}
+    <fieldset className="media-picker"><legend>Choose {photo ? 'photos' : 'videos'} from {boulder.name}</legend>
+      {available.map(item => <label key={item.id}><input type="checkbox" disabled={busy} checked={selected.includes(item.id)} onChange={e => setSelected(old => e.target.checked ? [...old, item.id] : old.filter(id => id !== item.id))}/>{photo && <img src={item.url} alt=""/>}<span>{item.name}</span></label>)}
+      {!available.length && <p>No more {photo ? 'photos' : 'videos'} to add. Upload a new file or use one already attached to this problem.</p>}
+    </fieldset>
+    <div className="form-actions"><button type="button" className="secondary" disabled={busy} onClick={cancel}>Cancel</button><button className="primary" disabled={busy || !selected.length}>{busy ? 'Adding...' : 'Add selected'}</button></div>
+  </form>;
 }

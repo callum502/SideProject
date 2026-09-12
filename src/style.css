@@ -69,3 +69,5 @@
 .annotation-toolbar .annotation-tool-start{border-bottom:3px solid #35df79}
 .annotation-toolbar .annotation-tool-box{border-bottom:3px solid #ff2929}
 .annotation-toolbar .annotation-tool.active{outline:2px solid currentColor;outline-offset:2px}
+
+.problem-media-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.problem-page .section-heading.photos-heading{flex-wrap:wrap}.problem-media-actions .secondary{white-space:normal;overflow-wrap:anywhere;text-align:center}
