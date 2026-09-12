@@ -1,5 +1,7 @@
 import React from 'react';
 
+const grades = ['4','5','5+','6A/6A+','6B/6B+','6C/6C+','7A','7A+','7B/7B+','7C','7C+','8A','8A+','8B','8B+','8C','8C+','9A','9A+'].map((font, i) => `V${i} (${font})`);
+
 export const problemHref = (location, boulder, problem) => `#${new URLSearchParams({ location, boulder, ...(problem ? { problem } : {}) })}`;
 
 export function ProblemList({ place, boulder, add, busy }) {
@@ -18,7 +20,7 @@ export function ProblemForm({ boulder, problem, save, busy, error, cancel }) {
   }
   return <form onSubmit={submit}>{error && <p className="error" role="alert">{error}</p>}
     <label>Problem name <span aria-hidden="true">*</span><input name="name" required autoFocus maxLength={120} defaultValue={problem?.name || ''}/></label>
-    <label>Grade <span aria-hidden="true">*</span><input name="grade" required maxLength={40} placeholder="e.g. 6A or V3" defaultValue={problem?.grade || ''}/></label>
+    <label>Grade <span aria-hidden="true">*</span><select name="grade" required defaultValue={problem?.grade || ''}><option value="" disabled>Select a grade</option>{problem?.grade && !grades.includes(problem.grade) && <option value={problem.grade}>{problem.grade} (current)</option>}{grades.map(grade => <option key={grade} value={grade}>{grade}</option>)}</select></label>
     <label>Description <span aria-hidden="true">*</span><textarea name="description" required maxLength={10000} rows={5} placeholder="Describe the start, the line, key moves, and finish..." defaultValue={problem?.description || ''}/></label>
     <fieldset className="media-picker"><legend>Link photos from this boulder</legend>{boulder.images.length ? boulder.images.map(image => <label key={image.id}><input type="checkbox" name="imageIds" value={image.id} defaultChecked={problem?.imageIds.includes(image.id)}/><img src={image.url} alt=""/><span>{image.name}</span></label>) : <p>Upload photos on the boulder page to link them here.</p>}</fieldset>
     <fieldset className="media-picker"><legend>Link beta videos from this boulder</legend>{boulder.videos?.length ? boulder.videos.map(video => <label key={video.id}><input type="checkbox" name="videoIds" value={video.id} defaultChecked={problem?.videoIds.includes(video.id)}/><span>{video.name}</span></label>) : <p>Upload videos on the boulder page to link them here.</p>}</fieldset>

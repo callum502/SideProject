@@ -17,7 +17,7 @@ export function toGuide(snapshot) {
   return { revision: snapshot.revision, locations: snapshot.locations.map(l => ({
     id: l.id, name: l.name, region: l.region, latitude: String(l.latitude), longitude: String(l.longitude), approach: l.approach_notes, ...owner(l),
     boulders: snapshot.boulders.filter(b => b.location_id === l.id).map(b => ({
-      id: b.id, name: b.name, notes: b.finding_notes, ...owner(b),
+      id: b.id, name: b.name, notes: b.finding_notes, otherNotes: b.other_notes || '', ...owner(b),
       images: snapshot.media.filter(m => m.boulder_id === b.id && m.kind === 'image').map(media),
       videos: snapshot.media.filter(m => m.boulder_id === b.id && m.kind === 'video').map(media),
       problems: snapshot.problems.filter(p => p.boulder_id === b.id).map(p => {
@@ -36,7 +36,7 @@ export async function toRows(guide, previousMedia = [], storage = null, token) {
     if (!l.latitude.trim() || !l.longitude.trim()) throw fail('Latitude and longitude are required.');
     rows.locations.push({ id: l.id, name: l.name, region: l.region, latitude: +l.latitude, longitude: +l.longitude, approach_notes: l.approach, created_by: l.createdBy });
     for (const b of l.boulders) {
-      rows.boulders.push({ id: b.id, location_id: l.id, name: b.name, finding_notes: b.notes, created_by: b.createdBy });
+      rows.boulders.push({ id: b.id, location_id: l.id, name: b.name, finding_notes: b.notes, other_notes: b.otherNotes || '', created_by: b.createdBy });
       for (const [kind, items] of [['image', b.images], ['video', b.videos || []]]) for (const m of items) {
         const ref = mediaReference(m.url);
         if (!ref) throw fail('Invalid uploaded file.');

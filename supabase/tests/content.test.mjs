@@ -23,7 +23,7 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
       CREATE TABLE storage.objects(id uuid DEFAULT gen_random_uuid(),bucket_id text,name text,owner_id text,metadata jsonb,UNIQUE(bucket_id,name));
       ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
       GRANT USAGE ON SCHEMA storage TO authenticated;GRANT SELECT,INSERT ON storage.objects TO authenticated;`);
-    for (const name of ['20260909000100_initial_schema.sql','20260909000200_account_access.sql','20260910000100_content_api.sql','20260912000100_media_storage.sql','20260912000200_retire_local_storage.sql','20260912000300_problem_annotations.sql']) await db.exec(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+    for (const name of ['20260909000100_initial_schema.sql','20260909000200_account_access.sql','20260910000100_content_api.sql','20260912000100_media_storage.sql','20260912000200_retire_local_storage.sql','20260912000300_problem_annotations.sql','20260912000400_boulder_notes.sql']) await db.exec(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
     await db.exec(`INSERT INTO auth.users(id) VALUES ('${a}'),('${b}'),('${admin}'); UPDATE private.user_roles SET role='admin' WHERE user_id='${admin}';`);
     // Simulate PostgREST's transaction and authenticated role, without external network calls.
     async function rpc(name, values, user) {
@@ -46,7 +46,7 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
     guide=await store.save(guide,userA,a);
     assert.equal(guide.locations[0].createdBy,a);
     const stale=structuredClone(guide);
-    guide.locations[0].boulders.push({id:boulderId,name:'Boulder',notes:'Beside the tree',images:[],videos:[],problems:[]});
+    guide.locations[0].boulders.push({id:boulderId,name:'Boulder',notes:'Beside the tree',otherNotes:'Granite; place mats below the lip',images:[],videos:[],problems:[]});
     guide=await store.save(guide,userB,b);
     assert.equal(guide.locations[0].boulders[0].createdBy,b);
     await assert.rejects(store.save(stale,userA,a),error=>error.status===409);
@@ -83,6 +83,9 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
     guide.locations[0].boulders[0].problems[1].photoAnnotations={};
     guide=await store.save(guide,userA,a);
     assert.deepEqual(guide.locations[0].boulders[0].problems[0].photoAnnotations[imageId],marks);
+    assert.equal(guide.locations[0].boulders[0].otherNotes,'Granite; place mats below the lip');
+    const emptyDirections=structuredClone(guide);emptyDirections.locations[0].boulders[0].notes='   ';
+    await assert.rejects(store.save(emptyDirections,userB,b),error=>error.status===400);
     const after=await rpc('read_content',{},b);
     await assert.rejects(rpc('save_content',{expected_revision:after.revision,operations:[{table:'private.user_roles',action:'insert',row:{}}]},b));
     // A direct dashboard change must invalidate the app's previous snapshot.

@@ -35,7 +35,7 @@ function validate(data) {
     if (l.latitude && (!Number.isFinite(+l.latitude) || Math.abs(+l.latitude) > 90 || !Number.isFinite(+l.longitude) || Math.abs(+l.longitude) > 180)) throw fail('Coordinates are outside the valid range.');
     for (const b of l.boulders) {
       id(b.id);
-      if (!text(b.name, 120, true) || !text(b.notes, 10000) || !Array.isArray(b.images) || b.images.length > 200) throw fail('Invalid boulder.');
+      if (!text(b.name, 120, true) || !text(b.notes, 10000) || (b.otherNotes !== undefined && !text(b.otherNotes, 10000)) || !Array.isArray(b.images) || b.images.length > 200) throw fail('Invalid boulder.');
       if (b.videos !== undefined && (!Array.isArray(b.videos) || b.videos.length > 200)) throw fail('Invalid videos.');
       if (b.problems !== undefined && (!Array.isArray(b.problems) || b.problems.length > 1000)) throw fail('Invalid problems.');
       for (const problem of b.problems || []) {
