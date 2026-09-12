@@ -13,3 +13,13 @@ If you are curious about the name, a "project" is slang in bouldering communitie
 ## Development setup
 
 Copy `.env.example` to `.env.local` and provide your Supabase URL and publishable key. Run `npm run dev` from this folder. Accounts, content and uploads always use Supabase. See [Supabase setup](supabase/README.md) for schema and account configuration. Run `npm test` and `npm run build` to check changes.
+
+## Render deployment
+
+Use a Node Web Service with build command `npm ci --include=dev && npm run build` and start command `npm run preview`.
+
+In Render's Environment settings, set `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` to the values from your local environment, and `NODE_ENV=production`. Do not commit `.env.local` or use a service-role/secret key. Set `APP_ORIGINS=https://sideproj.rocks,https://www.sideproj.rocks` when attaching those custom domains. Render's own HTTPS URL is allowed automatically; other hosts and cross-origin requests are rejected.
+
+Set the health check path to `/healthz`. This checks the web server, not Supabase connectivity. Production listens on `0.0.0.0` using Render's `PORT` and sets Secure login cookies. Render terminates public HTTPS before forwarding requests to Node.
+
+Keep one instance: sessions are currently stored in server memory, so restarts/deploys require signing in again. This deployment configuration does not add CAPTCHA, account/upload rate limits, per-user storage quotas or upload concurrency limits; those remain separate work before an unrestricted public launch.

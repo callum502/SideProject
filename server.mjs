@@ -2,6 +2,7 @@ import { createStorage } from './storage.mjs';
 import { mediaReference, MAX_VIDEO_BYTES } from './media-reference.mjs';
 import { createContentStore } from './content-store.mjs';
 import { createAuth } from './auth.mjs';
+import { deploymentConfig } from './deployment.mjs';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
@@ -56,16 +57,19 @@ async function body(req, limit) {
   return Buffer.concat(chunks);
 }
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.json': 'application/json' };
-export async function createGuideServer({ distDir = path.join(root, 'dist'), live = false, auth = createAuth(), storage = createStorage(), contentStore = createContentStore({ storage }) } = {}) {
+export async function createGuideServer({ distDir = path.join(root, 'dist'), live = false, auth = createAuth(), storage = createStorage(), contentStore = createContentStore({ storage }), deployment = deploymentConfig() } = {}) {
   const sessions = new Map();
   const clients = new Set();
   const server = http.createServer(async (req, res) => {
     const json = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
     try {
-      // This local prototype accepts same-origin writes only and binds to loopback.
-      if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) throw fail('Cross-origin requests are not allowed.', 403);
-      if (!/^(localhost|127\.0\.0\.1)(:\d+)?$/.test(req.headers.host || '')) throw fail('Host not allowed.', 403);
       const url = new URL(req.url, 'http://localhost');
+      // Render's internal health probes do not need a public Host header.
+      if (url.pathname === '/healthz' && ['GET', 'HEAD'].includes(req.method)) {
+        res.writeHead(200, { 'Content-Type': 'text/plain', 'Cache-Control': 'no-store' });
+        return res.end(req.method === 'HEAD' ? undefined : 'ok');
+      }
+      if (!deployment.allows(req.headers.host, req.headers.origin)) throw fail('Host or origin not allowed.', 403);
       const token = (req.headers.cookie || '').split(';').map(c => c.trim()).find(c => c.startsWith('sideproj_session='))?.slice('sideproj_session='.length);
       const session = sessions.get(token);
       let user = null;
@@ -87,11 +91,11 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         if (token) sessions.delete(token);
         for (const [key, value] of sessions) if (value.cookieExpires <= Date.now()) sessions.delete(key);
         const nextToken = randomUUID(); sessions.set(nextToken, { ...nextSession, cookieExpires: Date.now() + 86400000 });
-        res.setHeader('Set-Cookie', 'sideproj_session=' + nextToken + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400');
+        res.setHeader('Set-Cookie', 'sideproj_session=' + nextToken + '; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400' + deployment.secureCookie);
         return json(200, { user: identity });
       }
       if (url.pathname === '/api/logout' && req.method === 'POST') {
-        sessions.delete(token); res.setHeader('Set-Cookie', 'sideproj_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0');
+        sessions.delete(token); res.setHeader('Set-Cookie', 'sideproj_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' + deployment.secureCookie);
         // The local session is invalidated even if Supabase is temporarily unavailable.
         await auth.logout(session).catch(() => {});
         return json(200, { user: null });
@@ -151,12 +155,13 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const live = !process.argv.includes('--preview');
-  const app = await createGuideServer({ live });
+  const deployment = deploymentConfig();
+  const app = await createGuideServer({ live, deployment });
   if (live) {
     const { build } = await import('vite');
     const watcher = await build({ root, resolve: { preserveSymlinks: true }, build: { watch: {}, minify: false } });
     await new Promise((resolve, reject) => { watcher.on('event', event => { if (event.code === 'END') { app.reload(); resolve(); } if (event.code === 'ERROR') { console.error(event.error); reject(event.error); } }); });
   }
   const port = Number(process.env.PORT || 5173);
-  app.server.listen(port, '127.0.0.1', () => console.log(`SideProj running at http://127.0.0.1:${port}/`));
+  app.server.listen(port, deployment.host, () => console.log(`SideProj running at http://${deployment.host}:${port}/`));
 }
