@@ -12,6 +12,18 @@ import { fileURLToPath } from 'node:url';
 const root = path.dirname(fileURLToPath(import.meta.url));
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const text = (value, max, required = false) => typeof value === 'string' && value.length <= max && (!required || value.trim().length > 0);
+function validateAnnotations(annotations) {
+ if (!Array.isArray(annotations) || annotations.length > 1000) throw fail('Invalid annotations.');
+        const coord = n => Number.isFinite(n) && n >= 0 && n <= 1000;
+        for (const a of annotations) {
+          if (!a || typeof a !== 'object') throw fail('Invalid annotation.');
+          if (!['box', 'line', 'freehand', 'arrow'].includes(a.type)) throw fail('Unknown annotation tool.');
+          if (a.color !== undefined && !['green', 'red'].includes(a.color)) throw fail('Unknown annotation colour.');
+          if (a.type === 'freehand') {
+            if (!Array.isArray(a.points) || a.points.length > 20000 || !a.points.every(p => Array.isArray(p) && p.length === 2 && p.every(coord))) throw fail('Invalid freehand annotation.');
+          } else if (![a.x, a.y, a.x2, a.y2].every(coord)) throw fail('Invalid annotation coordinates.');
+        }
+}
 function validate(data) {
   if (!Number.isSafeInteger(data.revision) || !Array.isArray(data.locations) || data.locations.length > 1000) throw fail('Invalid guide.');
   const ids = new Set();
@@ -29,6 +41,12 @@ function validate(data) {
       for (const problem of b.problems || []) {
         id(problem.id);
         if (!text(problem.name, 120, true) || !text(problem.grade, 40, true) || !text(problem.description, 10000, true)) throw fail('A problem needs a name, grade, and description.');
+        if (problem.photoAnnotations !== undefined) {
+          if (!problem.photoAnnotations || typeof problem.photoAnnotations !== 'object' || Array.isArray(problem.photoAnnotations) || Object.keys(problem.photoAnnotations).length > 200) throw fail('Invalid problem annotations.');
+          for (const [imageId, annotations] of Object.entries(problem.photoAnnotations)) {
+            validateAnnotations(annotations);
+          }
+        }
         for (const [field, media] of [['imageIds', b.images], ['videoIds', b.videos || []]]) {
           if (!Array.isArray(problem[field]) || problem[field].length > 200 || new Set(problem[field]).size !== problem[field].length || !problem[field].every(id => media.some(item => item.id === id))) throw fail('Problem attachments must belong to this boulder.');
         }
@@ -40,13 +58,7 @@ function validate(data) {
       for (const image of b.images) {
         id(image.id);
         if (!text(image.name, 255, true) || (!mediaReference(image.url) || !/\.(png|jpg|webp)$/.test(image.url)) || !Array.isArray(image.annotations) || image.annotations.length > 1000) throw fail('Invalid image.');
-        const coord = n => Number.isFinite(n) && n >= 0 && n <= 1000;
-        for (const a of image.annotations) {
-          if (!['box', 'line', 'freehand'].includes(a.type)) throw fail('Unknown annotation tool.');
-          if (a.type === 'freehand') {
-            if (!Array.isArray(a.points) || a.points.length > 20000 || !a.points.every(p => Array.isArray(p) && p.length === 2 && p.every(coord))) throw fail('Invalid freehand annotation.');
-          } else if (![a.x, a.y, a.x2, a.y2].every(coord)) throw fail('Invalid annotation coordinates.');
-        }
+        validateAnnotations(image.annotations);
       }
     }
   }

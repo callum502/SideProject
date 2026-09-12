@@ -65,3 +65,7 @@
 .auth-error{margin:0 0 20px;font-size:13px}
 .auth-code{letter-spacing:2px}
 @media(max-width:480px){.workspace .login-page{padding:28px 16px;align-items:start}.login-card{padding:28px 22px}.auth-heading h1{font-size:28px}.auth-guest{margin-top:20px}}
+
+.annotation-toolbar .annotation-tool-start{border-bottom:3px solid #35df79}
+.annotation-toolbar .annotation-tool-box{border-bottom:3px solid #ff2929}
+.annotation-toolbar .annotation-tool.active{outline:2px solid currentColor;outline-offset:2px}

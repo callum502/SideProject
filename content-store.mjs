@@ -22,7 +22,7 @@ export function toGuide(snapshot) {
       videos: snapshot.media.filter(m => m.boulder_id === b.id && m.kind === 'video').map(media),
       problems: snapshot.problems.filter(p => p.boulder_id === b.id).map(p => {
         const attached = new Set(snapshot.problem_media.filter(link => link.problem_id === p.id).map(link => link.media_id));
-        return { id: p.id, name: p.name, grade: p.grade, description: p.description, ...owner(p),
+        return { id: p.id, name: p.name, grade: p.grade, description: p.description, photoAnnotations: p.photo_annotations || {}, ...owner(p),
           imageIds: snapshot.media.filter(m => attached.has(m.id) && m.kind === 'image').map(m => m.id),
           videoIds: snapshot.media.filter(m => attached.has(m.id) && m.kind === 'video').map(m => m.id) };
       }),
@@ -53,7 +53,7 @@ export async function toRows(guide, previousMedia = [], storage = null, token) {
         rows.media.push({ id: m.id, boulder_id: b.id, name: m.name, kind, storage_bucket: ref.bucket, storage_path, mime_type: mime, size_bytes: size, annotations: kind === 'image' ? m.annotations : [], created_by: m.createdBy });
       }
       for (const p of b.problems || []) {
-        rows.problems.push({ id: p.id, boulder_id: b.id, name: p.name, grade: p.grade, description: p.description, created_by: p.createdBy });
+        rows.problems.push({ id: p.id, boulder_id: b.id, name: p.name, grade: p.grade, description: p.description, photo_annotations: p.photoAnnotations || {}, created_by: p.createdBy });
         for (const id of [...p.imageIds, ...p.videoIds]) rows.problem_media.push({ problem_id: p.id, media_id: id, boulder_id: b.id });
       }
     }

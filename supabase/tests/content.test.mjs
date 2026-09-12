@@ -23,7 +23,7 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
       CREATE TABLE storage.objects(id uuid DEFAULT gen_random_uuid(),bucket_id text,name text,owner_id text,metadata jsonb,UNIQUE(bucket_id,name));
       ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
       GRANT USAGE ON SCHEMA storage TO authenticated;GRANT SELECT,INSERT ON storage.objects TO authenticated;`);
-    for (const name of ['20260909000100_initial_schema.sql','20260909000200_account_access.sql','20260910000100_content_api.sql','20260912000100_media_storage.sql','20260912000200_retire_local_storage.sql']) await db.exec(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+    for (const name of ['20260909000100_initial_schema.sql','20260909000200_account_access.sql','20260910000100_content_api.sql','20260912000100_media_storage.sql','20260912000200_retire_local_storage.sql','20260912000300_problem_annotations.sql']) await db.exec(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
     await db.exec(`INSERT INTO auth.users(id) VALUES ('${a}'),('${b}'),('${admin}'); UPDATE private.user_roles SET role='admin' WHERE user_id='${admin}';`);
     // Simulate PostgREST's transaction and authenticated role, without external network calls.
     async function rpc(name, values, user) {
@@ -70,6 +70,19 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
     rock.problems.push({id:problemId,name:'Arete',grade:'6A',description:'Climb the edge',imageIds:[imageId],videoIds:[]});
     guide=await store.save(guide,userB,b);
     assert.equal((await store.read()).locations[0].boulders[0].problems[0].imageIds[0],imageId);
+    const marks=[{type:'box',color:'green',x:10,y:20,x2:100,y2:120}];
+    guide.locations[0].boulders[0].problems[0].photoAnnotations={[imageId]:marks};
+    guide=await store.save(guide,userB,b);
+    guide.locations[0].boulders[0].problems.push({id:'30000000-0000-4000-8000-000000000002',name:'Other line',grade:'6B',description:'Different holds',imageIds:[imageId],videoIds:[],photoAnnotations:{[imageId]:[{type:'arrow',color:'red',x:40,y:40,x2:200,y2:200}]}});
+    guide=await store.save(guide,userA,a);
+    assert.deepEqual(guide.locations[0].boulders[0].problems[0].photoAnnotations[imageId],marks);
+    const forbidden=structuredClone(guide);forbidden.locations[0].boulders[0].problems[0].photoAnnotations={};
+    await assert.rejects(store.save(forbidden,userA,a),error=>error.status===403);
+    const snapshot=await rpc('read_content',{},a);
+    await assert.rejects(rpc('save_content',{expected_revision:snapshot.revision,operations:[{table:'problems',action:'update',row:{...snapshot.problems[0],photo_annotations:{}}}]},a),error=>error.code==='42501');
+    guide.locations[0].boulders[0].problems[1].photoAnnotations={};
+    guide=await store.save(guide,userA,a);
+    assert.deepEqual(guide.locations[0].boulders[0].problems[0].photoAnnotations[imageId],marks);
     const after=await rpc('read_content',{},b);
     await assert.rejects(rpc('save_content',{expected_revision:after.revision,operations:[{table:'private.user_roles',action:'insert',row:{}}]},b));
     // A direct dashboard change must invalidate the app's previous snapshot.
