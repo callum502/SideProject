@@ -26,7 +26,7 @@
 
 .detail-banner .page-navigation{margin:24px 0 0;padding:20px 0 0;border:0;border-top:1px solid #ffffff30;border-radius:0;box-shadow:none;background:transparent;max-width:none}.detail-banner .parent-link{background:#ffffff12;border:1px solid #ffffff45}.detail-banner .parent-link:hover{background:#ffffff22}.detail-banner .trail-step{color:#eef5ec}.detail-banner .trail-step small,.detail-banner .trail-chevron{color:#c2d4c3}.detail-banner .trail-step.current{background:#ffffff16}.detail-banner .trail-step:hover:not(.current){background:#ffffff12}
 
-.created-by{font-size:14px;color:#c9dacb;margin:-8px 0 20px}.signed-in{align-self:center;font-size:14px;font-weight:600}.signed-in small{display:block;color:var(--muted);font-size:12px;font-weight:400}.login-page{display:grid;place-items:center;min-height:calc(100vh - 90px)}.login-card{width:min(440px,100%);padding:32px;background:white;border:1px solid var(--line);border-radius:14px}.login-card h1{font-size:30px;margin:12px 0}.login-card>p{color:var(--muted);margin-bottom:24px}.login-card form .primary{width:100%}.demo-accounts{background:#f1f5ed;padding:16px;border-radius:8px;margin:24px 0;font-size:14px}.login-card>a{font-size:14px}.photo-card:disabled{opacity:1;cursor:default}button:disabled{cursor:not-allowed}
+.created-by{font-size:14px;color:#c9dacb;margin:-8px 0 20px}.signed-in{align-self:center;font-size:14px;font-weight:600}.signed-in small{display:block;color:var(--muted);font-size:12px;font-weight:400}.photo-card:disabled{opacity:1;cursor:default}button:disabled{cursor:not-allowed}
 
 .search-heading{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:15px}.search-heading>label{font-size:24px;font-weight:650}.search-heading button{flex-shrink:0}
 
@@ -34,5 +34,34 @@
 
 .coordinate-picker{margin-bottom:22px}.coordinate-help{font-size:14px;color:var(--muted);margin:0 0 12px}.coordinate-map{height:280px;border:1px solid var(--line);border-radius:8px;cursor:crosshair}.coordinate-picker .form-columns label{margin-bottom:12px}
 
-.account-options { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1.25rem 0; }
-.login-card small { display: block; margin-top: 0.4rem; }
+/* Account forms share one clear primary action and quiet supporting links. */
+.workspace .login-page{display:grid;place-items:center;min-height:calc(100svh - 90px);padding:48px 20px}
+.login-layout{width:min(440px,100%)}
+.login-card{padding:36px;background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:0 12px 40px #20392e08}
+.auth-heading{margin-bottom:28px}
+.auth-heading .eyebrow{font-size:10px;letter-spacing:2px;color:var(--green)}
+.auth-heading h1{font-size:30px;line-height:1.2;letter-spacing:-1px;margin:12px 0}
+.auth-heading h1:focus{outline:none}
+.auth-heading p{color:#637066;font-size:14px;line-height:1.6}
+.auth-fields{min-width:0;border:0;padding:0;margin:0}
+.login-card .auth-fields>label{display:block;font-size:14px;font-weight:600;margin:0 0 20px}
+.login-card input{margin-top:8px;min-height:48px;background:#fbfcfa;font-size:15px;font-weight:400}
+.login-card input::placeholder{color:#839085}
+.auth-password-field{margin-bottom:24px}
+.login-card .auth-password-field>label{display:block;font-size:14px;font-weight:600;margin:0}
+.auth-password-input{position:relative}
+.auth-password-input input{padding-right:64px}
+.auth-password-toggle{position:absolute;right:6px;top:12px;min-height:40px;padding:0 10px;background:transparent;border:0;border-radius:4px;color:var(--green);font-size:12px;font-weight:600}
+.login-card small{display:block;margin-top:8px;color:#637066;font-size:12px}
+.auth-link{display:inline;border:0;background:transparent;padding:0;color:var(--green);font-size:inherit;font-weight:600;cursor:pointer;text-underline-offset:4px}
+.auth-link:hover,.auth-guest a:hover{text-decoration:underline}
+.auth-recovery{text-align:right;margin-top:10px;font-size:13px}
+.auth-back{display:inline-block;margin-bottom:24px;font-size:13px}
+.login-card .auth-submit{width:100%;min-height:48px;border-radius:8px}
+.login-card .auth-switch{border-top:1px solid var(--line);padding-top:22px;margin:24px 0 0;color:#637066;text-align:center;font-size:14px}
+.auth-guest{text-align:center;margin-top:24px;font-size:13px;line-height:1.8;color:#637066}
+.auth-guest a{display:inline-block;margin-left:5px;color:var(--green);font-weight:600;text-decoration:none}
+.auth-notice{background:#eff5ed;border:1px solid #dce8d8;color:#315438;padding:12px 14px;border-radius:8px;font-size:13px;line-height:1.6;margin-bottom:20px}
+.auth-error{margin:0 0 20px;font-size:13px}
+.auth-code{letter-spacing:2px}
+@media(max-width:480px){.workspace .login-page{padding:28px 16px;align-items:start}.login-card{padding:28px 22px}.auth-heading h1{font-size:28px}.auth-guest{margin-top:20px}}
