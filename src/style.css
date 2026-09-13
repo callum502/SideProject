@@ -82,3 +82,5 @@
 form label select{display:block;width:100%;margin-top:8px;padding:12px;border:1px solid var(--line);border-radius:7px;background:var(--surface,#fff);color:inherit;font:inherit}
 
 .video-picker-item{padding:8px 0 16px;border-bottom:1px solid var(--line)}.video-picker-item:last-child{border-bottom:0}.video-picker-preview{display:block;width:100%;max-height:260px;background:#111;border-radius:6px}
+
+.location-links ul{margin:0 30px 24px;padding-left:20px}.location-links li{margin:10px 0;overflow-wrap:anywhere}form fieldset:has(input[type="url"]) input{width:100%;height:auto}form fieldset:has(input[type="url"]) label{display:block}

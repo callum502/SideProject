@@ -1,3 +1,4 @@
+import { validLocationLinks } from './location-links.mjs';
 import { duplicateMediaName } from './media-names.mjs';
 import { createStorage } from './storage.mjs';
 import { mediaReference, MAX_VIDEO_BYTES } from './media-reference.mjs';
@@ -31,6 +32,7 @@ function validate(data) {
   const id = value => { if (!text(value, 100, true) || ids.has(value)) throw fail('Invalid or duplicate record ID.'); ids.add(value); };
   for (const l of data.locations) {
     id(l.id);
+    if (!validLocationLinks(l.links || [])) throw fail('Links need a label and a valid HTTP or HTTPS URL.');
     if (!text(l.name, 120, true) || !text(l.approach, 10000) || !Array.isArray(l.boulders) || l.boulders.length > 1000) throw fail('Invalid location.');
     if (typeof l.latitude !== 'string' || typeof l.longitude !== 'string' || !!l.latitude !== !!l.longitude) throw fail('Provide both coordinates.');
     if (l.latitude && (!Number.isFinite(+l.latitude) || Math.abs(+l.latitude) > 90 || !Number.isFinite(+l.longitude) || Math.abs(+l.longitude) > 180)) throw fail('Coordinates are outside the valid range.');
