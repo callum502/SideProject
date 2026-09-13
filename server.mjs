@@ -138,6 +138,12 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         try { user = await auth.resolve(session); }
         catch (error) { if (error.status !== 401) throw error; sessions.delete(token); }
       }
+      if (url.pathname === '/api/profile' && req.method === 'POST') {
+        if(!user) throw fail('Log in first.',401);
+        let values;try{values=JSON.parse((await body(req,4096)).toString());}catch{throw fail('Invalid profile details.');}
+        if(!values || typeof values!=='object')throw fail('Invalid profile details.');
+        const updated=await auth.completeProfile(values,session);session.user=updated;return json(200,{user:updated});
+      }
       if (url.pathname === '/api/session' && req.method === 'GET') return json(200, { user });
       if (['/api/login', '/api/signup', '/api/confirm', '/api/recover', '/api/reset-password'].includes(url.pathname) && req.method === 'POST') {
         let values; try { values = JSON.parse((await body(req, 4096)).toString()); } catch { throw fail('Enter valid account details.'); }
@@ -160,6 +166,7 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         await auth.logout(session).catch(() => {});
         return json(200, { user: null });
       }
+      if (user?.profileComplete === false && ['/api/guide','/api/images','/api/videos'].includes(url.pathname) && ['PUT','POST','DELETE'].includes(req.method)) throw fail('Complete your profile before contributing.',403);
       if (['/api/guide', '/api/images', '/api/videos'].includes(url.pathname) && ['PUT', 'POST', 'DELETE'].includes(req.method) && !user) throw fail('Log in to contribute.', 401);
       if (url.pathname === '/api/guide' && req.method === 'GET') return json(200, await contentStore.read(user ? session.accessToken : undefined));
       if (url.pathname === '/api/guide' && req.method === 'PUT') {

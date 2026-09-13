@@ -1,3 +1,4 @@
+import CompleteProfile from './CompleteProfile';
 import { validLocationLinks } from '../location-links.mjs';
 import { duplicateMediaName, normalizeMediaName } from '../media-names.mjs';
 import React, { useEffect, useRef, useState } from 'react';
@@ -120,7 +121,7 @@ function App() {
   const goHome = () => { setLocationId(null); setBoulderId(null); setProblemId(null); location.hash = '#explore'; };
   return <div className="app">
     <div className="workspace"><header className="topbar"><a className="brand" href={user ? "#explore" : "#login"} aria-label="SideProj home"><span className="brand-mark" aria-hidden="true">△</span> Side<span className="brand-light">Proj</span></a><div className="header-actions">{user ? <><span className="signed-in">{user.name} <small>{user.role}</small></span><button className="secondary small" onClick={logout}>Log out</button></> : !loginPage && <a className="secondary small" href="#login">Log in</a>}</div></header>
-    {loginPage ? <LoginPage onLogin={async identity => { setUser(identity); setDb(await api('/api/guide')); location.hash = '#explore'; }}/>: <main className={home ? "search-home" : "location-page"}>
+    {user && user.profileComplete === false ? <CompleteProfile user={user} onComplete={identity => { setUser(identity); location.hash = '#explore'; }}/> : loginPage ? <LoginPage onLogin={async identity => { setUser(identity); setDb(await api('/api/guide')); location.hash = '#explore'; }}/>: <main className={home ? "search-home" : "location-page"}>
     {error && !modal?.nameUploads && <div role="alert" className="error">{error}<button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
     {home ? <><LocationSearch locations={db.locations} loaded={loaded} canCreate={!!user} busy={busy} onCreate={() => { setError(''); setModal('location'); }}/><LocationMap locations={db.locations} selectedId={null} onSelect={id => choose(id)}/></> : <>
     <section id="location-details" className="detail-panel">{!place ? <div className="welcome"><PageNavigation place={place} boulder={boulder} problem={problem} problemId={problemId}/><h2>{loaded ? 'Location not found' : 'Loading location...'}</h2>{loaded && <p>This location may have been removed. Return to search to find another location.</p>}</div> : <>

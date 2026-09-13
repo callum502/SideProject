@@ -1,3 +1,4 @@
+import { profileDetails } from './profile-details.mjs';
 import { loadEnv } from 'vite';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
@@ -25,7 +26,7 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     const rows = await request('/rest/v1/rpc/current_account', {}, accessToken);
     const profile = rows[0];
     if (!profile || profile.id !== account.id || !['admin', 'contributor'].includes(profile.role)) throw fail('Your account profile is missing.', 403);
-    return { id: account.id, email: account.email, name: profile.display_name, role: profile.role };
+    return { id: account.id, email: account.email, name: profile.display_name, role: profile.role, height: profile.height_cm, apeIndex: profile.ape_index_inches, profileComplete: profile.profile_complete === true };
   }
   return {
     googleUrl(redirectTo, challenge) {
@@ -54,9 +55,15 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       }
       return identity(session.accessToken);
     },
+    async completeProfile(values, session) {
+      const details=profileDetails(values);
+      await request('/rest/v1/rpc/complete_profile',{display_name:details.name,height_cm:details.height,ape_index_inches:details.apeIndex},session.accessToken);
+      return identity(session.accessToken);
+    },
     async signup(values) {
+      const details=profileDetails(values);
       if (typeof values.name !== 'string' || !values.name.trim() || values.name.trim().length > 120 || typeof values.email !== 'string' || typeof values.password !== 'string' || values.password.length < 12) throw fail('Provide a display name, email and a password of at least 12 characters.');
-      await request('/auth/v1/signup', { email: values.email.trim(), password: values.password, data: { display_name: values.name.trim() } });
+      await request('/auth/v1/signup', { email: values.email.trim(), password: values.password, data: { display_name: details.name, height_cm:details.height, ape_index_inches:details.apeIndex } });
       return { message: 'Check your email for a confirmation code. If you already have an account, log in instead.' };
     },
     async confirm(values) {

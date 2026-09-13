@@ -1,3 +1,4 @@
+import ProfileFields from './ProfileFields';
 import googleLogo from './assets/google-g.png';
 ﻿import React, { useEffect, useRef, useState } from 'react';
 
@@ -53,7 +54,7 @@ export default function LoginPage({ onLogin }) {
     {['login','signup'].includes(mode) && <><button className="google-signin auth-submit" type="button" disabled={busy} onClick={googleLogin}><img src={googleLogo} alt="" width="20" height="20"/><span>Continue with Google</span></button><p className="auth-switch">or continue with email</p></>}
     <form onSubmit={submit} key={mode}>
       <fieldset className="auth-fields" disabled={busy}>
-        {mode === 'signup' && <label>Display name *<input name="name" required maxLength={120} autoComplete="nickname" placeholder="How you’d like to be known"/></label>}
+        {mode === 'signup' && <ProfileFields/>}
         <label>Email *<input name="email" type="email" required maxLength={254} autoComplete="email" autoCapitalize="none" spellCheck={false} placeholder="you@example.com" value={email} onChange={event => setEmail(event.target.value)}/></label>
         {['reset', 'confirm'].includes(mode) && <label>Email code *<input className="auth-code" name="code" required autoComplete="one-time-code" inputMode="numeric" placeholder="Enter your code"/></label>}
         {hasPassword && <div className="auth-password-field">

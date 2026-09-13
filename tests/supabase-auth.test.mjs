@@ -43,8 +43,8 @@ test('concurrent requests refresh a session only once', async () => {
 
 test('signup strips role metadata; confirmation and recovery use email codes', async () => {
   const f = fixture();
-  await f.auth.signup({ name: ' Admin ', email: 'climber@example.com', password: 'strong-password', role: 'admin', data: { role: 'admin' } });
-  assert.deepEqual(f.calls[0].body.data, { display_name: 'Admin' });
+  await f.auth.signup({ name: ' Admin ', height:'180', apeIndex:'2', email: 'climber@example.com', password: 'strong-password', role: 'admin', data: { role: 'admin' } });
+  assert.deepEqual(f.calls[0].body.data, { display_name: 'Admin', height_cm:180, ape_index_inches:2 });
   await f.auth.confirm({ email: 'climber@example.com', code: '123456' });
   assert.equal(f.calls.find(call => call.url.endsWith('/verify')).body.type, 'signup');
   await f.auth.recover({ email: 'climber@example.com' });
@@ -70,3 +70,5 @@ test('Google uses PKCE exchange and database roles rather than provider metadata
  const exchange=f.calls.find(c=>c.url.includes('grant_type=pkce'));assert.deepEqual(exchange.body,{auth_code:'code',code_verifier:'verifier'});
  await assert.rejects(fixture({confirmed:false}).auth.exchangeGoogle('code','verifier'),/Confirm your email/);
 });
+
+test('signup requires valid profile measurements',async()=>{const f=fixture();await assert.rejects(f.auth.signup({name:'Test',email:'a@b.com',password:'strong-password'}),/height/);await assert.rejects(f.auth.signup({name:'Test',height:'180',apeIndex:'9'}),/ape index/);});
