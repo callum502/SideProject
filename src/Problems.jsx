@@ -4,8 +4,8 @@ const grades = ['4','5','5+','6A/6A+','6B/6B+','6C/6C+','7A','7A+','7B/7B+','7C'
 
 export const problemHref = (location, boulder, problem) => `#${new URLSearchParams({ location, boulder, ...(problem ? { problem } : {}) })}`;
 
-export function ProblemList({ place, boulder, add, busy }) {
-  return <section className="problems-section"><div className="section-heading photos-heading"><h3>Problems <span className="count">{(boulder.problems || []).length}</span></h3><button className="secondary small" disabled={busy} onClick={add}>+ Add problem</button></div>
+export function ProblemList({ place, boulder, add, busy, guest }) {
+  return <section className="problems-section"><div className="section-heading photos-heading"><h3>Problems <span className="count">{(boulder.problems || []).length}</span></h3><button className="secondary small" title={guest ? "Create an account to contribute" : undefined} aria-disabled={busy} onClick={() => { if (!busy) add(); }}>+ Add problem</button></div>
     {boulder.problems?.length ? <div className="problem-list">{boulder.problems.map(p => <a className="problem-row" key={p.id} href={problemHref(place.id, boulder.id, p.id)}><span><strong>{p.grade} - {p.name}</strong><p>{p.description}</p></span><span aria-hidden="true">↗</span></a>)}</div> : <p className="problem-empty">No problems yet. Add the first line on this boulder.</p>}
   </section>;
 }
@@ -30,14 +30,14 @@ export function ProblemForm({ boulder, problem, save, busy, error, cancel }) {
   </form>;
 }
 
-export function ProblemPage({ problem, boulder, edit, remove, busy, Shapes, navigation, canEdit, annotate, upload, uploadVideos, attach, removePhoto }) {
+export function ProblemPage({ problem, boulder, edit, remove, busy, Shapes, navigation, canEdit, annotate, upload, uploadVideos, attach, removePhoto, guest }) {
   if (!problem) return <div className="welcome">{navigation}<h2>Problem not found</h2><p>Return to the boulder to choose another problem.</p></div>;
   const images = boulder.images.filter(i => problem.imageIds.includes(i.id));
   const videos = (boulder.videos || []).filter(v => problem.videoIds.includes(v.id));
-  return <article className="problem-page"><div className="detail-banner problem-banner">{navigation}<div className="eyebrow">PROBLEM</div><h1>{problem.grade} - {problem.name}</h1><p className="created-by">Created by {problem.createdByName || problem.createdBy || 'Climber'}</p><div className="banner-bottom"><span>{images.length} {images.length === 1 ? 'photo' : 'photos'} · {videos.length} {videos.length === 1 ? 'video' : 'videos'}</span><div className="location-actions"><button disabled={busy || !canEdit} onClick={edit}>Edit problem</button><button className="banner-remove" disabled={busy || !canEdit} onClick={remove}>Remove problem</button></div></div></div>
+  return <article className="problem-page"><div className="detail-banner problem-banner">{navigation}<div className="eyebrow">PROBLEM</div><h1>{problem.grade} - {problem.name}</h1><p className="created-by">Created by {problem.createdByName || problem.createdBy || 'Climber'}</p><div className="banner-bottom"><span>{images.length} {images.length === 1 ? 'photo' : 'photos'} · {videos.length} {videos.length === 1 ? 'video' : 'videos'}</span>{canEdit && <div className="location-actions"><button disabled={busy || !canEdit} onClick={edit}>Edit problem</button><button className="banner-remove" disabled={busy || !canEdit} onClick={remove}>Remove problem</button></div>}</div></div>
     <div className="notes-block"><h3>Description</h3><p className="preserve">{problem.description}</p></div>
-    <div className="section-heading photos-heading"><div><h3>Photos & Topos</h3><p>JPEG, PNG, WebP · up to 8 MB each</p></div>{canEdit && <MediaDropdown kind="photo" busy={busy} upload={upload} attach={() => attach('photo')} boulder={boulder} problem={problem}/>}</div>{images.length ? <div className="photo-grid">{images.map(image => <figure className="problem-photo" key={image.id}><div className="photo-thumb"><img src={image.url} alt={image.name}/><Shapes items={problem.photoAnnotations?.[image.id] || []}/></div><figcaption><a href={image.url} target="_blank" rel="noreferrer">{image.name}</a>{canEdit && <div className="problem-media-actions"><button className="secondary small" disabled={busy} onClick={() => annotate(image)}>Annotate</button><button className="remove-media" disabled={busy} onClick={() => removePhoto(image)}>Remove photo</button></div>}</figcaption></figure>)}</div> : <p className="problem-empty">No photos yet. Add photos to annotate them for {problem.name}.</p>}
-    <div className="section-heading photos-heading"><div><h3>Beta videos</h3><p>MP4, WebM, or MOV · up to 100 MB each</p></div>{canEdit && <MediaDropdown kind="video" busy={busy} upload={uploadVideos} attach={() => attach('video')} boulder={boulder} problem={problem}/>}</div>{videos.length ? <div className="video-grid">{videos.map(video => <figure className="video-card" key={video.id}><video controls playsInline preload="metadata" src={video.url} aria-label={video.name}/><figcaption>{video.name}<a href={`${video.url}?download=${encodeURIComponent(video.name)}`} download={video.name}>Download</a></figcaption></figure>)}</div> : <p className="problem-empty">No videos yet. Upload videos here or add existing videos from {boulder.name}.</p>}
+    <div className="section-heading photos-heading"><div><h3>Photos & Topos</h3><p>JPEG, PNG, WebP · up to 8 MB each</p></div>{(canEdit || guest) && <MediaDropdown guest={guest} kind="photo" busy={busy} upload={upload} attach={() => attach('photo')} boulder={boulder} problem={problem}/>}</div>{images.length ? <div className="photo-grid">{images.map(image => <figure className="problem-photo" key={image.id}><div className="photo-thumb"><img src={image.url} alt={image.name}/><Shapes items={problem.photoAnnotations?.[image.id] || []}/></div><figcaption><a href={image.url} target="_blank" rel="noreferrer">{image.name}</a>{canEdit && <div className="problem-media-actions"><button className="secondary small" disabled={busy} onClick={() => annotate(image)}>Annotate</button><button className="remove-media" disabled={busy} onClick={() => removePhoto(image)}>Remove photo</button></div>}</figcaption></figure>)}</div> : <p className="problem-empty">No photos yet. Add photos to annotate them for {problem.name}.</p>}
+    <div className="section-heading photos-heading"><div><h3>Beta videos</h3><p>MP4, WebM, or MOV · up to 100 MB each</p></div>{(canEdit || guest) && <MediaDropdown guest={guest} kind="video" busy={busy} upload={uploadVideos} attach={() => attach('video')} boulder={boulder} problem={problem}/>}</div>{videos.length ? <div className="video-grid">{videos.map(video => <figure className="video-card" key={video.id}><video controls playsInline preload="metadata" src={video.url} aria-label={video.name}/><figcaption>{video.name}<a href={`${video.url}?download=${encodeURIComponent(video.name)}`} download={video.name}>Download</a></figcaption></figure>)}</div> : <p className="problem-empty">No videos yet. Upload videos here or add existing videos from {boulder.name}.</p>}
   </article>;
 }
 
@@ -55,7 +55,7 @@ export function AttachMediaForm({ locationId, boulder, problem, kind, busy, erro
   </form>;
 }
 
-function MediaDropdown({ kind, busy, upload, attach, boulder, problem }) {
+function MediaDropdown({ kind, busy, upload, attach, boulder, problem, guest }) {
   const photo = kind === 'photo';
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
@@ -68,7 +68,7 @@ function MediaDropdown({ kind, busy, upload, attach, boulder, problem }) {
     return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
   }, [open]);
   return <div className="photo-dropdown" ref={ref}>
-    <button className="secondary small" disabled={busy} aria-expanded={open} onClick={() => setOpen(!open)}>+ Add {photo ? 'Photo' : 'Video'} <span aria-hidden="true">▾</span></button>
+    <button title={guest ? "Create an account to contribute" : undefined} className="secondary small" aria-disabled={busy || guest} aria-expanded={open} onClick={() => { if (!busy && !guest) setOpen(!open); }}>+ Add {photo ? 'Photo' : 'Video'} <span aria-hidden="true">▾</span></button>
     {open && <div className="photo-dropdown-options"><label className="secondary upload">Upload {kind} from files<input type="file" accept={photo ? "image/jpeg,image/png,image/webp" : "video/mp4,video/webm,video/quicktime,.mov"} multiple disabled={busy} onChange={e => { setOpen(false); upload(e); }}/></label><button className="secondary" disabled={busy} onClick={() => { setOpen(false); attach(); }}>{photo ? <>Add photo from the {boulder.name} page</> : <>Add video from the {boulder.name} page</>}</button></div>}
   </div>;
 }
