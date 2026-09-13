@@ -1,3 +1,4 @@
+import UserMenu from './UserMenu';
 import CompleteProfile from './CompleteProfile';
 import { validLocationLinks } from '../location-links.mjs';
 import { duplicateMediaName, normalizeMediaName } from '../media-names.mjs';
@@ -29,6 +30,7 @@ function Modal({ title, children, close }) {
 }
 function App() {
   const videoMaxMB = 100;
+  const [detailsPage, setDetailsPage] = useState(location.hash === '#details');
   const [user, setUser] = useState(null), [loginPage, setLoginPage] = useState((!location.hash || location.hash === '#' || location.hash === '#login'));
   const canEdit = item => !!user && (user.role === 'admin' || item?.createdBy === user.id);
   useEffect(() => { const refresh = () => api('/api/session').then(data => setUser(data.user)).catch(() => setUser(null)); refresh(); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, []);
@@ -40,7 +42,7 @@ function App() {
   useEffect(() => { api('/api/guide').then(data => { setDb(data); setLocationId(new URLSearchParams(location.hash.slice(1)).get('location')); setBoulderId(new URLSearchParams(location.hash.slice(1)).get('boulder')); setProblemId(new URLSearchParams(location.hash.slice(1)).get('problem')); setLoaded(true); }).catch(e => setError(e.message)); }, []);
   useEffect(() => { if (toast) { const t = setTimeout(() => setToast(''), 3500); return () => clearTimeout(t); } }, [toast]);
   useEffect(() => {
-    const navigate = () => { setLoginPage((!location.hash || location.hash === '#' || location.hash === '#login')); const params = new URLSearchParams(location.hash.slice(1)); setLocationId(params.get('location')); setBoulderId(params.get('boulder')); setProblemId(params.get('problem')); setModal(null); window.scrollTo(0, 0); };
+    const navigate = () => { setDetailsPage(location.hash === '#details'); setLoginPage((!location.hash || location.hash === '#' || location.hash === '#login')); const params = new URLSearchParams(location.hash.slice(1)); setLocationId(params.get('location')); setBoulderId(params.get('boulder')); setProblemId(params.get('problem')); setModal(null); window.scrollTo(0, 0); };
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
@@ -120,8 +122,8 @@ function App() {
   const home = !locationId;
   const goHome = () => { setLocationId(null); setBoulderId(null); setProblemId(null); location.hash = '#explore'; };
   return <div className="app">
-    <div className="workspace"><header className="topbar"><a className="brand" href={user ? "#explore" : "#login"} aria-label="SideProj home"><span className="brand-mark" aria-hidden="true">△</span> Side<span className="brand-light">Proj</span></a><div className="header-actions">{user ? <><span className="signed-in">{user.name} <small>{user.role}</small></span><button className="secondary small" onClick={logout}>Log out</button></> : !loginPage && <a className="secondary small" href="#login">Log in</a>}</div></header>
-    {user && user.profileComplete === false ? <CompleteProfile user={user} onComplete={identity => { setUser(identity); location.hash = '#explore'; }}/> : loginPage ? <LoginPage onLogin={async identity => { setUser(identity); setDb(await api('/api/guide')); location.hash = '#explore'; }}/>: <main className={home ? "search-home" : "location-page"}>
+    <div className="workspace"><header className="topbar"><a className="brand" href={user ? "#explore" : "#login"} aria-label="SideProj home"><span className="brand-mark" aria-hidden="true">△</span> Side<span className="brand-light">Proj</span></a><div className="header-actions">{user ? <UserMenu user={user} logout={logout}/> : !loginPage && <a className="secondary small" href="#login">Log in</a>}</div></header>
+    {user && (user.profileComplete === false || detailsPage) ? <CompleteProfile key={user.id + (detailsPage ? '-details' : '-setup')} editing={user.profileComplete !== false} user={user} onComplete={async identity => { setUser(identity); try { setDb(await api('/api/guide')); } catch(e) { setError(e.message); } location.hash = '#explore'; }}/> : (loginPage || detailsPage) ? <LoginPage onLogin={async identity => { setUser(identity); setDb(await api('/api/guide')); location.hash = '#explore'; }}/>: <main className={home ? "search-home" : "location-page"}>
     {error && !modal?.nameUploads && <div role="alert" className="error">{error}<button onClick={() => setError('')} aria-label="Dismiss error">×</button></div>}
     {home ? <><LocationSearch locations={db.locations} loaded={loaded} canCreate={!!user} busy={busy} onCreate={() => { setError(''); setModal('location'); }}/><LocationMap locations={db.locations} selectedId={null} onSelect={id => choose(id)}/></> : <>
     <section id="location-details" className="detail-panel">{!place ? <div className="welcome"><PageNavigation place={place} boulder={boulder} problem={problem} problemId={problemId}/><h2>{loaded ? 'Location not found' : 'Loading location...'}</h2>{loaded && <p>This location may have been removed. Return to search to find another location.</p>}</div> : <>
