@@ -22,8 +22,10 @@ export function ProblemForm({ boulder, problem, save, busy, error, cancel }) {
     <label>Problem name <span aria-hidden="true">*</span><input name="name" required autoFocus maxLength={120} defaultValue={problem?.name || ''}/></label>
     <label>Grade <span aria-hidden="true">*</span><select name="grade" required defaultValue={problem?.grade || ''}><option value="" disabled>Select a grade</option>{problem?.grade && !grades.includes(problem.grade) && <option value={problem.grade}>{problem.grade} (current)</option>}{grades.map(grade => <option key={grade} value={grade}>{grade}</option>)}</select></label>
     <label>Description <span aria-hidden="true">*</span><textarea name="description" required maxLength={10000} rows={5} placeholder="Describe the start, the line, key moves, and finish..." defaultValue={problem?.description || ''}/></label>
+    {problem && <>
     <fieldset className="media-picker"><legend>Link photos from this boulder</legend>{boulder.images.length ? boulder.images.map(image => <label key={image.id}><input type="checkbox" name="imageIds" value={image.id} defaultChecked={problem?.imageIds.includes(image.id)}/><img src={image.url} alt=""/><span>{image.name}</span></label>) : <p>Upload photos on the boulder page to link them here.</p>}</fieldset>
     <fieldset className="media-picker"><legend>Link beta videos from this boulder</legend>{boulder.videos?.length ? boulder.videos.map(video => <label key={video.id}><input type="checkbox" name="videoIds" value={video.id} defaultChecked={problem?.videoIds.includes(video.id)}/><span>{video.name}</span></label>) : <p>Upload videos on the boulder page to link them here.</p>}</fieldset>
+    </>}
     <div className="form-actions"><button type="button" className="secondary" disabled={busy} onClick={cancel}>Cancel</button><button className="primary" disabled={busy}>{busy ? 'Saving...' : 'Save problem'}</button></div>
   </form>;
 }
