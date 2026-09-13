@@ -15,10 +15,14 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     } catch { throw fail('Account service is unavailable. Please try again.', 503); }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
+      if (data.code === '23505' && (data.message || '').includes('profiles_display_name_unique')) throw fail('That display name is already taken. Choose a different name.',409);
       if (route.startsWith('/rest/')) throw fail('Account permissions could not be loaded. Apply the account-access SQL migration.', 503);
       throw fail(response.status === 429 ? 'Too many attempts. Please wait before trying again.' : data.msg || data.message || data.error_description || 'Account request failed.', response.status === 429 ? 429 : 401);
     }
     return data;
+  }
+  async function checkName(name, token) {
+    if (await request('/rest/v1/rpc/display_name_available',{candidate:name},token) === false) throw fail('That display name is already taken. Choose a different name.',409);
   }
   async function identity(accessToken) {
     const account = await request('/auth/v1/user', null, accessToken, 'GET');
@@ -55,18 +59,24 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       }
       return identity(session.accessToken);
     },
+    async friends(session, values) {
+      return request('/rest/v1/rpc/friends_action',{action:values.action,target:values.target || null,query_name:values.name || null},session.accessToken);
+    },
     async logbook(session, values) {
       return request('/rest/v1/rpc/' + (values ? 'set_problem_log' : 'read_logbook'), values ? {target_problem:values.problemId,completed:values.completed} : {}, session.accessToken);
     },
     async completeProfile(values, session) {
       const details=profileDetails(values);
+      await checkName(details.name,session.accessToken);
       await request('/rest/v1/rpc/complete_profile',{display_name:details.name,height_cm:details.height,ape_index_inches:details.apeIndex},session.accessToken);
       return identity(session.accessToken);
     },
     async signup(values) {
       const details=profileDetails(values);
       if (typeof values.name !== 'string' || !values.name.trim() || values.name.trim().length > 120 || typeof values.email !== 'string' || typeof values.password !== 'string' || values.password.length < 12) throw fail('Provide a display name, email and a password of at least 12 characters.');
-      await request('/auth/v1/signup', { email: values.email.trim(), password: values.password, data: { display_name: details.name, height_cm:details.height, ape_index_inches:details.apeIndex } });
+      await checkName(details.name);
+      try { await request('/auth/v1/signup', { email: values.email.trim(), password: values.password, data: { display_name: details.name, height_cm:details.height, ape_index_inches:details.apeIndex } }); }
+      catch(error) { await checkName(details.name); throw error; }
       return { message: 'Check your email for a confirmation code. If you already have an account, log in instead.' };
     },
     async confirm(values) {

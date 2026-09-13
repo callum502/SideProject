@@ -44,7 +44,7 @@ test('concurrent requests refresh a session only once', async () => {
 test('signup strips role metadata; confirmation and recovery use email codes', async () => {
   const f = fixture();
   await f.auth.signup({ name: ' Admin ', height:'180', apeIndex:'2', email: 'climber@example.com', password: 'strong-password', role: 'admin', data: { role: 'admin' } });
-  assert.deepEqual(f.calls[0].body.data, { display_name: 'Admin', height_cm:180, ape_index_inches:2 });
+  assert.deepEqual(f.calls.find(call => call.url.endsWith('/auth/v1/signup')).body.data, { display_name: 'Admin', height_cm:180, ape_index_inches:2 });
   await f.auth.confirm({ email: 'climber@example.com', code: '123456' });
   assert.equal(f.calls.find(call => call.url.endsWith('/verify')).body.type, 'signup');
   await f.auth.recover({ email: 'climber@example.com' });
@@ -72,3 +72,12 @@ test('Google uses PKCE exchange and database roles rather than provider metadata
 });
 
 test('signup requires valid profile measurements',async()=>{const f=fixture();await assert.rejects(f.auth.signup({name:'Test',email:'a@b.com',password:'strong-password'}),/height/);await assert.rejects(f.auth.signup({name:'Test',height:'180',apeIndex:'9'}),/ape index/);});
+
+test('taken names stop signup and profile edits before writing', async () => {
+ const calls=[];
+ const auth=createAuth({env,fetchImpl:async(url,options)=>{calls.push(url);return new Response('false',{status:200});}});
+ const values={name:'Taken',height:180,apeIndex:'unknown',email:'test@example.com',password:'strong-password'};
+ await assert.rejects(auth.signup(values),/already taken/);
+ await assert.rejects(auth.completeProfile(values,{accessToken:'access'}),/already taken/);
+ assert.ok(calls.every(url=>url.endsWith('/rpc/display_name_available')));
+});
