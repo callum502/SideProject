@@ -16,7 +16,17 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
       if (data.code === '23505' && (data.message || '').includes('profiles_display_name_unique')) throw fail('That display name is already taken. Choose a different name.',409);
-      if (route.startsWith('/rest/')) throw fail('Account permissions could not be loaded. Apply the account-access SQL migration.', 503);
+      if (route.endsWith('/complete_profile') && data.code === '23514') {
+        const field = /height/i.test(data.message || '') ? 'height' : /ape_index|ape index/i.test(data.message || '') ? 'ape index' : /display_name|display name/i.test(data.message || '') ? 'display name' : 'profile';
+        throw fail('The database rejected your ' + field + '. Apply 20260913000900_profile_validation.sql to align the database with the current form.',400);
+      }
+      if (route.startsWith('/rest/')) {
+        const rpc = route.split('/').pop();
+        const code = typeof data.code === 'string' && /^[A-Z0-9]{3,12}$/.test(data.code) ? data.code : 'HTTP ' + response.status;
+        if (response.status === 401 || code === 'PGRST301' || code === 'PGRST303') throw fail('Your session could not be verified. Please log in again. (' + code + ')',401);
+        const action = rpc === 'current_account' ? 'Could not load your account profile' : rpc === 'display_name_available' ? 'Could not check display-name availability' : rpc === 'complete_profile' ? 'Could not save your profile' : 'Database request failed';
+        throw fail(action + ' (' + rpc + ': ' + code + ').' + (code === 'PGRST202' ? ' The database function is missing or its schema cache needs refreshing.' : code === '42501' ? ' The database denied access.' : ' Please share this error so the database issue can be identified.'),503);
+      }
       throw fail(response.status === 429 ? 'Too many attempts. Please wait before trying again.' : data.msg || data.message || data.error_description || 'Account request failed.', response.status === 429 ? 429 : 401);
     }
     return data;

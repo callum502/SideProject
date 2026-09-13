@@ -113,3 +113,6 @@ a,button,button:disabled,button[aria-disabled="true"],.disabled,.upload,input[ty
 .friend-name { border:0; padding:8px 0; background:none; color:var(--green); font-size:18px; font-weight:600; text-align:left; }
 .friend-name small,.friend-account { display:block; font-size:12px; font-weight:400; margin-top:5px; }
 .friends-content .problem-row { flex-wrap:wrap; gap:12px; }
+
+.friend-actions .friend-remove { background:#b93838; border-color:#b93838; color:#fff; }
+.friend-actions .friend-remove:hover { background:#972b2b; border-color:#972b2b; }

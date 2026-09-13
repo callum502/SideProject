@@ -81,3 +81,8 @@ test('taken names stop signup and profile edits before writing', async () => {
  await assert.rejects(auth.completeProfile(values,{accessToken:'access'}),/already taken/);
  assert.ok(calls.every(url=>url.endsWith('/rpc/display_name_available')));
 });
+
+test('account errors identify failing function and database code without exposing response details',async()=>{
+ const auth=createAuth({env,fetchImpl:async url=>url.endsWith('/auth/v1/user') ? new Response(JSON.stringify({id:'account',email_confirmed_at:'2026-09-09'})) : new Response(JSON.stringify({code:'42501',message:'private diagnostic details'}),{status:403})});
+ await assert.rejects(auth.resolve({expires:Date.now()+600000,accessToken:'token'}),error=>error.message.includes('current_account: 42501') && !error.message.includes('private diagnostic'));
+});
