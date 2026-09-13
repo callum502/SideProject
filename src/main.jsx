@@ -73,8 +73,18 @@ function App() {
       if (ok) { setModal(null); if (modal === 'boulder') choose(place.id, item.id); }
     }
   }
-  async function upload(e) {
+  function prepareUpload(e, kind) {
     const files = [...e.target.files]; e.target.value = ''; if (!files.length) return;
+    const existing = kind === 'photo' ? boulder.images : boulder.videos || [];
+    const prefix = kind === 'photo' ? 'Photo' : 'Video';
+    const used = new Set(existing.map(item => item.name));
+    let number = existing.length + 1;
+    const names = files.map(() => { while (used.has(prefix + ' ' + number)) number++; const name = prefix + ' ' + number++; used.add(name); return name; });
+    setError(''); setModal({ nameUploads: { files, names, kind } });
+  }
+  const upload = e => prepareUpload(e, 'photo');
+  const uploadVideos = e => prepareUpload(e, 'video');
+  async function uploadNamedPhotos(files, names) {
     setBusy(true); setError('');
     try {
       const images = [];
@@ -82,13 +92,13 @@ function App() {
         if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Choose JPEG, PNG, or WebP images.');
         if (file.size > 8 * 1024 * 1024) throw new Error('Each image must be smaller than 8 MB.');
         const result = await api('/api/images', { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
-        images.push({ id: uid(), name: file.name, url: result.url, annotations: [] });
+        images.push({ id: uid(), name: names[images.length], url: result.url, annotations: [] });
       }
-      await updateBoulder({ images: [...boulder.images, ...images], ...(problem ? { problems: boulder.problems.map(p => p.id === problem.id ? { ...p, imageIds: [...p.imageIds, ...images.map(image => image.id)] } : p) } : {}) });
+      const saved = await updateBoulder({ images: [...boulder.images, ...images], ...(problem ? { problems: boulder.problems.map(p => p.id === problem.id ? { ...p, imageIds: [...p.imageIds, ...images.map(image => image.id)] } : p) } : {}) });
+      if (saved) setModal(null);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
-  async function uploadVideos(e) {
-    const files = [...e.target.files]; e.target.value = ''; if (!files.length) return;
+  async function uploadNamedVideos(files, names) {
     setBusy(true); setError('');
     try {
       for (const file of files) {
@@ -98,9 +108,10 @@ function App() {
       const videos = [];
       for (const file of files) {
         const result = await api('/api/videos', { method: 'POST', headers: { 'Content-Type': /\.mov$/i.test(file.name) ? 'video/quicktime' : file.type }, body: file });
-        videos.push({ id: uid(), name: file.name, url: result.url });
+        videos.push({ id: uid(), name: names[videos.length], url: result.url });
       }
-      await updateBoulder({ videos: [...(boulder.videos || []), ...videos], ...(problem ? { problems: boulder.problems.map(p => p.id === problem.id ? { ...p, videoIds: [...p.videoIds, ...videos.map(video => video.id)] } : p) } : {}) });
+      const saved = await updateBoulder({ videos: [...(boulder.videos || []), ...videos], ...(problem ? { problems: boulder.problems.map(p => p.id === problem.id ? { ...p, videoIds: [...p.videoIds, ...videos.map(video => video.id)] } : p) } : {}) });
+      if (saved) setModal(null);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
   const home = !locationId;
@@ -119,6 +130,7 @@ function App() {
     {!(boulder.videos || []).length ? <div className="photo-empty"><h3>Spray beta here.</h3><p>Upload a video showing your beta for a problem at this boulder.</p><span>MP4, WebM, or MOV · up to {videoMaxMB} MB each</span></div> : <div className="video-grid">{boulder.videos.map(video => <figure className="video-card" key={video.id}><video controls playsInline preload="metadata" src={video.url} aria-label={video.name}>Your browser does not support this video.</video><figcaption>{video.name}<div className="video-actions"><a href={`${video.url}?download=${encodeURIComponent(video.name)}`} download={video.name}>Download</a><button className="remove-media" disabled={busy || !canEdit(video)} aria-label={`Remove video ${video.name}`} onClick={() => { setError(''); setModal({ remove: video, collection: 'videos' }); }}>Remove video</button></div></figcaption><p>If playback is unavailable, download the original video.</p></figure>)}</div>}</section>
     </> : <><div className="location-info"><div><h3><Icon name="pin"/> Coordinates</h3>{place.latitude && place.longitude ? <><p className="coordinates">{Number(place.latitude).toFixed(5)}, {Number(place.longitude).toFixed(5)}</p><a target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${place.latitude},${place.longitude}`)}`}>Open in maps ↗</a></> : <button className="text-button" disabled={!canEdit(place)} onClick={() => setModal('editLocation')}>+ Add coordinates</button>}</div><div><h3>Approach notes</h3><p className="preserve">{place.approach || 'Add parking details, the path to follow, and access information.'}</p></div></div><div className="section-heading boulders-heading"><div><h3>Boulders <span className="count">{place.boulders.length}</span></h3><p>The boulders at {place.name}.</p></div><button className="secondary small" disabled={busy || !user} onClick={() => setModal('boulder')}>+ Add boulder</button></div>{!place.boulders.length ? <div className="photo-empty"><Icon name="mountain"/><h3>A location full of possibilities.</h3><p>Add the first boulder to start adding problems, photos and videos.</p></div> : <div className="boulder-list">{place.boulders.map((b, i) => <button className="boulder-row" key={b.id} onClick={() => choose(place.id, b.id)}><span className="boulder-avatar">{b.images[0] ? <img src={b.images[0].url} alt=""/> : <Icon name="mountain"/>}</span><div><span className="eyebrow">BOULDER {String(i + 1).padStart(2, '0')}</span><strong>{b.name}</strong><p>{b.notes || 'Add directions to this boulder'}</p></div><span className="boulder-meta">{countLabel((b.problems || []).length, 'problem')} · {countLabel(b.images.length, 'photo')} · {countLabel((b.videos || []).length, 'video')}</span><span>↗</span></button>)}</div>}</>}
     </>}</section></>}<footer>SideProj <span>A better way to share our love for climbing.</span></footer></main>}</div>
+    {modal?.nameUploads && <Modal title={modal.nameUploads.kind === 'photo' ? 'Name your photo' : 'Name your video'} close={() => { if (!busy) setModal(null); }}><form onSubmit={e => { e.preventDefault(); const names = new FormData(e.currentTarget).getAll('mediaName').map(name => name.trim()); if (names.some(name => !name)) { setError('Enter a name for each file.'); return; } const { files, kind } = modal.nameUploads; (kind === 'photo' ? uploadNamedPhotos : uploadNamedVideos)(files, names); }}>{modal.nameUploads.files.map((file, index) => <label key={index}><input aria-label={`${modal.nameUploads.kind === 'photo' ? 'Photo' : 'Video'} ${index + 1} name`} autoFocus={index === 0} name="mediaName" required maxLength={255} disabled={busy} defaultValue={modal.nameUploads.names[index]}/></label>)}{error && <p className="error" role="alert">{error}</p>}<div className="form-actions"><button type="button" className="secondary" disabled={busy} onClick={() => setModal(null)}>Cancel</button><button className="primary" disabled={busy}>{busy ? 'Uploading...' : 'Upload'}</button></div></form></Modal>}
     {modal?.unlinkPhoto && <Modal title="Remove photo from problem?" close={() => { if (!busy) setModal(null); }}><p>Remove <strong>{modal.unlinkPhoto.name}</strong> from this problem? The original photo will remain on the boulder and any other problems using it.</p>{error && <p className="error" role="alert">{error}</p>}<div className="form-actions"><button className="secondary" disabled={busy} onClick={() => setModal(null)}>Cancel</button><button className="danger-button" disabled={busy || !canEdit(problem)} onClick={async () => { const id = modal.unlinkPhoto.id; if (await updateBoulder({ problems: boulder.problems.map(p => p.id === problem.id ? { ...p, imageIds: p.imageIds.filter(imageId => imageId !== id) } : p) })) { setModal(null); setToast('Photo removed from problem'); } }}>{busy ? 'Removing...' : 'Remove photo'}</button></div></Modal>}
     {modal?.removeBoulder && <Modal title="Remove boulder?" close={() => { if (!busy) setModal(null); }}><p className="preserve">Remove <strong>{modal.removeBoulder.name}</strong> and all its problems, photos, annotations, and beta videos from the guide? This cannot be undone.</p>{user?.role !== 'admin' && <p>You can only remove this boulder if all its submissions are yours.</p>}{error && <p className="error" role="alert">{error}</p>}<div className="form-actions"><button className="secondary" disabled={busy} onClick={() => setModal(null)}>Cancel</button><button className="danger-button" disabled={busy || !canEdit(modal.removeBoulder)} onClick={async () => { const id = modal.removeBoulder.id; if (await updatePlace({ boulders: place.boulders.filter(b => b.id !== id) })) { setModal(null); choose(place.id); setToast('Boulder removed'); } }}>{busy ? 'Removing...' : 'Remove boulder'}</button></div></Modal>}
     {modal?.removeProblem && <Modal title="Remove problem?" close={() => { if (!busy) setModal(null); }}><p className="preserve">Remove <strong>{modal.removeProblem.name}</strong> from this boulder? This cannot be undone. Its linked photos and videos will remain on the boulder.</p>{error && <p className="error" role="alert">{error}</p>}<div className="form-actions"><button className="secondary" disabled={busy} onClick={() => setModal(null)}>Cancel</button><button className="danger-button" disabled={busy} onClick={async () => { const id = modal.removeProblem.id; if (await updateBoulder({ problems: (boulder.problems || []).filter(p => p.id !== id) })) { setModal(null); choose(place.id, boulder.id); setToast('Problem removed'); } }}>{busy ? 'Removing...' : 'Remove problem'}</button></div></Modal>}
