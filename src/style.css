@@ -89,3 +89,5 @@ button[aria-disabled="true"]{opacity:.5;cursor:pointer}
 
 /* Interactive controls retain the hand cursor, including disabled states. */
 a,button,button:disabled,button[aria-disabled="true"],.disabled,.upload,input[type="file"],input[type="file"]::file-selector-button,[role="button"]{cursor:pointer}
+
+.google-signin{display:flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:12px;background:#fff;color:#1f1f1f;border:1px solid #747775;border-radius:4px;font-family:Arial,sans-serif;font-size:14px;font-weight:500}.google-signin img{width:20px;height:20px;flex-shrink:0;object-fit:contain}.google-signin:hover{background:#f8faff}

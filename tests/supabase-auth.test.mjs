@@ -62,3 +62,11 @@ test('missing config and rejected authentication fail closed', async () => {
   const rejected = createAuth({ env, fetchImpl: async () => new Response(JSON.stringify({ msg: 'Invalid login credentials' }), { status: 400 }) });
   await assert.rejects(rejected.login({ email: 'a', password: 'b' }), error => error.status === 401);
 });
+
+test('Google uses PKCE exchange and database roles rather than provider metadata',async()=>{
+ const f=fixture();const url=new URL(f.auth.googleUrl('https://sideproj.rocks/auth/google/callback','challenge'));
+ assert.equal(url.searchParams.get('provider'),'google');assert.equal(url.searchParams.get('code_challenge_method'),'s256');
+ const session=await f.auth.exchangeGoogle('code','verifier');assert.equal(session.user.role,'contributor');
+ const exchange=f.calls.find(c=>c.url.includes('grant_type=pkce'));assert.deepEqual(exchange.body,{auth_code:'code',code_verifier:'verifier'});
+ await assert.rejects(fixture({confirmed:false}).auth.exchangeGoogle('code','verifier'),/Confirm your email/);
+});

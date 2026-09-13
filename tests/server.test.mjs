@@ -62,3 +62,20 @@ test('media names reject existing and batch duplicates regardless of case or sur
  assert.equal(duplicateMediaName([],['Beta','BETA']),'BETA');
  assert.equal(duplicateMediaName([{name:'Photo 1'}],['Photo 2','Photo 3']),null);
 });
+
+test('Google callback requires browser cookie, rejects replay and creates a server session',async()=>{
+ let exchanges=0,challenge;
+ const auth=fakeAuth();auth.googleUrl=(redirect,c)=>{challenge=c;return 'https://test.supabase.co/auth/v1/authorize?redirect_to='+encodeURIComponent(redirect);};
+ auth.exchangeGoogle=async(code,verifier)=>{exchanges++;assert.equal(code,'valid');assert.ok(verifier.length>=43);return {user:auth.users.Contributor,accessToken:'private-token'};};
+ const {server}=await createGuideServer({auth,storage:{},contentStore:{}});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const base='http://127.0.0.1:'+server.address().port;
+ try {
+  assert.equal((await fetch(base+'/api/auth/google',{method:'POST',headers:{Origin:'https://evil.example'}})).status,403);
+  const start=await fetch(base+'/api/auth/google',{method:'POST',headers:{Origin:base}});assert.equal(start.status,200);
+  const cookie=start.headers.get('set-cookie').split(';')[0];assert.match(start.headers.get('set-cookie'),/HttpOnly; SameSite=Lax/);assert.ok(challenge);
+  const missing=await fetch(base+'/auth/google/callback?code=valid',{redirect:'manual'});assert.equal(missing.headers.get('location'),'/?google_error=1#login');assert.equal(exchanges,0);
+  const done=await fetch(base+'/auth/google/callback?code=valid',{redirect:'manual',headers:{Cookie:cookie}});assert.equal(done.headers.get('location'),'/#explore');assert.equal(exchanges,1);
+  assert.ok(!done.headers.get('set-cookie').includes('private-token'));
+  const replay=await fetch(base+'/auth/google/callback?code=valid',{redirect:'manual',headers:{Cookie:cookie}});assert.equal(replay.headers.get('location'),'/?google_error=1#login');assert.equal(exchanges,1);
+ } finally {server.closeAllConnections();await new Promise(r=>server.close(r));}
+});

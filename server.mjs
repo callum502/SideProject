@@ -8,7 +8,7 @@ import { deploymentConfig } from './deployment.mjs';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -85,6 +85,7 @@ async function body(req, limit) {
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.json': 'application/json' };
 export async function createGuideServer({ distDir = path.join(root, 'dist'), live = false, auth = createAuth(), storage = createStorage(), contentStore = createContentStore({ storage }), deployment = deploymentConfig() } = {}) {
   const sessions = new Map();
+  const oauthAttempts = new Map();
   const clients = new Set();
   const server = http.createServer(async (req, res) => {
     const json = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
@@ -96,6 +97,39 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         return res.end(req.method === 'HEAD' ? undefined : 'ok');
       }
       if (!deployment.allows(req.headers.host, req.headers.origin)) throw fail('Host or origin not allowed.', 403);
+      const appOrigin = (deployment.secureCookie ? 'https://' : 'http://') + req.headers.host;
+      const oauthCookie = 'sideproj_oauth';
+      const cookieValue = name => (req.headers.cookie || '').split(';').map(c=>c.trim()).find(c=>c.startsWith(name+'='))?.slice(name.length+1);
+      if (url.pathname === '/api/auth/google' && req.method === 'POST') {
+        if (req.headers.origin !== appOrigin) throw fail('Start Google sign-in from this site.',403);
+        for (const [id, attempt] of oauthAttempts) if (attempt.expires < Date.now()) oauthAttempts.delete(id);
+        if (oauthAttempts.size >= 1000) throw fail('Please try again later.',429);
+        const verifier = randomBytes(32).toString('base64url'), attemptId = randomBytes(32).toString('base64url');
+        const target = auth.googleUrl(appOrigin+'/auth/google/callback', createHash('sha256').update(verifier).digest('base64url'));
+        const previous = cookieValue(oauthCookie); if (previous) oauthAttempts.delete(previous);
+        oauthAttempts.set(attemptId,{verifier,origin:appOrigin,expires:Date.now()+600000});
+        res.setHeader('Set-Cookie',oauthCookie+'='+attemptId+'; HttpOnly; SameSite=Lax; Path=/; Max-Age=600'+deployment.secureCookie);
+        return json(200,{url:target});
+      }
+      if (url.pathname === '/auth/google/callback' && req.method === 'GET') {
+        const id = cookieValue(oauthCookie), attempt = oauthAttempts.get(id);
+        oauthAttempts.delete(id);
+        const cleared = oauthCookie+'=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0'+deployment.secureCookie;
+        res.setHeader('Set-Cookie',cleared);
+        res.setHeader('Cache-Control','no-store'); res.setHeader('Referrer-Policy','no-referrer');
+        try {
+          const code=url.searchParams.get('code');
+          if (!attempt || attempt.expires < Date.now() || attempt.origin !== appOrigin || !code || code.length>4096 || url.searchParams.has('error')) throw fail('Google sign-in expired or was cancelled.',401);
+          const nextSession=await auth.exchangeGoogle(code,attempt.verifier);
+          const previous=cookieValue('sideproj_session'); if(previous) sessions.delete(previous);
+          for(const [key,value] of sessions) if(value.cookieExpires<=Date.now()) sessions.delete(key);
+          const nextToken=randomUUID();sessions.set(nextToken,{...nextSession,cookieExpires:Date.now()+86400000});
+          res.setHeader('Set-Cookie',[cleared,'sideproj_session='+nextToken+'; HttpOnly; SameSite=Strict; Path=/; Max-Age=86400'+deployment.secureCookie]);
+          res.writeHead(303,{Location:'/#explore'});return res.end();
+        } catch {
+          res.writeHead(303,{Location:'/?google_error=1#login'});return res.end();
+        }
+      }
       const token = (req.headers.cookie || '').split(';').map(c => c.trim()).find(c => c.startsWith('sideproj_session='))?.slice('sideproj_session='.length);
       const session = sessions.get(token);
       let user = null;

@@ -28,6 +28,17 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     return { id: account.id, email: account.email, name: profile.display_name, role: profile.role };
   }
   return {
+    googleUrl(redirectTo, challenge) {
+      if (!base || !key) throw fail('Google sign-in is not configured.',503);
+      const url = new URL(base + '/auth/v1/authorize');
+      url.search = new URLSearchParams({provider:'google', redirect_to:redirectTo, code_challenge:challenge, code_challenge_method:'s256', scopes:'email profile'}).toString();
+      return url.href;
+    },
+    async exchangeGoogle(code, verifier) {
+      const session = await request('/auth/v1/token?grant_type=pkce', {auth_code:code,code_verifier:verifier});
+      if (!session.access_token || !session.refresh_token) throw fail('Google sign-in did not return a session.',401);
+      return {accessToken:session.access_token,refreshToken:session.refresh_token,expires:Date.now()+session.expires_in*1000,user:await identity(session.access_token)};
+    },
     async login(values) {
       if (typeof values.email !== 'string' || typeof values.password !== 'string') throw fail('Enter your email and password.', 401);
       const session = await request('/auth/v1/token?grant_type=password', { email: values.email.trim(), password: values.password });

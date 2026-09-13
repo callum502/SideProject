@@ -1,3 +1,4 @@
+import googleLogo from './assets/google-g.png';
 ﻿import React, { useEffect, useRef, useState } from 'react';
 
 const screens = {
@@ -9,6 +10,15 @@ const screens = {
 };
 
 export default function LoginPage({ onLogin }) {
+  useEffect(() => {
+    const url=new URL(window.location.href);
+    if(url.searchParams.has('google_error')) { setError('Google sign-in could not be completed. Please try again.'); url.searchParams.delete('google_error'); history.replaceState(null,'',url.pathname+url.search+url.hash); }
+  }, []);
+  async function googleLogin() {
+    setBusy(true);setError('');
+    try { const response=await fetch('/api/auth/google',{method:'POST'});const data=await response.json();if(!response.ok)throw new Error(data.error || 'Could not start Google sign-in.');window.location.assign(data.url); }
+    catch(error){setError(error.message);setBusy(false);}
+  }
   const [mode, setMode] = useState('login');
   const [error, setError] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false);
   const [email, setEmail] = useState(''), [showPassword, setShowPassword] = useState(false);
@@ -40,6 +50,7 @@ export default function LoginPage({ onLogin }) {
     </div>
     {message && <p className="auth-notice" role="status">{message}</p>}
     {error && <p className="error auth-error" role="alert">{error}</p>}
+    {['login','signup'].includes(mode) && <><button className="google-signin auth-submit" type="button" disabled={busy} onClick={googleLogin}><img src={googleLogo} alt="" width="20" height="20"/><span>Continue with Google</span></button><p className="auth-switch">or continue with email</p></>}
     <form onSubmit={submit} key={mode}>
       <fieldset className="auth-fields" disabled={busy}>
         {mode === 'signup' && <label>Display name *<input name="name" required maxLength={120} autoComplete="nickname" placeholder="How you’d like to be known"/></label>}
