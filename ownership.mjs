@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 
-const children = { locations: ['boulders'], boulders: ['problems', 'images', 'videos'], problems: [], images: [], videos: [] };
+const children = { locations: ['boulders', 'photos'], boulders: ['problems', 'images', 'videos'], problems: [], photos: [], images: [], videos: [] };
 const denied = () => { throw Object.assign(new Error('You can only edit or remove your own submissions. Parent removal cannot delete other contributors’ submissions.'), { status: 403 }); };
 
 export function authorizeChanges(current, incoming, user) {

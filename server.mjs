@@ -34,6 +34,12 @@ function validate(data) {
     if (!text(l.name, 120, true) || !text(l.region, 120) || !text(l.approach, 10000) || !Array.isArray(l.boulders) || l.boulders.length > 1000) throw fail('Invalid location.');
     if (typeof l.latitude !== 'string' || typeof l.longitude !== 'string' || !!l.latitude !== !!l.longitude) throw fail('Provide both coordinates.');
     if (l.latitude && (!Number.isFinite(+l.latitude) || Math.abs(+l.latitude) > 90 || !Number.isFinite(+l.longitude) || Math.abs(+l.longitude) > 180)) throw fail('Coordinates are outside the valid range.');
+    if (l.photos !== undefined && (!Array.isArray(l.photos) || l.photos.length > 200)) throw fail('Invalid location photos.');
+    for (const photo of l.photos || []) {
+      id(photo.id);
+      if (!text(photo.name,255,true) || !text(photo.caption || '',2000) || !mediaReference(photo.url) || !/\.(png|jpg|webp)$/.test(photo.url)) throw fail('Invalid location photo.');
+    }
+    if (duplicateMediaName([], (l.photos || []).map(p => p.name)) !== null) throw fail('Photo names must be unique within this location.');
     for (const b of l.boulders) {
       id(b.id);
       if (!text(b.name, 120, true) || !text(b.notes, 10000) || (b.otherNotes !== undefined && !text(b.otherNotes, 10000)) || !Array.isArray(b.images) || b.images.length > 200) throw fail('Invalid boulder.');

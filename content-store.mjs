@@ -12,10 +12,11 @@ export function toGuide(snapshot) {
   const names = new Map(snapshot.profiles.map(p => [p.id, p.display_name]));
   const owner = row => ({ createdBy: row.created_by, createdByName: names.get(row.created_by) || 'Climber' });
   const media = row => {
-    return { id: row.id, name: row.name, url: mediaUrl(row.storage_bucket, row.storage_path), ...owner(row), ...(row.kind === 'image' ? { annotations: row.annotations } : {}) };
+    return { id: row.id, name: row.name, caption: row.caption || '', url: mediaUrl(row.storage_bucket, row.storage_path), ...owner(row), ...(row.kind === 'image' ? { annotations: row.annotations } : {}) };
   };
   return { revision: snapshot.revision, locations: snapshot.locations.map(l => ({
     id: l.id, name: l.name, region: l.region, latitude: String(l.latitude), longitude: String(l.longitude), approach: l.approach_notes, ...owner(l),
+    photos: snapshot.media.filter(m => m.location_id === l.id).map(media),
     boulders: snapshot.boulders.filter(b => b.location_id === l.id).map(b => ({
       id: b.id, name: b.name, notes: b.finding_notes, otherNotes: b.other_notes || '', ...owner(b),
       images: snapshot.media.filter(m => m.boulder_id === b.id && m.kind === 'image').map(media),
@@ -35,8 +36,8 @@ export async function toRows(guide, previousMedia = [], storage = null, token) {
   for (const l of guide.locations) {
     if (!l.latitude.trim() || !l.longitude.trim()) throw fail('Latitude and longitude are required.');
     rows.locations.push({ id: l.id, name: l.name, region: l.region, latitude: +l.latitude, longitude: +l.longitude, approach_notes: l.approach, created_by: l.createdBy });
-    for (const b of l.boulders) {
-      rows.boulders.push({ id: b.id, location_id: l.id, name: b.name, finding_notes: b.notes, other_notes: b.otherNotes || '', created_by: b.createdBy });
+    for (const b of [{ locationPhotos: true, images: l.photos || [], videos: [] }, ...l.boulders]) {
+      if (!b.locationPhotos) rows.boulders.push({ id: b.id, location_id: l.id, name: b.name, finding_notes: b.notes, other_notes: b.otherNotes || '', created_by: b.createdBy });
       for (const [kind, items] of [['image', b.images], ['video', b.videos || []]]) for (const m of items) {
         const ref = mediaReference(m.url);
         if (!ref) throw fail('Invalid uploaded file.');
@@ -50,7 +51,7 @@ export async function toRows(guide, previousMedia = [], storage = null, token) {
           if (info.mime !== mime) throw fail('Uploaded file type does not match.');
           size = info.size;
         }
-        rows.media.push({ id: m.id, boulder_id: b.id, name: m.name, kind, storage_bucket: ref.bucket, storage_path, mime_type: mime, size_bytes: size, annotations: kind === 'image' ? m.annotations : [], created_by: m.createdBy });
+        rows.media.push({ id: m.id, boulder_id: b.locationPhotos ? null : b.id, location_id: b.locationPhotos ? l.id : null, caption: m.caption || '', name: m.name, kind, storage_bucket: ref.bucket, storage_path, mime_type: mime, size_bytes: size, annotations: kind === 'image' ? m.annotations : [], created_by: m.createdBy });
       }
       for (const p of b.problems || []) {
         rows.problems.push({ id: p.id, boulder_id: b.id, name: p.name, grade: p.grade, description: p.description, photo_annotations: p.photoAnnotations || {}, created_by: p.createdBy });
