@@ -55,6 +55,9 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       }
       return identity(session.accessToken);
     },
+    async logbook(session, values) {
+      return request('/rest/v1/rpc/' + (values ? 'set_problem_log' : 'read_logbook'), values ? {target_problem:values.problemId,completed:values.completed} : {}, session.accessToken);
+    },
     async completeProfile(values, session) {
       const details=profileDetails(values);
       await request('/rest/v1/rpc/complete_profile',{display_name:details.name,height_cm:details.height,ape_index_inches:details.apeIndex},session.accessToken);

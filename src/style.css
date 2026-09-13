@@ -93,3 +93,13 @@ a,button,button:disabled,button[aria-disabled="true"],.disabled,.upload,input[ty
 .google-signin{display:flex;align-items:center;justify-content:center;gap:10px;min-height:44px;padding:12px;background:#fff;color:#1f1f1f;border:1px solid #747775;border-radius:4px;font-family:Arial,sans-serif;font-size:14px;font-weight:500}.google-signin img{width:20px;height:20px;flex-shrink:0;object-fit:contain}.google-signin:hover{background:#f8faff}
 
 .user-menu{position:relative}.user-menu-trigger{display:grid;place-items:center;width:44px;height:44px;border:1px solid var(--line);border-radius:50%;background:transparent;color:inherit}.user-menu-options{position:absolute;right:0;top:calc(100% + 8px);min-width:160px;padding:6px;background:#fff;color:#20392e;border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px #0003;z-index:1001}.user-menu-options a,.user-menu-options button{display:block;width:100%;padding:12px;text-align:left;background:none;border:0;border-radius:4px;text-decoration:none;color:inherit;font:inherit}.user-menu-options a:hover,.user-menu-options button:hover{background:#edf1e9}
+
+.problem-log-action { margin: 24px 30px; display:flex; flex-wrap:wrap; align-items:center; gap:16px; }
+.problem-log-action .error { flex-basis:100%; }
+.logged-badge { display:inline-block; margin-left:12px; padding:3px 9px; border-radius:12px; background:#dcebdc; color:#244d36; font-size:12px; font-weight:600; }
+.logbook-content { padding:30px; }
+.logbook-page { width:100%; }
+.logbook-page .detail-banner > a { color:inherit; }
+
+.logbook-back { display:inline-flex; align-items:center; gap:10px; min-height:44px; padding:10px 16px; margin-bottom:24px; border:1px solid #ffffff45; border-radius:8px; background:#ffffff12; color:inherit; text-decoration:none; font-weight:600; }
+.logbook-back:hover { background:#ffffff22; }

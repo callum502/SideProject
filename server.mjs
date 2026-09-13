@@ -138,6 +138,16 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         try { user = await auth.resolve(session); }
         catch (error) { if (error.status !== 401) throw error; sessions.delete(token); }
       }
+      if (url.pathname === '/api/logbook' && ['GET','POST'].includes(req.method)) {
+        if (!user) throw fail('Log in to use your logbook.',401);
+        let values;
+        if (req.method === 'POST') {
+          try { values=JSON.parse((await body(req,1024)).toString()); } catch { throw fail('Invalid log entry.'); }
+          if (!values || typeof values.completed !== 'boolean' || typeof values.problemId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(values.problemId)) throw fail('Invalid log entry.');
+        }
+        try { return json(200,await auth.logbook(session,values)); }
+        catch { throw fail('Could not load or save your logbook. Check your connection and that the logbook SQL migration has been applied.',503); }
+      }
       if (url.pathname === '/api/profile' && req.method === 'POST') {
         if(!user) throw fail('Log in first.',401);
         let values;try{values=JSON.parse((await body(req,4096)).toString());}catch{throw fail('Invalid profile details.');}
