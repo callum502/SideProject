@@ -15,7 +15,7 @@ export default function LocationMap({ locations, selectedId, onSelect }) {
   ), [locations]);
 
   useEffect(() => {
-    const instance = L.map(container.current, { scrollWheelZoom: false }).setView([20, 0], 2);
+    const instance = L.map(container.current, { scrollWheelZoom: true }).setView([20, 0], 2);
     map.current = instance;
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,

@@ -7,7 +7,7 @@ export default function CoordinatePicker({ initialLatitude = '', initialLongitud
   const [tileError, setTileError] = useState(false);
   const container = useRef(null), map = useRef(null), marker = useRef(null), positioned = useRef(false);
   useEffect(() => {
-    const instance = L.map(container.current, { scrollWheelZoom: false }).setView([20, 0], 2);
+    const instance = L.map(container.current, { scrollWheelZoom: true }).setView([20, 0], 2);
     map.current = instance;
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
