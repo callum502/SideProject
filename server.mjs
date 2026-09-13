@@ -1,3 +1,4 @@
+import { duplicateMediaName } from './media-names.mjs';
 import { createStorage } from './storage.mjs';
 import { mediaReference, MAX_VIDEO_BYTES } from './media-reference.mjs';
 import { createContentStore } from './content-store.mjs';
@@ -38,6 +39,11 @@ function validate(data) {
       if (!text(b.name, 120, true) || !text(b.notes, 10000) || (b.otherNotes !== undefined && !text(b.otherNotes, 10000)) || !Array.isArray(b.images) || b.images.length > 200) throw fail('Invalid boulder.');
       if (b.videos !== undefined && (!Array.isArray(b.videos) || b.videos.length > 200)) throw fail('Invalid videos.');
       if (b.problems !== undefined && (!Array.isArray(b.problems) || b.problems.length > 1000)) throw fail('Invalid problems.');
+      for (const [kind, media] of [['photo', b.images], ['video', b.videos || []]]) {
+        if (media.some(item => !item || !text(item.name, 255, true))) throw fail('Enter a valid media name.');
+        const duplicate = duplicateMediaName([], media.map(item => item.name));
+        if (duplicate !== null) throw fail(`A ${kind} named "${duplicate}" already exists on this boulder. Choose a different name.`);
+      }
       for (const problem of b.problems || []) {
         id(problem.id);
         if (!text(problem.name, 120, true) || !text(problem.grade, 40, true) || !text(problem.description, 10000, true)) throw fail('A problem needs a name, grade, and description.');

@@ -1,3 +1,4 @@
+import { duplicateMediaName } from '../media-names.mjs';
 ﻿import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createGuideServer} from '../server.mjs';
@@ -54,4 +55,10 @@ test('cloud API requires login, forwards verified tokens, validates writes and i
   await request('/api/logout','POST',{},cookie);
   assert.equal((await request('/api/guide','PUT',{revision:0,locations:[]},cookie)).status,401);
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
+
+test('media names reject existing and batch duplicates regardless of case or surrounding whitespace',()=>{
+ assert.equal(duplicateMediaName([{name:'Photo 1'}],[' photo 1 ']),' photo 1 ');
+ assert.equal(duplicateMediaName([],['Beta','BETA']),'BETA');
+ assert.equal(duplicateMediaName([{name:'Photo 1'}],['Photo 2','Photo 3']),null);
 });
