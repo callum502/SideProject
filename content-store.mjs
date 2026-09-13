@@ -15,7 +15,7 @@ export function toGuide(snapshot) {
     return { id: row.id, name: row.name, caption: row.caption || '', url: mediaUrl(row.storage_bucket, row.storage_path), ...owner(row), ...(row.kind === 'image' ? { annotations: row.annotations } : {}) };
   };
   return { revision: snapshot.revision, locations: snapshot.locations.map(l => ({
-    id: l.id, name: l.name, region: l.region, latitude: String(l.latitude), longitude: String(l.longitude), approach: l.approach_notes, ...owner(l),
+    id: l.id, name: l.name, latitude: String(l.latitude), longitude: String(l.longitude), approach: l.approach_notes, ...owner(l),
     photos: snapshot.media.filter(m => m.location_id === l.id).map(media),
     boulders: snapshot.boulders.filter(b => b.location_id === l.id).map(b => ({
       id: b.id, name: b.name, notes: b.finding_notes, otherNotes: b.other_notes || '', ...owner(b),
@@ -35,7 +35,7 @@ export async function toRows(guide, previousMedia = [], storage = null, token) {
   const rows = Object.fromEntries(tables.map(table => [table, []]));
   for (const l of guide.locations) {
     if (!l.latitude.trim() || !l.longitude.trim()) throw fail('Latitude and longitude are required.');
-    rows.locations.push({ id: l.id, name: l.name, region: l.region, latitude: +l.latitude, longitude: +l.longitude, approach_notes: l.approach, created_by: l.createdBy });
+    rows.locations.push({ id: l.id, name: l.name, latitude: +l.latitude, longitude: +l.longitude, approach_notes: l.approach, created_by: l.createdBy });
     for (const b of [{ locationPhotos: true, images: l.photos || [], videos: [] }, ...l.boulders]) {
       if (!b.locationPhotos) rows.boulders.push({ id: b.id, location_id: l.id, name: b.name, finding_notes: b.notes, other_notes: b.otherNotes || '', created_by: b.createdBy });
       for (const [kind, items] of [['image', b.images], ['video', b.videos || []]]) for (const m of items) {

@@ -31,7 +31,7 @@ function validate(data) {
   const id = value => { if (!text(value, 100, true) || ids.has(value)) throw fail('Invalid or duplicate record ID.'); ids.add(value); };
   for (const l of data.locations) {
     id(l.id);
-    if (!text(l.name, 120, true) || !text(l.region, 120) || !text(l.approach, 10000) || !Array.isArray(l.boulders) || l.boulders.length > 1000) throw fail('Invalid location.');
+    if (!text(l.name, 120, true) || !text(l.approach, 10000) || !Array.isArray(l.boulders) || l.boulders.length > 1000) throw fail('Invalid location.');
     if (typeof l.latitude !== 'string' || typeof l.longitude !== 'string' || !!l.latitude !== !!l.longitude) throw fail('Provide both coordinates.');
     if (l.latitude && (!Number.isFinite(+l.latitude) || Math.abs(+l.latitude) > 90 || !Number.isFinite(+l.longitude) || Math.abs(+l.longitude) > 180)) throw fail('Coordinates are outside the valid range.');
     if (l.photos !== undefined && (!Array.isArray(l.photos) || l.photos.length > 200)) throw fail('Invalid location photos.');

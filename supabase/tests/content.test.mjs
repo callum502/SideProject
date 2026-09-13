@@ -23,7 +23,7 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
       CREATE TABLE storage.objects(id uuid DEFAULT gen_random_uuid(),bucket_id text,name text,owner_id text,metadata jsonb,UNIQUE(bucket_id,name));
       ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
       GRANT USAGE ON SCHEMA storage TO authenticated;GRANT SELECT,INSERT ON storage.objects TO authenticated;`);
-    for (const name of ['20260909000100_initial_schema.sql','20260909000200_account_access.sql','20260910000100_content_api.sql','20260912000100_media_storage.sql','20260912000200_retire_local_storage.sql','20260912000300_problem_annotations.sql','20260912000400_boulder_notes.sql','20260913000100_location_photos.sql']) await db.exec(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+    for (const name of ['20260909000100_initial_schema.sql','20260909000200_account_access.sql','20260910000100_content_api.sql','20260912000100_media_storage.sql','20260912000200_retire_local_storage.sql','20260912000300_problem_annotations.sql','20260912000400_boulder_notes.sql','20260913000100_location_photos.sql','20260913000200_remove_region.sql']) await db.exec(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
     await db.exec(`INSERT INTO auth.users(id) VALUES ('${a}'),('${b}'),('${admin}'); UPDATE private.user_roles SET role='admin' WHERE user_id='${admin}';`);
     // Simulate PostgREST's transaction and authenticated role, without external network calls.
     async function rpc(name, values, user) {
@@ -41,8 +41,9 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
       catch(error) { return new Response(JSON.stringify({code:error.code,message:error.message}),{status:error.code==='42501'?403:400}); }
     }});
     const userA={id:a,name:'Climber',role:'contributor'}, userB={id:b,name:'Climber',role:'contributor'}, userAdmin={id:admin,name:'Admin',role:'admin'};
+    assert.equal((await db.query("SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='locations' AND column_name='region'")).rows.length,0);
     let guide=await store.read();
-    guide.locations.push({id:locationId,name:'Crag',region:'Region',latitude:'51.5',longitude:'-1.1',approach:'Walk uphill',boulders:[]});
+    guide.locations.push({id:locationId,name:'Crag',latitude:'51.5',longitude:'-1.1',approach:'Walk uphill',boulders:[]});
     guide=await store.save(guide,userA,a);
     assert.equal(guide.locations[0].createdBy,a);
     const stale=structuredClone(guide);
