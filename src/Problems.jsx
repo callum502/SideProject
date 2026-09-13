@@ -48,7 +48,7 @@ export function AttachMediaForm({ locationId, boulder, problem, kind, busy, erro
   return <form onSubmit={e => { e.preventDefault(); if (selected.length) save(field, selected); }}>
     {error && <p className="error" role="alert">{error}</p>}
     <fieldset className="media-picker"><legend>Choose {photo ? 'photos' : 'videos'} from {boulder.name}</legend>
-      {available.map(item => <label key={item.id}><input type="checkbox" disabled={busy} checked={selected.includes(item.id)} onChange={e => setSelected(old => e.target.checked ? [...old, item.id] : old.filter(id => id !== item.id))}/>{photo && <img src={item.url} alt=""/>}<span>{item.name}</span></label>)}
+      {available.map(item => <div key={item.id} className={photo ? undefined : "video-picker-item"}><label><input type="checkbox" disabled={busy} checked={selected.includes(item.id)} onChange={e => setSelected(old => e.target.checked ? [...old, item.id] : old.filter(id => id !== item.id))}/>{photo && <img src={item.url} alt=""/>}<span>{item.name}</span></label>{!photo && <VideoPickerPreview item={item}/>}</div>)}
       {!available.length && <p>No {photo ? 'photos' : 'videos'} available. Upload {photo ? 'an image' : 'a video'} to <a href={problemHref(locationId, boulder.id)} onClick={cancel}>{boulder.name}</a> so it can be attached to {problem.name}.</p>}
     </fieldset>
     <div className="form-actions"><button type="button" className="secondary" disabled={busy} onClick={cancel}>Cancel</button><button className="primary" disabled={busy || !selected.length}>{busy ? 'Adding...' : 'Add selected'}</button></div>
@@ -71,4 +71,9 @@ function MediaDropdown({ kind, busy, upload, attach, boulder, problem }) {
     <button className="secondary small" disabled={busy} aria-expanded={open} onClick={() => setOpen(!open)}>+ Add {photo ? 'Photo' : 'Video'} <span aria-hidden="true">▾</span></button>
     {open && <div className="photo-dropdown-options"><label className="secondary upload">Upload {kind} from files<input type="file" accept={photo ? "image/jpeg,image/png,image/webp" : "video/mp4,video/webm,video/quicktime,.mov"} multiple disabled={busy} onChange={e => { setOpen(false); upload(e); }}/></label><button className="secondary" disabled={busy} onClick={() => { setOpen(false); attach(); }}>{photo ? <>Add photo from the {boulder.name} page</> : <>Add video from the {boulder.name} page</>}</button></div>}
   </div>;
+}
+
+function VideoPickerPreview({ item }) {
+  const [failed, setFailed] = React.useState(false);
+  return failed ? <p>Preview unavailable for this format. You can still select this video.</p> : <video className="video-picker-preview" controls playsInline preload="metadata" src={item.url} aria-label={`Preview ${item.name}`} onError={() => setFailed(true)} />;
 }
