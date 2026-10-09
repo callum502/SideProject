@@ -6,6 +6,8 @@ As someone who enjoys bouldering both indoors and outdoors, I have noticed that 
 
 This platform allows for and encourages uploading images and provides tools to annotate them in place, making it much easier to highlight the holds used for a specific problem. Each location also requires a set of coordinates and a link to the location on Google Maps is automatically generated from these, making it much easier to understand how to travel to the location.
 
-https://github.com/user-attachments/assets/9119a983-bfc9-44ac-96bf-ada8451b3cb6
+
+https://github.com/user-attachments/assets/99ae8287-3f0a-49d6-ac0d-032c67f550e1
+
 
 If you are curious about the name, a "project" is slang in bouldering communities meaning a climbing problem someone is working on. This is often shortened to "Proj". The name SideProj plays on this by referencing the fact that the platform is my personal side project while it collates information for the users' bouldering projects.
