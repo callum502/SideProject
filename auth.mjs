@@ -31,6 +31,11 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     }
     return data;
   }
+  function validateAccountInputs(values) {
+    for (const [field,limit] of [['email',254],['password',256],['code',32]]) {
+      if (values[field] !== undefined && (typeof values[field] !== 'string' || values[field].length > limit)) throw fail(field[0].toUpperCase()+field.slice(1)+' must be no more than '+limit+' characters.');
+    }
+  }
   async function checkName(name, token) {
     if (await request('/rest/v1/rpc/display_name_available',{candidate:name},token) === false) throw fail('That display name is already taken. Choose a different name.',409);
   }
@@ -55,6 +60,7 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       return {accessToken:session.access_token,refreshToken:session.refresh_token,expires:Date.now()+session.expires_in*1000,user:await identity(session.access_token)};
     },
     async login(values) {
+      validateAccountInputs(values);
       if (typeof values.email !== 'string' || typeof values.password !== 'string') throw fail('Enter your email and password.', 401);
       const session = await request('/auth/v1/token?grant_type=password', { email: values.email.trim(), password: values.password });
       return { accessToken: session.access_token, refreshToken: session.refresh_token, expires: Date.now() + session.expires_in * 1000, user: await identity(session.access_token) };
@@ -82,6 +88,7 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       return identity(session.accessToken);
     },
     async signup(values) {
+      validateAccountInputs(values);
       const details=profileDetails(values);
       if (typeof values.name !== 'string' || !values.name.trim() || values.name.trim().length > 120 || typeof values.email !== 'string' || typeof values.password !== 'string' || values.password.length < 12) throw fail('Provide a display name, email and a password of at least 12 characters.');
       await checkName(details.name);
@@ -90,6 +97,7 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       return { message: 'Check your email for a confirmation code. If you already have an account, log in instead.' };
     },
     async confirm(values) {
+      validateAccountInputs(values);
       if (typeof values.email !== 'string' || typeof values.code !== 'string') throw fail('Enter your email and confirmation code.');
       const session = await request('/auth/v1/verify', { email: values.email.trim(), token: values.code.trim(), type: 'signup' });
       // Confirmation is separate from logging in to the local app.
@@ -97,11 +105,13 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       return { message: 'Email confirmed. You can now log in.' };
     },
     async recover(values) {
+      validateAccountInputs(values);
       if (typeof values.email !== 'string' || !values.email.trim()) throw fail('Enter your email.');
       await request('/auth/v1/recover', { email: values.email.trim() });
       return { message: 'If an account exists, a recovery code has been emailed to you.' };
     },
     async reset(values) {
+      validateAccountInputs(values);
       if (typeof values.password !== 'string' || values.password.length < 12 || typeof values.code !== 'string' || typeof values.email !== 'string') throw fail('Enter your email, recovery code and a password of at least 12 characters.');
       const session = await request('/auth/v1/verify', { email: values.email.trim(), token: values.code.trim(), type: 'recovery' });
       await request('/auth/v1/user', { password: values.password }, session.access_token, 'PUT');

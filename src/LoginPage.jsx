@@ -56,7 +56,7 @@ export default function LoginPage({ onLogin }) {
       <fieldset className="auth-fields" disabled={busy}>
         {mode === 'signup' && <ProfileFields/>}
         <label>Email *<input name="email" type="email" required maxLength={254} autoComplete="email" autoCapitalize="none" spellCheck={false} placeholder="you@example.com" value={email} onChange={event => setEmail(event.target.value)}/></label>
-        {['reset', 'confirm'].includes(mode) && <label>Email code *<input className="auth-code" name="code" required autoComplete="one-time-code" inputMode="numeric" placeholder="Enter your code"/></label>}
+        {['reset', 'confirm'].includes(mode) && <label>Email code *<input className="auth-code" name="code" required maxLength={32} autoComplete="one-time-code" inputMode="numeric" placeholder="Enter your code"/></label>}
         {hasPassword && <div className="auth-password-field">
           <label htmlFor="auth-password">{mode === 'reset' ? 'New password' : 'Password'} *</label>
           <div className="auth-password-input"><input id="auth-password" name="password" type={showPassword ? 'text' : 'password'} required minLength={mode === 'login' ? undefined : 12} maxLength={256} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} aria-describedby={mode !== 'login' ? 'password-hint' : undefined}/><button type="button" className="auth-password-toggle" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Hide' : 'Show'}</button></div>

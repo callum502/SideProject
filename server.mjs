@@ -26,6 +26,31 @@ function validateAnnotations(annotations) {
           } else if (![a.x, a.y, a.x2, a.y2].every(coord)) throw fail('Invalid annotation coordinates.');
         }
 }
+function validateContentLengths(data, previous) {
+  const oldRecords = new Map();
+  for (const location of previous.locations) {
+    oldRecords.set(location.id, location);
+    for (const boulder of location.boulders) {
+      oldRecords.set(boulder.id, boulder);
+      for (const problem of boulder.problems || []) oldRecords.set(problem.id, problem);
+    }
+  }
+  const check = (record, field, limit, label) => {
+    if (typeof record[field] === 'string' && record[field].length > limit && record[field] !== oldRecords.get(record.id)?.[field]) throw fail(label + ' must be no more than ' + limit + ' characters.');
+  };
+  for (const location of data.locations) {
+    check(location,'name',80,'Location name');
+    for (const boulder of location.boulders) {
+      check(boulder,'name',80,'Boulder name');
+      check(boulder,'notes',800,'Finding the Boulder');
+      check(boulder,'otherNotes',800,'Other Notes');
+      for (const problem of boulder.problems || []) {
+        check(problem,'name',80,'Problem name');
+        check(problem,'description',800,'Problem description');
+      }
+    }
+  }
+}
 function validate(data) {
   if (!Number.isSafeInteger(data.revision) || !Array.isArray(data.locations) || data.locations.length > 1000) throw fail('Invalid guide.');
   const ids = new Set();
@@ -34,7 +59,7 @@ function validate(data) {
     id(l.id);
     if (!validLocationLinks(l.links || [])) throw fail('Links need a label and a valid HTTP or HTTPS URL.');
     if (!text(l.name, 120, true) || !text(l.approach, 10000) || !Array.isArray(l.boulders) || l.boulders.length > 1000) throw fail('Invalid location.');
-    if (typeof l.latitude !== 'string' || typeof l.longitude !== 'string' || !!l.latitude !== !!l.longitude) throw fail('Provide both coordinates.');
+    if (!text(l.latitude,32) || !text(l.longitude,32) || !!l.latitude !== !!l.longitude) throw fail('Provide both coordinates.');
     if (l.latitude && (!Number.isFinite(+l.latitude) || Math.abs(+l.latitude) > 90 || !Number.isFinite(+l.longitude) || Math.abs(+l.longitude) > 180)) throw fail('Coordinates are outside the valid range.');
     if (l.photos !== undefined && (!Array.isArray(l.photos) || l.photos.length > 200)) throw fail('Invalid location photos.');
     for (const photo of l.photos || []) {
@@ -190,6 +215,7 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
       if (url.pathname === '/api/guide' && req.method === 'PUT') {
         let data; try { data = JSON.parse((await body(req, 12 * 1024 * 1024)).toString()); } catch (e) { if (e.status) throw e; throw fail('Invalid JSON.'); }
         validate(data);
+        validateContentLengths(data, await contentStore.read(session.accessToken));
         return json(200, await contentStore.save(data, user, session.accessToken));
       }
       if (url.pathname === '/api/images' && req.method === 'POST') {

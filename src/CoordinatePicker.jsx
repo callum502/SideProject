@@ -41,8 +41,8 @@ export default function CoordinatePicker({ initialLatitude = '', initialLongitud
   }, [latitude, longitude]);
 
   return <div className="coordinate-picker"><div className="form-columns">
-    <label>Latitude <span aria-hidden="true">*</span><input name="latitude" type="number" required step="any" min="-90" max="90" value={latitude} onChange={e => setLatitude(e.target.value)} placeholder="53.3470"/></label>
-    <label>Longitude <span aria-hidden="true">*</span><input name="longitude" type="number" required step="any" min="-180" max="180" value={longitude} onChange={e => setLongitude(e.target.value)} placeholder="-1.6330"/></label>
+    <label>Latitude <span aria-hidden="true">*</span><input name="latitude" type="number" required step="any" min="-90" max="90" value={latitude} onChange={e => setLatitude(e.target.value.slice(0,32))} placeholder="53.3470"/></label>
+    <label>Longitude <span aria-hidden="true">*</span><input name="longitude" type="number" required step="any" min="-180" max="180" value={longitude} onChange={e => setLongitude(e.target.value.slice(0,32))} placeholder="-1.6330"/></label>
     </div><p className="coordinate-help">Enter coordinates to preview the location, or click the map to choose a point.</p><div className="location-map coordinate-map" ref={container} aria-label="Choose location coordinates on the map"/>
     {tileError && <p className="coordinate-help" role="status">Map tiles could not load. You can still enter coordinates above.</p>}
   </div>;

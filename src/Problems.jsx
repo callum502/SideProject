@@ -6,7 +6,7 @@ export const problemHref = (location, boulder, problem) => `#${new URLSearchPara
 
 export function ProblemList({ loggedIds = new Set(), place, boulder, add, busy, guest }) {
   return <section className="problems-section"><div className="section-heading photos-heading"><h3>Problems <span className="count">{(boulder.problems || []).length}</span></h3><button className="secondary small" title={guest ? "Create an account to contribute" : undefined} aria-disabled={busy} onClick={() => { if (!busy) add(); }}>+ Add problem</button></div>
-    {boulder.problems?.length ? <div className="problem-list">{boulder.problems.map(p => <a className="problem-row" key={p.id} href={problemHref(place.id, boulder.id, p.id)}><span><strong>{p.grade} - {p.name}</strong>{loggedIds.has(p.id) && <span className="logged-badge">Done</span>}<p>{p.description}</p></span><span aria-hidden="true">↗</span></a>)}</div> : <p className="problem-empty">No problems yet. Add the first line on this boulder.</p>}
+    {boulder.problems?.length ? <div className="problem-list">{boulder.problems.map(p => <a className="problem-row problem-preview" key={p.id} href={problemHref(place.id, boulder.id, p.id)}><span><strong>{p.grade} - {p.name}</strong>{loggedIds.has(p.id) && <span className="logged-badge">Done</span>}<p>{p.description}</p></span><span aria-hidden="true">↗</span></a>)}</div> : <p className="problem-empty">No problems yet. Add the first line on this boulder.</p>}
   </section>;
 }
 
@@ -19,9 +19,9 @@ export function ProblemForm({ boulder, problem, save, busy, error, cancel }) {
     await save({ ...fields, id: problem?.id || crypto.randomUUID() });
   }
   return <form onSubmit={submit}>{error && <p className="error" role="alert">{error}</p>}
-    <label>Problem name <span aria-hidden="true">*</span><input name="name" required autoFocus maxLength={120} defaultValue={problem?.name || ''}/></label>
+    <label>Problem name <span aria-hidden="true">*</span><input name="name" required autoFocus maxLength={80} defaultValue={problem?.name || ''}/></label>
     <label>Grade <span aria-hidden="true">*</span><select name="grade" required defaultValue={problem?.grade || ''}><option value="" disabled>Select a grade</option>{problem?.grade && !grades.includes(problem.grade) && <option value={problem.grade}>{problem.grade} (current)</option>}{grades.map(grade => <option key={grade} value={grade}>{grade}</option>)}</select></label>
-    <label>Description <span aria-hidden="true">*</span><textarea name="description" required maxLength={10000} rows={5} placeholder="Describe the start, the line, key moves, and finish..." defaultValue={problem?.description || ''}/></label>
+    <label>Description <span aria-hidden="true">*</span><textarea name="description" required maxLength={800} rows={5} placeholder="Describe the start, the line, key moves, and finish..." defaultValue={problem?.description || ''}/></label>
     {problem && <>
     <fieldset className="media-picker"><legend>Link photos from this boulder</legend>{boulder.images.length ? boulder.images.map(image => <label key={image.id}><input type="checkbox" name="imageIds" value={image.id} defaultChecked={problem?.imageIds.includes(image.id)}/><img src={image.url} alt=""/><span>{image.name}</span></label>) : <p>Upload photos on the boulder page to link them here.</p>}</fieldset>
     <fieldset className="media-picker"><legend>Link beta videos from this boulder</legend>{boulder.videos?.length ? boulder.videos.map(video => <label key={video.id}><input type="checkbox" name="videoIds" value={video.id} defaultChecked={problem?.videoIds.includes(video.id)}/><span>{video.name}</span></label>) : <p>Upload videos on the boulder page to link them here.</p>}</fieldset>

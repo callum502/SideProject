@@ -116,3 +116,39 @@ a,button,button:disabled,button[aria-disabled="true"],.disabled,.upload,input[ty
 
 .friend-actions .friend-remove { background:#b93838; border-color:#b93838; color:#fff; }
 .friend-actions .friend-remove:hover { background:#972b2b; border-color:#972b2b; }
+
+/* User content must not set the minimum width of a flex/grid layout. */
+body { overflow-wrap:anywhere; }
+.workspace, .workspace main, .detail-panel, .detail-banner, .problem-page,
+.login-layout, .login-card, .logbook-content, .friends-content,
+.location-info > *, .form-columns > *, .photo-grid > *, .video-grid > *,
+.page-navigation > *, .page-trail li, .parent-link > span,
+.problem-row > *, .boulder-row > *, .location-result > *,
+.section-heading > *, .media-picker label > *, .modal-heading > * { min-width:0; }
+.detail-panel, .problem-row, .boulder-row, .location-result { width:100%; }
+input, textarea, select, fieldset { min-width:0; max-width:100%; }
+button, .secondary, .primary { max-width:100%; overflow-wrap:anywhere; }
+.section-heading, .form-actions, .video-card figcaption { flex-wrap:wrap; }
+.media-picker img { flex-shrink:0; }
+.media-picker, .location-search, .location-search-results { min-width:0; }
+.location-result > span:first-child { flex:1; }
+.problem-row > div:first-child { flex:1; }
+.problem-row > button, .problem-row > .friend-actions { flex-shrink:0; }
+.logbook-page .problem-row { flex-wrap:wrap; }
+/* Compact previews; the full text remains available on the detail page. */
+.problem-preview > span:first-child { overflow:hidden; }
+.problem-preview strong, .boulder-row strong, .location-result strong {
+ display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.problem-preview p, .boulder-row p {
+ display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+ white-space:normal; overflow:hidden; text-overflow:ellipsis; overflow-wrap:anywhere;
+}
+.preserve, .detail-banner h1, .created-by, .photo-card, figcaption,
+.page-trail, .parent-link { overflow-wrap:anywhere; }
+.leaflet-tooltip { max-width:min(280px,70vw); white-space:normal; overflow-wrap:anywhere; }
+@media(max-width:480px) {
+ .friend-search label { min-width:0; flex-basis:100%; }
+ .problem-row > button, .problem-row > .friend-actions { flex-shrink:1; }
+ .photo-dropdown { max-width:100%; }
+}

@@ -86,3 +86,14 @@ test('account errors identify failing function and database code without exposin
  const auth=createAuth({env,fetchImpl:async url=>url.endsWith('/auth/v1/user') ? new Response(JSON.stringify({id:'account',email_confirmed_at:'2026-09-09'})) : new Response(JSON.stringify({code:'42501',message:'private diagnostic details'}),{status:403})});
  await assert.rejects(auth.resolve({expires:Date.now()+600000,accessToken:'token'}),error=>error.message.includes('current_account: 42501') && !error.message.includes('private diagnostic'));
 });
+
+test('account text limits reject oversized values before contacting Supabase', async()=>{
+ let calls=0;
+ const auth=createAuth({env,fetchImpl:async()=>{calls++;throw Error('Unexpected network request');}});
+ for(const method of ['login','signup','confirm','recover','reset']) {
+  await assert.rejects(auth[method]({email:'a'.repeat(255),password:'valid-password',code:'123456',name:'Climber',height:180}),/Email must be no more than 254/);
+ }
+ await assert.rejects(auth.login({email:'a@b.com',password:'p'.repeat(257)}),/Password must be no more than 256/);
+ await assert.rejects(auth.confirm({email:'a@b.com',code:'1'.repeat(33)}),/Code must be no more than 32/);
+ assert.equal(calls,0);
+});
