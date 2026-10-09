@@ -79,3 +79,15 @@ test('Google callback requires browser cookie, rejects replay and creates a serv
   const replay=await fetch(base+'/auth/google/callback?code=valid',{redirect:'manual',headers:{Cookie:cookie}});assert.equal(replay.headers.get('location'),'/?google_error=1#login');assert.equal(exchanges,1);
  } finally {server.closeAllConnections();await new Promise(r=>server.close(r));}
 });
+
+test('post limits count across locations and do not block edits at the limit',async()=>{
+ const {enforcePostLimits}=await import('../post-limits.mjs');
+ const make=(count)=>({locations:Array.from({length:25},(_,i)=>({id:'l'+i,createdBy:'me',boulders:Array.from({length:i===0?count:0},(_,j)=>({id:'b'+j,createdBy:'me',problems:[]}))}))});
+ const old=make(50);assert.doesNotThrow(()=>enforcePostLimits(old,structuredClone(old),'me'));
+ const next=make(50);next.locations[1].boulders.push({id:'extra',createdBy:'me',problems:[]});
+ assert.throws(()=>enforcePostLimits(old,next,'me'),/maximum 50 boulders/);
+ const loc=make(50);loc.locations.push({id:'extra',createdBy:'me',boulders:[]});
+ assert.throws(()=>enforcePostLimits(old,loc,'me'),/maximum 25 locations/);
+ const probs=make(50);for(let i=0;i<251;i++)probs.locations[i%25].boulders.push({id:'other'+i,createdBy:'other',problems:[{id:'p'+i,createdBy:'me'}]});
+ assert.throws(()=>enforcePostLimits(old,probs,'me'),/maximum 250 problems/);
+});

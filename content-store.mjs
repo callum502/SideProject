@@ -1,3 +1,4 @@
+import { enforcePostLimits, POST_LIMITS, limitMessage } from './post-limits.mjs';
 import { mediaReference, mediaUrl } from './media-reference.mjs';
 import { loadEnv } from 'vite';
 import { isDeepStrictEqual } from 'node:util';
@@ -87,6 +88,7 @@ export function createContentStore({ env = { ...loadEnv('development', process.c
     catch { throw fail('Database is unavailable. Your changes were not confirmed; reload before retrying.', 503); }
     const result = await response.json().catch(() => null);
     if (!response.ok) {
+      if (result?.code === 'PZ001' && Object.hasOwn(POST_LIMITS,result?.details || '')) throw fail(limitMessage(result.details),400);
       if (result?.code === '40001' || result?.code === '23505') throw fail('This guide changed. Reload before saving again.', 409);
       if (response.status === 401) throw fail('Your session expired. Log in again.', 401);
       if (result?.code === '42501') throw fail('You do not have permission to change one of these records.', 403);
@@ -101,7 +103,9 @@ export function createContentStore({ env = { ...loadEnv('development', process.c
     async save(incoming, user, token) {
       const snapshot = await rpc('read_content', {}, token);
       if (incoming.revision !== snapshot.revision) throw fail('This guide changed. Reload before saving again.', 409);
-      authorizeChanges(toGuide(snapshot), incoming, user);
+      const previous = toGuide(snapshot);
+      authorizeChanges(previous, incoming, user);
+      enforcePostLimits(previous, incoming, user.id);
       const rows = await toRows(incoming, snapshot.media, storage, token);
       const operations = contentOperations(snapshot, rows);
       return toGuide(await rpc('save_content', { expected_revision: incoming.revision, operations }, token));
