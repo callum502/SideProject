@@ -97,3 +97,18 @@ test('account text limits reject oversized values before contacting Supabase', a
  await assert.rejects(auth.confirm({email:'a@b.com',code:'1'.repeat(33)}),/Code must be no more than 32/);
  assert.equal(calls,0);
 });
+
+test('account deletion requires server credentials and targets only the verified account',async()=>{
+ const missing=fixture();await assert.rejects(missing.auth.deleteAccount({accessToken:'token'}),/not configured/);assert.equal(missing.calls.length,0);
+ const calls=[];
+ const auth=createAuth({env:{...env,SUPABASE_SECRET_KEY:'server-only'},fetchImpl:async(url,options)=>{
+ calls.push({url,options});
+ if(url.endsWith('/auth/v1/user'))return new Response(JSON.stringify({id:'verified-user',email_confirmed_at:'2026-01-01'}));
+ if(url.endsWith('/current_account'))return new Response(JSON.stringify([{id:'verified-user',display_name:'Climber',role:'contributor'}]));
+ return new Response('{}');
+ }});
+ await auth.deleteAccount({accessToken:'token',user:{id:'untrusted'}});
+ assert.equal(JSON.parse(calls[2].options.body).target_user,'verified-user');
+ assert.ok(calls[3].url.endsWith('/auth/v1/admin/users/verified-user'));assert.equal(calls[3].options.method,'DELETE');
+ assert.equal(calls[3].options.headers.apikey,'server-only');
+});

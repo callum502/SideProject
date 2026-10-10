@@ -163,6 +163,16 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         try { user = await auth.resolve(session); }
         catch (error) { if (error.status !== 401) throw error; sessions.delete(token); }
       }
+      if (url.pathname === '/api/account' && req.method === 'DELETE') {
+        if(!user)throw fail('Log in first.',401);
+        if(req.headers.origin!==appOrigin)throw fail('Delete your account from this site.',403);
+        let values;try{values=JSON.parse((await body(req,1024)).toString());}catch{throw fail('Confirm account deletion.');}
+        if(values?.confirmation!=='DELETE')throw fail('Type DELETE to confirm.');
+        await auth.deleteAccount(session);
+        for(const [key,value] of sessions)if(value.user?.id===user.id)sessions.delete(key);
+        res.setHeader('Set-Cookie','sideproj_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'+deployment.secureCookie);
+        return json(200,{deleted:true});
+      }
       if (url.pathname === '/api/profile-photo' && req.method === 'GET') {
         const id=url.searchParams.get('id');
         if(!id || !/^[0-9a-f-]{36}$/i.test(id))throw fail('Invalid profile.',400);

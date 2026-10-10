@@ -77,6 +77,16 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     },
     async profilePhoto(id) { return request('/rest/v1/rpc/profile_photo',{target_user:id}); },
     async setProfilePhoto(path,session) { return request('/rest/v1/rpc/set_profile_photo',{target_path:path},session.accessToken); },
+    async deleteAccount(session) {
+      const adminKey=env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
+      if(!adminKey)throw fail('Account deletion is not configured. Contact the site administrator.',503);
+      const account=await identity(session.accessToken);
+      const headers={apikey:adminKey,Authorization:'Bearer '+adminKey,'Content-Type':'application/json'};
+      const prepared=await fetchImpl(base+'/rest/v1/rpc/prepare_account_deletion',{method:'POST',headers,body:JSON.stringify({target_user:account.id}),signal:AbortSignal.timeout(15000)});
+      if(!prepared.ok)throw fail('Could not prepare account deletion. Check the account-deletion migration.',503);
+      const response=await fetchImpl(base+'/auth/v1/admin/users/'+encodeURIComponent(account.id),{method:'DELETE',headers,body:JSON.stringify({should_soft_delete:false}),signal:AbortSignal.timeout(15000)});
+      if(!response.ok)throw fail('Could not delete your account. Please retry or contact the site administrator.',503);
+    },
     async publicProfile(id) {
       return request('/rest/v1/rpc/read_public_profile',{target_user:id});
     },

@@ -11,7 +11,7 @@ const rowKey = (table, row) => table === 'problem_media' ? `${row.problem_id}/${
 
 export function toGuide(snapshot) {
   const names = new Map(snapshot.profiles.map(p => [p.id, p.display_name]));
-  const owner = row => ({ createdBy: row.created_by, createdByName: names.get(row.created_by) || 'Climber' });
+  const owner = row => ({ createdBy: row.created_by, createdByName: row.created_by ? names.get(row.created_by) || 'Climber' : 'Deleted User' });
   const media = row => {
     return { id: row.id, name: row.name, caption: row.caption || '', url: mediaUrl(row.storage_bucket, row.storage_path), ...owner(row), ...(row.kind === 'image' ? { annotations: row.annotations } : {}) };
   };
