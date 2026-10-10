@@ -188,3 +188,10 @@ button, .secondary, .primary { max-width:100%; overflow-wrap:anywhere; }
  .photo-dropdown-options > * { min-width:0; max-width:100%; }
  .photo-dropdown-options .secondary { white-space:normal; overflow-wrap:anywhere; }
 }
+
+/* Keep drawing gestures on the canvas, including empty areas of its SVG. */
+.annotation-stage, .annotation-stage * { touch-action:none; }
+.annotation-stage { overscroll-behavior:contain; user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+.annotation-stage img { pointer-events:none; }
+.annotation-stage svg { pointer-events:all; }
+dialog { overscroll-behavior:contain; }
