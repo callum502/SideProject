@@ -207,3 +207,10 @@ dialog { overscroll-behavior:contain; }
 
 .profile-actions .profile-photo-remove { border-color:#c99b8e; color:#ffe0d6; }
 .profile-actions .profile-photo-remove:hover { background:#673b32; }
+
+.friend-suggestions { border:1px solid var(--line); border-radius:8px; padding:12px; max-height:360px; overflow:auto; }
+.friend-suggestions ul { list-style:none; padding:0; margin:0; }
+.friend-suggestions li { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; flex-wrap:wrap; }
+.friend-suggestions li + li { border-top:1px solid var(--line); }
+.friend-suggestions .friend-identity { min-width:0; flex:1 1 140px; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }

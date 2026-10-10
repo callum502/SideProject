@@ -81,6 +81,7 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       return request('/rest/v1/rpc/read_public_profile',{target_user:id});
     },
     async friends(session, values) {
+      if(values.action==='suggest')return request('/rest/v1/rpc/search_friend_profiles',{query_name:values.name},session.accessToken);
       return request('/rest/v1/rpc/friends_action',{action:values.action,target:values.target || null,query_name:values.name || null},session.accessToken);
     },
     async logbook(session, values) {
