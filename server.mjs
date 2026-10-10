@@ -163,6 +163,13 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         try { user = await auth.resolve(session); }
         catch (error) { if (error.status !== 401) throw error; sessions.delete(token); }
       }
+      if (url.pathname === '/api/public-profile' && req.method === 'GET') {
+        const id=url.searchParams.get('id');
+        if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw fail('Profile not found.',404);
+        const profile=await auth.publicProfile(id);
+        if(!profile)throw fail('Profile not found.',404);
+        return json(200,profile);
+      }
       if (url.pathname === '/api/friends' && req.method === 'POST') {
         if (!user) throw fail('Log in to use Friends.',401);
         let values;try {values=JSON.parse((await body(req,2048)).toString());}catch{throw fail('Invalid friend request.');}

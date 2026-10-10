@@ -156,3 +156,9 @@ button, .secondary, .primary { max-width:100%; overflow-wrap:anywhere; }
 .annotation-stage svg.annotation-erasing { cursor:default; }
 .annotation-erase-target { cursor:pointer; }
 .annotation-erase-target:hover { filter:drop-shadow(0 0 2px #fff); }
+
+.created-by a { color:inherit; text-underline-offset:3px; }
+.profile-measurements { display:flex; flex-wrap:wrap; gap:24px; margin:20px 0; }
+.profile-measurements dt { font-size:13px; opacity:.8; }
+.profile-measurements dd { margin:6px 0 0; font-weight:600; }
+.public-profile .logbook-content > .section-heading { margin-bottom:20px; }
