@@ -202,6 +202,7 @@ dialog { overscroll-behavior:contain; }
 .creator-link,.friend-identity { display:inline-flex; align-items:center; gap:8px; max-width:100%; }
 .friend-identity strong { min-width:0; overflow-wrap:anywhere; }
 .profile-identity,.profile-actions { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+.profile-identity { margin-top:20px; }
 .profile-actions .logbook-back { margin-bottom:0; }
 .profile-actions .upload { position:relative; cursor:pointer; }
 
