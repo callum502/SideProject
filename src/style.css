@@ -162,3 +162,29 @@ button, .secondary, .primary { max-width:100%; overflow-wrap:anywhere; }
 .profile-measurements dt { font-size:13px; opacity:.8; }
 .profile-measurements dd { margin:6px 0 0; font-weight:600; }
 .public-profile .logbook-content > .section-heading { margin-bottom:20px; }
+
+/* Prevent grid min-content sizing from widening cards on mobile Safari. */
+.problem-list, .boulder-list {
+ grid-template-columns:minmax(0,1fr);
+ min-width:0;
+}
+.problems-section { min-width:0; max-width:100%; }
+.problem-row { min-width:0; max-width:100%; }
+.problem-preview { display:grid; grid-template-columns:minmax(0,1fr) auto; }
+.problem-preview > span:first-child { display:block; min-width:0; max-width:100%; }
+.problem-preview strong, .problem-preview p { max-width:100%; }
+.photo-dropdown { margin-left:auto; }
+@media(max-width:700px) {
+ .problem-list { margin-left:16px; margin-right:16px; }
+ .logbook-content .problem-list { margin-left:0; margin-right:0; }
+ .problem-row { padding:12px; gap:10px; }
+ .problem-page .photos-heading .photo-dropdown {
+  flex:0 0 100%; width:100%; min-width:0; margin-left:0;
+ }
+ .photo-dropdown-options {
+  position:static; inset:auto; width:100%; max-width:100%;
+  margin-top:8px; box-shadow:0 4px 12px #0002;
+ }
+ .photo-dropdown-options > * { min-width:0; max-width:100%; }
+ .photo-dropdown-options .secondary { white-space:normal; overflow-wrap:anywhere; }
+}
