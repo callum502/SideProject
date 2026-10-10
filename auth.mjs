@@ -75,6 +75,8 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       }
       return identity(session.accessToken);
     },
+    async profilePhoto(id) { return request('/rest/v1/rpc/profile_photo',{target_user:id}); },
+    async setProfilePhoto(path,session) { return request('/rest/v1/rpc/set_profile_photo',{target_path:path},session.accessToken); },
     async publicProfile(id) {
       return request('/rest/v1/rpc/read_public_profile',{target_user:id});
     },

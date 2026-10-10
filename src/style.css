@@ -195,3 +195,15 @@ button, .secondary, .primary { max-width:100%; overflow-wrap:anywhere; }
 .annotation-stage img { pointer-events:none; }
 .annotation-stage svg { pointer-events:all; }
 dialog { overscroll-behavior:contain; }
+
+.avatar { display:inline-flex; align-items:center; justify-content:center; flex:0 0 32px; width:32px; height:32px; border-radius:50%; overflow:hidden; background:#dce6df; color:#244c3b; font-size:16px; font-weight:600; vertical-align:middle; }
+.avatar img { display:block; width:100%; height:100%; object-fit:cover; }
+.avatar-large { width:96px; height:96px; flex-basis:96px; font-size:36px; }
+.creator-link,.friend-identity { display:inline-flex; align-items:center; gap:8px; max-width:100%; }
+.friend-identity strong { min-width:0; overflow-wrap:anywhere; }
+.profile-identity,.profile-actions { display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+.profile-actions .logbook-back { margin-bottom:0; }
+.profile-actions .upload { position:relative; cursor:pointer; }
+
+.profile-actions .profile-photo-remove { border-color:#c99b8e; color:#ffe0d6; }
+.profile-actions .profile-photo-remove:hover { background:#673b32; }

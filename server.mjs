@@ -163,12 +163,27 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         try { user = await auth.resolve(session); }
         catch (error) { if (error.status !== 401) throw error; sessions.delete(token); }
       }
+      if (url.pathname === '/api/profile-photo' && req.method === 'GET') {
+        const id=url.searchParams.get('id');
+        if(!id || !/^[0-9a-f-]{36}$/i.test(id))throw fail('Invalid profile.',400);
+        const path=await auth.profilePhoto(id);
+        if(!path)return json(404,{error:'No profile photo.'});
+        res.writeHead(302,{Location:storage.publicUrl(path),'Cache-Control':'no-store'});return res.end();
+      }
+      if (url.pathname === '/api/profile-photo' && req.method === 'POST') {
+        if(!user)throw fail('Log in first.',401);
+        let values;try{values=JSON.parse((await body(req,2048)).toString());}catch{throw fail('Invalid photo.');}
+        const ref=typeof values?.url==='string' ? mediaReference(values.url) : null;
+        if(values?.url!==null && (!ref || !/\.(jpg|png|webp)$/.test(ref.path) || ref.path.split('/')[0]!==user.id))throw fail('Choose an image uploaded by your account.',400);
+        await auth.setProfilePhoto(ref?.path || null,session);
+        return json(200,{saved:true});
+      }
       if (url.pathname === '/api/public-profile' && req.method === 'GET') {
         const id=url.searchParams.get('id');
         if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)) throw fail('Profile not found.',404);
         const profile=await auth.publicProfile(id);
         if(!profile)throw fail('Profile not found.',404);
-        return json(200,profile);
+        return json(200,{...profile,hasPhoto:!!(await auth.profilePhoto(id))});
       }
       if (url.pathname === '/api/friends' && req.method === 'POST') {
         if (!user) throw fail('Log in to use Friends.',401);
