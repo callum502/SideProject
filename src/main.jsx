@@ -166,25 +166,33 @@ function App() {
     {modal?.image && <AnnotationEditor error={error} image={modal.image} close={() => setModal(null)} busy={busy} save={async annotations => { if (await updateBoulder({ problems: boulder.problems.map(p => p.id === modal.problemId ? { ...p, photoAnnotations: { ...p.photoAnnotations, [modal.image.id]: annotations } } : p) })) setModal(null); }}/>}<div className="toast" role="status">{toast}</div>
   </div>;
 }
-function Shapes({ items, draft, ...props }) {
-  return <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" {...props}><g opacity="0.5">{[...items, ...(draft ? [draft] : [])].map((s, i) => {
-    const stroke = s.color === 'green' ? '#35df79' : '#ff2929';
-    if (s.type === 'box') return <rect key={i} stroke={stroke} x={Math.min(s.x, s.x2)} y={Math.min(s.y, s.y2)} width={Math.abs(s.x2 - s.x)} height={Math.abs(s.y2 - s.y)} />;
+function Shapes({ items, draft, onErase, ...props }) {
+  function shape(s, i, hit = false) {
+    const stroke = hit ? 'transparent' : s.color === 'green' ? '#35df79' : '#ff2929';
+    const attrs = { stroke, ...(hit ? { strokeWidth:18, pointerEvents:s.type === 'box' ? 'all' : 'stroke', fill:'none' } : {}) };
+    if (s.type === 'box') return <rect {...attrs} x={Math.min(s.x,s.x2)} y={Math.min(s.y,s.y2)} width={Math.abs(s.x2-s.x)} height={Math.abs(s.y2-s.y)}/>;
     if (s.type === 'arrow') {
-      const angle = Math.atan2(s.y2 - s.y, s.x2 - s.x), size = Math.min(30, Math.hypot(s.x2-s.x, s.y2-s.y) / 2);
-      return <g key={i} stroke={stroke}><line x1={s.x} y1={s.y} x2={s.x2} y2={s.y2}/><polyline points={[[s.x2-size*Math.cos(angle-.5),s.y2-size*Math.sin(angle-.5)],[s.x2,s.y2],[s.x2-size*Math.cos(angle+.5),s.y2-size*Math.sin(angle+.5)]].map(p=>p.join(',')).join(' ')}/></g>;
+      const angle=Math.atan2(s.y2-s.y,s.x2-s.x),size=Math.min(30,Math.hypot(s.x2-s.x,s.y2-s.y)/2);
+      return <g {...attrs}><line x1={s.x} y1={s.y} x2={s.x2} y2={s.y2}/><polyline points={[[s.x2-size*Math.cos(angle-.5),s.y2-size*Math.sin(angle-.5)],[s.x2,s.y2],[s.x2-size*Math.cos(angle+.5),s.y2-size*Math.sin(angle+.5)]].map(p=>p.join(',')).join(' ')}/></g>;
     }
-    return s.type === 'line' ? <line key={i} stroke={stroke} x1={s.x} y1={s.y} x2={s.x2} y2={s.y2}/> : <polyline key={i} stroke={stroke} points={s.points.map(p => p.join(',')).join(' ')}/>;
-  })}</g></svg>;
+    return s.type === 'line' ? <line {...attrs} x1={s.x} y1={s.y} x2={s.x2} y2={s.y2}/> : <polyline {...attrs} points={s.points.map(p=>p.join(',')).join(' ')}/>;
+  }
+  return <svg viewBox="0 0 1000 1000" preserveAspectRatio="none" {...props}>
+    <g opacity="0.5" pointerEvents={onErase ? 'none' : undefined}>{[...items,...(draft?[draft]:[])].map((s,i)=><g key={i}>{shape(s,i)}</g>)}</g>
+    {onErase && items.map((s,i)=><g className="annotation-erase-target" key={i} onPointerDown={e=>{if(e.button!==0)return;e.preventDefault();e.stopPropagation();onErase(i);}}>{shape(s,i,true)}</g>)}
+  </svg>;
 }
 function AnnotationEditor({ image, close, save, busy, error }) {
   const [items, setItems] = useState(image.annotations), [draft, setDraft] = useState(null), [tool, setTool] = useState('start');
-  const drawing = useRef(null);
+  const drawing = useRef(null), history = useRef([]);
+  function changeItems(next) { history.current.push(items); setItems(next); }
+  function undo() { if(history.current.length) setItems(history.current.pop()); }
+
   const point = e => { const r = e.currentTarget.getBoundingClientRect(); return [Math.max(0, Math.min(1000, (e.clientX - r.left) / r.width * 1000)), Math.max(0, Math.min(1000, (e.clientY - r.top) / r.height * 1000))]; };
-  function start(e) { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); const [x, y] = point(e); drawing.current = { type: tool === 'start' ? 'box' : tool, color: tool === 'start' ? 'green' : 'red', x, y, x2: x, y2: y, points: [[x, y]] }; setDraft(drawing.current); }
+  function start(e) { if (busy || tool === 'erase' || e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); const [x, y] = point(e); drawing.current = { type: tool === 'start' ? 'box' : tool, color: tool === 'start' ? 'green' : 'red', x, y, x2: x, y2: y, points: [[x, y]] }; setDraft(drawing.current); }
   function move(e) { if (!drawing.current) return; const [x2, y2] = point(e); drawing.current = { ...drawing.current, x2, y2, points: [...drawing.current.points, [x2, y2]] }; setDraft(drawing.current); }
-  function finish(e) { if (!drawing.current) return; move(e); const s = drawing.current; if (Math.abs(s.x2 - s.x) + Math.abs(s.y2 - s.y) > 2 || s.points.length > 3) setItems(old => [...old, s]); drawing.current = null; setDraft(null); }
-  return <Modal title="Annotate photo" close={close}>{error && <p className="error" role="alert">{error}</p>}<div className="annotation-toolbar" role="group" aria-label="Drawing tools">{[['start', '□ Start holds · green'], ['box', '□ Other holds · red'], ['arrow', '↗ Arrow'], ['line', '╱ Line'], ['freehand', '〰 Freehand']].map(([key, label]) => <button key={key} className={'tool annotation-tool annotation-tool-' + key + (tool === key ? ' active' : '')} aria-pressed={tool === key} onClick={() => setTool(key)}>{label}</button>)}<button className="tool" disabled={!items.length} onClick={() => setItems(items.slice(0, -1))}>↶ Undo</button><button className="tool" disabled={!items.length} onClick={() => setItems([])}>Clear</button></div><p className="annotation-help">Mark the holds or line for this problem</p><div className="annotation-stage"><img src={image.url} alt={image.name} draggable="false"/><Shapes items={items} draft={draft} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { drawing.current = null; setDraft(null); }} aria-label="Photo annotation canvas"/></div><div className="form-actions"><button className="secondary" onClick={close}>Cancel</button><button className="primary" disabled={busy} onClick={() => save(items)}>{busy ? 'Saving…' : 'Save annotations'}</button></div></Modal>;
+  function finish(e) { if (!drawing.current) return; move(e); const s = drawing.current; if (Math.abs(s.x2 - s.x) + Math.abs(s.y2 - s.y) > 2 || s.points.length > 3) changeItems([...items, s]); drawing.current = null; setDraft(null); }
+  return <Modal title="Annotate photo" close={close}>{error && <p className="error" role="alert">{error}</p>}<div className="annotation-toolbar" role="group" aria-label="Drawing tools">{[['start', '□ Start holds · green'], ['box', '□ Other holds · red'], ['arrow', '↗ Arrow'], ['line', '╱ Line'], ['freehand', '〰 Freehand'], ['erase', 'Erase']].map(([key, label]) => <button key={key} className={'tool annotation-tool annotation-tool-' + key + (tool === key ? ' active' : '')} aria-pressed={tool === key} disabled={busy} onClick={() => setTool(key)}>{label}</button>)}<button className="tool" disabled={busy || !history.current.length} onClick={undo}>↶ Undo</button><button className="tool" disabled={busy || !items.length} onClick={() => changeItems([])}>Clear</button></div><p className="annotation-help">Mark the holds or line for this problem</p><div className="annotation-stage"><img src={image.url} alt={image.name} draggable="false"/><Shapes items={items} draft={draft} className={tool === 'erase' ? 'annotation-erasing' : undefined} onErase={tool === 'erase' && !busy ? index => changeItems(items.filter((_,i)=>i!==index)) : undefined} onPointerDown={start} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => { drawing.current = null; setDraft(null); }} aria-label="Photo annotation canvas"/></div><div className="form-actions"><button className="secondary" onClick={close}>Cancel</button><button className="primary" disabled={busy} onClick={() => save(items)}>{busy ? 'Saving…' : 'Save annotations'}</button></div></Modal>;
 }
 createRoot(document.getElementById('root')).render(<React.StrictMode><App/></React.StrictMode>);
 

@@ -152,3 +152,7 @@ button, .secondary, .primary { max-width:100%; overflow-wrap:anywhere; }
  .problem-row > button, .problem-row > .friend-actions { flex-shrink:1; }
  .photo-dropdown { max-width:100%; }
 }
+
+.annotation-stage svg.annotation-erasing { cursor:default; }
+.annotation-erase-target { cursor:pointer; }
+.annotation-erase-target:hover { filter:drop-shadow(0 0 2px #fff); }
