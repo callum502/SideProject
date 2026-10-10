@@ -1,3 +1,4 @@
+import BackLink from './BackLink';
 ﻿import React, {useEffect,useState} from 'react';
 import {problemHref} from './Problems';
 async function request(action,values={}) {
@@ -31,7 +32,7 @@ export default function Friends() {
  const entries=friend?.entries.filter(e=>!mutual || e.mutual) || [];
  const disabled=busy || loading;
  return <main className="location-page"><article className="detail-panel logbook-page"><div className="detail-banner">
- {friend ? <button className="logbook-back" onClick={()=>setFriend(null)}><span aria-hidden="true">&larr;</span> Friends</button> : <a className="logbook-back" href="#explore"><span aria-hidden="true">&larr;</span> Find locations</a>}
+ {friend ? <button className="logbook-back" onClick={()=>setFriend(null)}><span aria-hidden="true">&larr;</span> Friends</button> : <BackLink/>}
  <div className="eyebrow">YOUR CLIMBING COMMUNITY</div><h1>{friend ? `${friend.name}'s logbook` : 'Friends'}</h1><p>{friend ? `${friend.entries.length} problems completed` : 'Connect with friends and compare your sends.'}</p></div>
  <div className="logbook-content friends-content">{error && <p className="error" role="alert">{error}</p>}
  {friend ? <><div className="friends-filters"><button className={!mutual?'primary':'secondary'} aria-pressed={!mutual} onClick={()=>setMutual(false)}>All sends</button><button className={mutual?'primary':'secondary'} aria-pressed={mutual} onClick={()=>setMutual(true)}>Mutual sends</button></div>{entries.length ? <div className="problem-list">{entries.map(e=><div className="problem-row" key={e.entry_id}><div>{e.problem_id ? <a href={problemHref(e.location_id,e.boulder_id,e.problem_id)}><strong>{e.grade} - {e.problem_name}</strong></a> : <strong>{e.grade} - {e.problem_name} (deleted)</strong>}{e.mutual && <span className="logged-badge">Both completed</span>}<p>{e.location_name} &middot; {e.boulder_name}</p><small>Logged {new Date(e.logged_at).toLocaleDateString('en-GB')}</small></div></div>)}</div> : <p>{mutual ? 'No mutual sends yet.' : 'No problems logged yet.'}</p>}</> : <>
