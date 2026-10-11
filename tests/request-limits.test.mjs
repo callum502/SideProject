@@ -1,0 +1,79 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {PassThrough} from 'node:stream';
+import {createRequestLimits,clientAddress,readRequestBody,REQUEST_LIMITS} from '../request-limits.mjs';
+import {createGuideServer} from '../server.mjs';
+import {fakeAuth} from './fake-auth.mjs';
+
+test('rate windows, account limits, bounded memory, and upload slots',()=>{
+ let time=100000;
+ const rules=Object.fromEntries(Object.entries(REQUEST_LIMITS).map(([k,v])=>[k,{...v,count:2}]));
+ const limiter=createRequestLimits({now:()=>time,rules});
+ limiter.before('a','/api/guide','GET');limiter.before('a','/api/guide','GET');
+ assert.throws(()=>limiter.before('a','/api/guide','GET'),e=>e.status===429&&e.retryAfter===60);
+ time+=60000;limiter.before('a','/api/guide','GET');
+ limiter.account('user','/api/guide','GET');limiter.account('user','/api/guide','GET');
+ assert.throws(()=>limiter.account('user','/api/guide','GET'),e=>e.status===429);
+ const one=limiter.upload('a');assert.throws(()=>limiter.upload('a'),/already have an upload/);
+ const two=limiter.upload('b');assert.throws(()=>limiter.upload('c'),e=>e.status===503);
+ one();one();const three=limiter.upload('c');two();three();
+ const bounded=createRequestLimits({maxKeys:1});bounded.before('a','/api/guide','GET');
+ assert.throws(()=>bounded.before('b','/api/guide','GET'),e=>e.status===503);
+ const single=createRequestLimits({maxActive:1}),release=single.enter();
+ assert.throws(()=>single.enter(),e=>e.status===503);release();release();single.enter()();
+});
+
+test('untrusted forwarded headers are ignored and IPv6 addresses share a /64',()=>{
+ const req={headers:{'x-forwarded-for':'203.0.113.2, 10.0.0.1'},socket:{remoteAddress:'127.0.0.1'}};
+ assert.equal(clientAddress(req),'127.0.0.1');
+ assert.equal(clientAddress(req,true),'203.0.113.2');
+ req.headers['x-forwarded-for']='invalid';assert.equal(clientAddress(req,true),'127.0.0.1');
+ req.socket.remoteAddress='2001:db8:0:1::1';const key=clientAddress(req);
+ req.socket.remoteAddress='2001:db8:0:1::abcd';assert.equal(clientAddress(req),key);
+});
+
+test('body reader bounds size, stalls, total duration, and aborted uploads',async()=>{
+ function stream(){const req=new PassThrough();req.headers={};return req;}
+ let req=stream(),pending=readRequestBody(req,3);req.end('abc');assert.equal((await pending).toString(),'abc');
+ req=stream();pending=readRequestBody(req,2);req.end('abc');await assert.rejects(pending,e=>e.status===413);
+ req=stream();pending=readRequestBody(req,3);req.emit('aborted');await assert.rejects(pending,e=>e.status===400);
+ // Keep the test alive while the production timers are unref'd.
+ const hold=setInterval(()=>{},100);
+ try{
+  req=stream();await assert.rejects(readRequestBody(req,3,{idleMs:10,totalMs:100}),e=>e.status===408);
+  req=stream();await assert.rejects(readRequestBody(req,3,{idleMs:100,totalMs:10}),e=>e.status===408);
+ }finally{clearInterval(hold);}
+});
+
+test('HTTP rejects excess requests before Supabase and keeps health checks available',async()=>{
+ let reads=0;
+ const rules={...REQUEST_LIMITS,ip:{count:1,window:60000}};
+ const {server}=await createGuideServer({auth:fakeAuth(),contentStore:{read:async()=>{reads++;return {locations:[]};}},requestLimits:createRequestLimits({rules})});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ const base='http://127.0.0.1:'+server.address().port;
+ try{
+  assert.equal((await fetch(base+'/api/guide')).status,200);
+  const rejected=await fetch(base+'/api/guide',{headers:{'X-Forwarded-For':'198.51.100.1'}});
+  assert.equal(rejected.status,429);assert.equal(rejected.headers.get('retry-after'),'60');assert.equal(reads,1);
+  assert.equal((await fetch(base+'/healthz')).status,200);
+ }finally{server.closeAllConnections();await new Promise(r=>server.close(r));}
+});
+
+test('HTTP upload slots stay held through Storage and are released after failure',async()=>{
+ let finish,started;
+ const begun=new Promise(r=>started=r);
+ const storage={upload:()=>{started();return new Promise((resolve,reject)=>{finish=()=>reject(Object.assign(new Error('Storage failed'),{status:503}));});}};
+ const {server}=await createGuideServer({auth:fakeAuth(),storage,contentStore:{}});
+ await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
+ const bytes=Buffer.from([137,80,78,71,13,10,26,10]);
+ try{
+  const login=await fetch(base+'/api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:'contributor@example.com',password:'test-password'})});
+  const cookie=login.headers.get('set-cookie').split(';')[0];
+  const upload=()=>fetch(base+'/api/images',{method:'POST',headers:{Cookie:cookie,'Content-Type':'image/png'},body:bytes});
+  const first=upload();await begun;
+  assert.equal((await upload()).status,429);
+  finish();assert.equal((await first).status,503);
+  storage.upload=async()=>({url:'/media/example.png'});
+  assert.equal((await upload()).status,201);
+ }finally{finish?.();server.closeAllConnections();await new Promise(r=>server.close(r));}
+});

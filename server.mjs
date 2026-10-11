@@ -1,3 +1,4 @@
+import { createRequestLimits, clientAddress, isUpload, readRequestBody } from './request-limits.mjs';
 import { validLocationLinks } from './location-links.mjs';
 import { duplicateMediaName } from './media-names.mjs';
 import { createStorage } from './storage.mjs';
@@ -102,18 +103,15 @@ function validate(data) {
     }
   }
 }
-async function body(req, limit) {
-  const chunks = []; let size = 0;
-  for await (const chunk of req) { size += chunk.length; if (size > limit) throw fail('Upload is too large.', 413); chunks.push(chunk); }
-  return Buffer.concat(chunks);
-}
+const body = readRequestBody;
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.json': 'application/json' };
-export async function createGuideServer({ distDir = path.join(root, 'dist'), live = false, auth = createAuth(), storage = createStorage(), contentStore = createContentStore({ storage }), deployment = deploymentConfig() } = {}) {
+export async function createGuideServer({ distDir = path.join(root, 'dist'), live = false, auth = createAuth(), storage = createStorage(), contentStore = createContentStore({ storage }), deployment = deploymentConfig(), requestLimits = createRequestLimits() } = {}) {
   const sessions = new Map();
   const oauthAttempts = new Map();
   const clients = new Set();
   const server = http.createServer(async (req, res) => {
-    const json = (status, value) => { res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
+    let releaseRequest, releaseUpload;
+    const json = (status, value) => { if(status>=400 && !req.complete)res.setHeader('Connection','close'); res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(value)); };
     try {
       const url = new URL(req.url, 'http://localhost');
       // Render's internal health probes do not need a public Host header.
@@ -122,6 +120,11 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         return res.end(req.method === 'HEAD' ? undefined : 'ok');
       }
       if (!deployment.allows(req.headers.host, req.headers.origin)) throw fail('Host or origin not allowed.', 403);
+      const limited = url.pathname.startsWith('/api/') || url.pathname.startsWith('/media/') || url.pathname === '/auth/google/callback';
+      if(limited) {
+        requestLimits.before(clientAddress(req,deployment.renderProxy),url.pathname,req.method);
+        releaseRequest=requestLimits.enter();
+      }
       const appOrigin = (deployment.secureCookie ? 'https://' : 'http://') + req.headers.host;
       const oauthCookie = 'sideproj_oauth';
       const cookieValue = name => (req.headers.cookie || '').split(';').map(c=>c.trim()).find(c=>c.startsWith(name+'='))?.slice(name.length+1);
@@ -158,6 +161,8 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
       const token = (req.headers.cookie || '').split(';').map(c => c.trim()).find(c => c.startsWith('sideproj_session='))?.slice('sideproj_session='.length);
       const session = sessions.get(token);
       let user = null;
+      // The account ID comes from our server session, never from request input.
+      if(session && session.cookieExpires>Date.now() && limited) requestLimits.account(session.user.id,url.pathname,req.method);
       if (session && session.cookieExpires <= Date.now()) sessions.delete(token);
       else if (session && url.pathname.startsWith('/api/') && url.pathname !== '/api/logout') {
         try { user = await auth.resolve(session); }
@@ -254,10 +259,11 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         validateContentLengths(data, await contentStore.read(session.accessToken));
         return json(200, await contentStore.save(data, user, session.accessToken));
       }
+      if (isUpload(url.pathname,req.method)) releaseUpload=requestLimits.upload(user.id);
       if (url.pathname === '/api/images' && req.method === 'POST') {
         const mime = req.headers['content-type'];
         if (!['image/jpeg', 'image/png', 'image/webp'].includes(mime)) throw fail('Choose JPEG, PNG, or WebP images.');
-        const bytes = await body(req, 8 * 1024 * 1024);
+        const bytes = await body(req, 8 * 1024 * 1024, {totalMs:300000});
         const png = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
         const jpg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
         const webp = bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
@@ -270,7 +276,7 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(mime)) throw fail('Choose MP4, WebM, or MOV videos.');
         const limit=MAX_VIDEO_BYTES;
         if (Number(req.headers['content-length']) > limit) throw fail('Each video must be smaller than '+(limit/1024/1024)+' MB.',413);
-        const bytes = await body(req,limit);
+        const bytes = await body(req,limit,{totalMs:300000});
         const mp4 = bytes.length >= 16 && bytes.toString('ascii', 4, 8) === 'ftyp';
         const mov = bytes.length >= 16 && (mp4 || ['moov', 'mdat', 'wide', 'free', 'skip'].includes(bytes.toString('ascii', 4, 8)));
         const webm = bytes.length >= 16 && bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])) && bytes.subarray(0, 4096).includes(Buffer.from('webm'));
@@ -296,8 +302,11 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
       if (live && filename.endsWith('index.html')) bytes = Buffer.from(bytes.toString().replace('</body>', `<script>new EventSource('/api/events').onmessage=()=>location.reload()</script></body>`));
       res.writeHead(200, { 'Content-Type': types[path.extname(filename)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache' });
       res.end(req.method === 'HEAD' ? undefined : bytes);
-    } catch (e) { if (!res.headersSent) json(e.status || 500, { error: e.status ? e.message : 'Could not save or load the guide. Please try again.' }); else res.end(); if (!e.status) console.error(e); }
+    } catch (e) { if(e.retryAfter && !res.headersSent)res.setHeader('Retry-After',String(e.retryAfter)); if (!res.headersSent) json(e.status || 500, { error: e.status ? e.message : 'Could not save or load the guide. Please try again.' }); else res.end(); if (!e.status) console.error(e); } finally { releaseUpload?.(); releaseRequest?.(); }
   });
+  server.headersTimeout=15000;
+  server.requestTimeout=330000;
+  server.keepAliveTimeout=5000;
   return { server, reload() { for (const client of clients) client.write('data: reload\n\n'); } };
 }
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

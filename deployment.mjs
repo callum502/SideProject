@@ -10,6 +10,7 @@ export function deploymentConfig(env = process.env) {
   }
   if (production && !origins.size) throw new Error('Set APP_ORIGINS to your public HTTPS URL before starting in production.');
   return {
+    renderProxy: env.RENDER === 'true',
     host: production ? '0.0.0.0' : '127.0.0.1',
     secureCookie: production ? '; Secure' : '',
     allows(host, origin) {
