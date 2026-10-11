@@ -1,3 +1,4 @@
+import { createOfflineMap } from './offline-map.mjs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { locationArchive, zipFiles } from './offline-location.mjs';
@@ -108,7 +109,7 @@ function validate(data) {
 }
 const body = readRequestBody;
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.json': 'application/json' };
-export async function createGuideServer({ distDir = path.join(root, 'dist'), live = false, auth = createAuth(), storage = createStorage(), contentStore = createContentStore({ storage }), deployment = deploymentConfig(), requestLimits = createRequestLimits() } = {}) {
+export async function createGuideServer({ distDir = path.join(root, 'dist'), live = false, auth = createAuth(), storage = createStorage(), contentStore = createContentStore({ storage }), deployment = deploymentConfig(), requestLimits = createRequestLimits(), offlineMap = createOfflineMap() } = {}) {
   let downloading=false;
   const sessions = new Map();
   const oauthAttempts = new Map();
@@ -194,11 +195,12 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
           const guide=await contentStore.read(user ? session.accessToken : undefined);
           const place=guide.locations.find(item=>item.id===id);
           if(!place)throw fail('Location not found.',404);
+          const mapHtml=await offlineMap(place,controller.signal);
           const name=(place.name.normalize('NFKD').replace(/[^a-zA-Z0-9 -]/g,'').trim().slice(0,70) || 'location')+'-offline.zip';
           res.setHeader('Content-Type','application/zip');
           res.setHeader('Content-Disposition','attachment; filename="'+name+'"');
           res.setHeader('Cache-Control','no-store');
-          await pipeline(Readable.from(zipFiles(locationArchive(place,storage,controller.signal))),res,{signal:controller.signal});
+          await pipeline(Readable.from(zipFiles(locationArchive(place,storage,controller.signal,mapHtml))),res,{signal:controller.signal});
         } finally {clearTimeout(deadline);res.removeListener('close',cancel);controller.abort();downloading=false;}
         return;
       }

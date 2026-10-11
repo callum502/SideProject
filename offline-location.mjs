@@ -1,3 +1,4 @@
+import { offlineFilename } from './offline-filename.mjs';
 import { mediaReference } from './media-reference.mjs';
 
 const esc = value => String(value ?? '').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -23,7 +24,7 @@ function annotations(items=[]) {
  return shapes ? `<svg viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-label="Problem annotations"><g fill="none" stroke-width="4" opacity="0.5">${shapes}</g></svg>` : '';
 }
 
-export function buildOfflineLocation(location, date=new Date()) {
+export function buildOfflineLocation(location, date=new Date(), mapHtml='') {
  const files=[],paths=new Map();
  const all=[...(location.photos||[]),...location.boulders.flatMap(b=>[...(b.images||[]),...(b.videos||[])])];
  for(const media of all) {
@@ -44,8 +45,9 @@ export function buildOfflineLocation(location, date=new Date()) {
  *{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f2f1e9;color:#23382c;font:16px/1.6 system-ui,sans-serif;overflow-wrap:anywhere}header,main,footer{max-width:1000px;margin:auto;padding:24px}header{background:#294e3e;color:white;border-radius:0 0 20px 20px}h1{font-size:clamp(28px,6vw,48px);line-height:1.2}h2,h3{line-height:1.3}a{color:inherit;text-underline-offset:3px}nav{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0}nav a,.back{display:inline-block;padding:8px 14px;border:1px solid #81968b;border-radius:8px;text-decoration:none}article{margin:28px 0;background:#fff;padding:clamp(16px,4vw,30px);border:1px solid #d5ddd6;border-radius:16px;scroll-margin-top:16px}.problem{background:#f3f6ef;margin-top:24px;padding:20px;border-radius:12px}.notes{white-space:pre-wrap}.credit,.muted{font-size:14px;opacity:.8}.gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:16px}figure{margin:0;min-width:0;background:#e8eee8;border-radius:10px;overflow:hidden}figcaption{padding:12px}img,video{display:block;width:100%;height:auto}video{max-height:550px;background:#15271e}.photo{position:relative}.photo svg{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}li{margin:10px 0}footer{text-align:center}.badge{font-size:12px;letter-spacing:2px;text-transform:uppercase}.summary{border-left:4px solid #92a979;padding-left:16px}@media print{nav,.back{display:none}article{break-inside:avoid}body{background:white}}
  </style></head><body><header id="top"><div class="badge">△ SideProj · Offline guide</div><h1>${esc(location.name)}</h1>${credit(location)}<p>Saved ${esc(date.toLocaleString('en-GB',{timeZone:'UTC'}))} UTC</p><p>${location.boulders.length} boulders · ${location.boulders.reduce((n,b)=>n+(b.problems||[]).length,0)} problems · ${files.length} files</p></header><main>
  <p class="summary">Photos, annotations and videos are included in this folder. External links and online maps need internet. This is a saved copy and will not update automatically.</p>
- <details><summary>Using this offline guide</summary><p>Extract the entire ZIP before opening index.html, and keep the media folder beside it. Opening the guide from inside the ZIP can prevent photos and videos from loading.</p><p>Videos are saved at their original quality. If a video will not play in your browser, use its Open video file link and a compatible player.</p><p>On phones, file apps vary in their support for HTML guides. Check the extracted guide on your device before travelling; you can also open photos and videos directly from the media folder.</p></details>
- <article><h2>Getting there</h2>${note('Coordinates',`${location.latitude}, ${location.longitude}`)}${note('Approach notes',location.approach)}<h3>Parking &amp; approach photos</h3>${photos(location.photos||[])}</article>
+ <p class="summary"><strong>Photos or videos not loading?</strong> Make sure you extracted the entire ZIP, then open the HTML file from the extracted folder.</p>
+ <details><summary>Using this offline guide</summary><p>Extract the entire ZIP before opening ${esc(offlineFilename(location.name))}, and keep the media folder beside it. Opening the guide from inside the ZIP can prevent photos and videos from loading.</p><p>Videos are saved at their original quality. If a video will not play in your browser, use its Open video file link and a compatible player.</p><p>On phones, file apps vary in their support for HTML guides. Check the extracted guide on your device before travelling; you can also open photos and videos directly from the media folder.</p></details>
+ <article><h2>Getting there</h2>${note('Coordinates',`${location.latitude}, ${location.longitude}`)}${mapHtml || '<p class="muted">The offline map was unavailable when this guide was downloaded. Coordinates are shown above.</p>'}${note('Approach notes',location.approach)}<h3>Parking &amp; approach photos</h3>${photos(location.photos||[])}</article>
  <h2>Boulders</h2><nav aria-label="Boulders">${location.boulders.map((b,i)=>`<a href="#boulder-${i}">${esc(b.name)}</a>`).join('')}</nav>
  ${location.boulders.map((b,i)=>`<article id="boulder-${i}"><div class="badge">Boulder</div><h2>${esc(b.name)}</h2>${credit(b)}${note('Finding the Boulder',b.notes)}${note('Other notes',b.otherNotes)}<h3>Photos</h3>${photos(b.images||[])}<h3>Beta videos</h3>${videos(b.videos||[])}<h3>Problems</h3><nav aria-label="Problems">${(b.problems||[]).map((p,j)=>`<a href="#problem-${i}-${j}">${esc(p.grade)} — ${esc(p.name)}</a>`).join('')}</nav>${(b.problems||[]).map((p,j)=>`<section class="problem" id="problem-${i}-${j}"><div class="badge">Problem</div><h3>${esc(p.grade)} — ${esc(p.name)}</h3>${credit(p)}${note('Description',p.description)}<h4>Photos &amp; topos</h4>${photos((b.images||[]).filter(m=>(p.imageIds||[]).includes(m.id)),p.photoAnnotations||{})}<h4>Beta videos</h4>${videos((b.videos||[]).filter(m=>(p.videoIds||[]).includes(m.id)))}<a class="back" href="#boulder-${i}">↑ ${esc(b.name)}</a></section>`).join('')}<p><a class="back" href="#top">↑ Location overview</a></p></article>`).join('')}
  <article><h2>Additional links &amp; books</h2><p class="muted">These external resources require internet.</p>${links?`<ul>${links}</ul>`:'<p>No additional links.</p>'}</article></main><footer>SideProj · ${esc(location.name)} · Saved for offline use</footer></body></html>`;
@@ -62,7 +64,7 @@ const pack=(...b)=>Buffer.concat(b);
 export async function* zipFiles(entries) {
  let offset=0n;const central=[];
  for await (const entry of entries) {
-  if(!/^(index\.html|README\.txt|location\.json|media\/\d+\.(jpg|png|webp|mp4|webm|mov))$/.test(entry.name))throw Error('Unsafe archive path');
+  if(!/^([a-zA-Z0-9 _-]{1,80}\.html|README\.txt|location\.json|media\/\d+\.(jpg|png|webp|mp4|webm|mov))$/.test(entry.name))throw Error('Unsafe archive path');
   const name=Buffer.from(entry.name),start=offset;
   const extra=pack(u16(1),u16(16),u64(0),u64(0));
   const header=pack(u32(0x04034b50),u16(45),u16(0x808),u16(0),u16(0),u16(33),u32(0),u32(0xffffffff),u32(0xffffffff),u16(name.length),u16(extra.length),name,extra);
@@ -87,10 +89,10 @@ export async function* zipFiles(entries) {
  yield pack(u32(0x06054b50),u16(0),u16(0),u16(0xffff),u16(0xffff),u32(0xffffffff),u32(0xffffffff),u16(0));
 }
 
-export async function* locationArchive(location,storage,signal) {
- const {html,files}=buildOfflineLocation(location);
- yield {name:'index.html',body:[Buffer.from(html)]};
- yield {name:'README.txt',body:[Buffer.from('SIDE PROJ OFFLINE GUIDE\n\nExtract the entire ZIP, then open index.html in a browser. Keep the media folder beside it. Photos and videos are included, not internet links. If a video cannot play in your browser, open its file from the media folder in a compatible player. Mobile file preview apps may not support the full HTML guide: test on your device before travelling. External links/maps still require internet.\n')]};
+export async function* locationArchive(location,storage,signal,mapHtml='') {
+ const {html,files}=buildOfflineLocation(location,new Date(),mapHtml);
+ yield {name:offlineFilename(location.name),body:[Buffer.from(html)]};
+ yield {name:'README.txt',body:[Buffer.from(('SIDE PROJ OFFLINE GUIDE\n\nExtract the entire ZIP, then open index.html in a browser. Keep the media folder beside it. Photos and videos are included, not internet links. If a video cannot play in your browser, open its file from the media folder in a compatible player. Mobile file preview apps may not support the full HTML guide: test on your device before travelling. External links/maps still require internet.\n').replace('index.html',offlineFilename(location.name)))]};
  yield {name:'location.json',body:[Buffer.from(JSON.stringify({...location,offlineFiles:Object.fromEntries(files.map(f=>['/media/'+f.path,f.name]))},null,2))]};
  for(const file of files) {
   const response=await storage.download(file.path,signal);

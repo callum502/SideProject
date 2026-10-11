@@ -43,7 +43,7 @@ test('ZIP64 stores actual media bytes once and produces a central directory',asy
   if(name.startsWith('media/'))assert.equal(zip.toString('utf8',start,start+size),calls[names.filter(n=>n.startsWith('media/')).length-1]);
   cursor+=46+nameSize+extraSize;
  }
- assert.deepEqual(names,['index.html','README.txt','location.json','media/001.jpg','media/002.mov']);
+ assert.deepEqual(names,['Test location.html','README.txt','location.json','media/001.jpg','media/002.mov']);
 });
 
 test('missing media and truncated responses fail the archive instead of omitting files',async()=>{
@@ -53,7 +53,7 @@ test('missing media and truncated responses fail the archive instead of omitting
 });
 
 test('location export HTTP route downloads a ZIP and handles unknown locations',async()=>{
- const {server}=await createGuideServer({auth:fakeAuth(),contentStore:{read:async()=>({locations:[location]})},storage:{download:async()=>new Response('file')}});
+ const {server}=await createGuideServer({offlineMap:async()=>'',auth:fakeAuth(),contentStore:{read:async()=>({locations:[location]})},storage:{download:async()=>new Response('file')}});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
  try{
   const result=await fetch(base+'/api/location-download?id='+owner);
