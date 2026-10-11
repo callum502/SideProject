@@ -173,6 +173,10 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         res.setHeader('Set-Cookie','sideproj_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'+deployment.secureCookie);
         return json(200,{deleted:true});
       }
+      if (url.pathname === '/api/storage/usage' && req.method === 'GET') {
+        if (!user) throw fail('Log in first.',401);
+        return json(200,await storage.usage(session.accessToken));
+      }
       if (url.pathname === '/api/profile-photo' && req.method === 'GET') {
         const id=url.searchParams.get('id');
         if(!id || !/^[0-9a-f-]{36}$/i.test(id))throw fail('Invalid profile.',400);

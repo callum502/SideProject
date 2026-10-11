@@ -14,6 +14,7 @@ const env={MEDIA_STORE:'supabase',SUPABASE_URL:'https://test.supabase.co',SUPABA
 function fixture(){
   const objects=new Map();const calls=[];let corrupt=false;
   const storage=createStorage({env,fetchImpl:async(url,options)=>{
+    if(url.endsWith('/rest/v1/rpc/my_storage_usage'))return new Response(JSON.stringify({usedBytes:0,limitBytes:10000000000}));
     calls.push({url,options});
     const key=url.split('sideproj-media/')[1];
     if(options.method==='POST'){
@@ -26,6 +27,22 @@ function fixture(){
   }});
   return {storage,objects,calls,corrupt:()=>{corrupt=true;}};
 }
+
+test('uploads fail closed on quota checks and surface database quota rejection',async()=>{
+ for(const mode of ['full','missing','race']) {
+  let uploads=0;
+  const storage=createStorage({env,fetchImpl:async(url)=>{
+   if(url.endsWith('/rest/v1/rpc/my_storage_usage')) {
+    if(mode==='missing')return new Response(JSON.stringify({code:'PGRST202'}),{status:404});
+    return new Response(JSON.stringify({usedBytes:mode==='full'?10000000000:0,limitBytes:10000000000}));
+   }
+   uploads++;
+   return new Response(JSON.stringify({message:'This upload would exceed your 10 GB upload allowance.'}),{status:400});
+  }});
+  await assert.rejects(storage.upload(cloudPath,Buffer.from('bytes'),'image/png','session'),mode==='missing'?/migration/:/10 GB/);
+  assert.equal(uploads,mode==='race'?1:0);
+ }
+});
 test('Storage uploads never overwrite existing objects and only accept safe cloud paths',async()=>{
  const f=fixture(),bytes=Buffer.from('file bytes');
  await f.storage.upload(cloudPath,bytes,'image/png','session');
