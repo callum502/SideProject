@@ -7,6 +7,7 @@ export const REQUEST_LIMITS = {
  auth: { count: 20, window: 600000 },
  write: { count: 60, window: 60000 },
  upload: { count: 20, window: 60000 },
+ download: { count: 2, window: 600000 },
 };
 const authPaths = new Set(['/api/login','/api/signup','/api/confirm','/api/recover','/api/reset-password','/api/auth/google','/auth/google/callback']);
 export const isUpload = (path, method) => method === 'POST' && ['/api/images','/api/videos'].includes(path);
@@ -47,6 +48,7 @@ export function createRequestLimits({ now = Date.now, rules = REQUEST_LIMITS, ma
  function category(path,method,key) {
   if(authPaths.has(path)) take('auth',key);
   else if(!['GET','HEAD','OPTIONS'].includes(method)) take('write',key);
+  if(path==='/api/location-download') take('download',key);
   if(isUpload(path,method)) take('upload',key);
  }
  return {

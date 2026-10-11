@@ -1,3 +1,6 @@
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import { locationArchive, zipFiles } from './offline-location.mjs';
 import { createRequestLimits, clientAddress, isUpload, readRequestBody } from './request-limits.mjs';
 import { validLocationLinks } from './location-links.mjs';
 import { duplicateMediaName } from './media-names.mjs';
@@ -106,6 +109,7 @@ function validate(data) {
 const body = readRequestBody;
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.json': 'application/json' };
 export async function createGuideServer({ distDir = path.join(root, 'dist'), live = false, auth = createAuth(), storage = createStorage(), contentStore = createContentStore({ storage }), deployment = deploymentConfig(), requestLimits = createRequestLimits() } = {}) {
+  let downloading=false;
   const sessions = new Map();
   const oauthAttempts = new Map();
   const clients = new Set();
@@ -177,6 +181,26 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         for(const [key,value] of sessions)if(value.user?.id===user.id)sessions.delete(key);
         res.setHeader('Set-Cookie','sideproj_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'+deployment.secureCookie);
         return json(200,{deleted:true});
+      }
+      if (url.pathname === '/api/location-download' && req.method === 'GET') {
+        if(downloading)throw Object.assign(fail('Another location download is in progress. Please try again shortly.',503),{retryAfter:30});
+        const id=url.searchParams.get('id');
+        if(!id || !/^[0-9a-f-]{36}$/i.test(id))throw fail('Invalid location.',400);
+        downloading=true;
+        const controller=new AbortController();
+        const cancel=()=>controller.abort();res.once('close',cancel);
+        const deadline=setTimeout(cancel,30*60*1000);deadline.unref();
+        try {
+          const guide=await contentStore.read(user ? session.accessToken : undefined);
+          const place=guide.locations.find(item=>item.id===id);
+          if(!place)throw fail('Location not found.',404);
+          const name=(place.name.normalize('NFKD').replace(/[^a-zA-Z0-9 -]/g,'').trim().slice(0,70) || 'location')+'-offline.zip';
+          res.setHeader('Content-Type','application/zip');
+          res.setHeader('Content-Disposition','attachment; filename="'+name+'"');
+          res.setHeader('Cache-Control','no-store');
+          await pipeline(Readable.from(zipFiles(locationArchive(place,storage,controller.signal))),res,{signal:controller.signal});
+        } finally {clearTimeout(deadline);res.removeListener('close',cancel);controller.abort();downloading=false;}
+        return;
       }
       if (url.pathname === '/api/storage/usage' && req.method === 'GET') {
         if (!user) throw fail('Log in first.',401);
@@ -302,7 +326,7 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
       if (live && filename.endsWith('index.html')) bytes = Buffer.from(bytes.toString().replace('</body>', `<script>new EventSource('/api/events').onmessage=()=>location.reload()</script></body>`));
       res.writeHead(200, { 'Content-Type': types[path.extname(filename)] || 'application/octet-stream', 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache' });
       res.end(req.method === 'HEAD' ? undefined : bytes);
-    } catch (e) { if(e.retryAfter && !res.headersSent)res.setHeader('Retry-After',String(e.retryAfter)); if (!res.headersSent) json(e.status || 500, { error: e.status ? e.message : 'Could not save or load the guide. Please try again.' }); else res.end(); if (!e.status) console.error(e); } finally { releaseUpload?.(); releaseRequest?.(); }
+    } catch (e) { if(e.retryAfter && !res.headersSent)res.setHeader('Retry-After',String(e.retryAfter)); if (!res.headersSent) json(e.status || 500, { error: e.status ? e.message : 'Could not save or load the guide. Please try again.' }); else res.end(); if (!e.status && e.name!=='AbortError' && e.code!=='ERR_STREAM_PREMATURE_CLOSE') console.error(e); } finally { releaseUpload?.(); releaseRequest?.(); }
   });
   server.headersTimeout=15000;
   server.requestTimeout=330000;
