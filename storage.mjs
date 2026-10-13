@@ -34,11 +34,6 @@ export function createStorage({ env = { ...loadEnv('development', process.cwd(),
   const publicUrl = path => `${base}/storage/v1/object/public/${objectPath(path)}`;
   return {
     publicUrl,
-    async download(path,signal) {
-      const response=await fetchImpl(publicUrl(path),{signal:AbortSignal.any([signal,AbortSignal.timeout(180000)]),redirect:'error'});
-      if(!response.ok || !response.body)throw fail('A photo or video could not be downloaded. Please retry the location download.');
-      return response;
-    },
     usage,
     async stat(path,token) {
       const r=await request('object/authenticated/'+objectPath(path),token,{method:'HEAD'});await check(r);

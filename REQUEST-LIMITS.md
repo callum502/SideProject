@@ -9,8 +9,6 @@ Restart the local server or redeploy to Render to activate these changes. No new
 | 20 authentication requests per 10 minutes | Per IP, login/signup/confirmation/recovery/password reset/Google start and callback combined; also per account if already signed in |
 | 60 write requests per 60 seconds | Per IP and per account; non-authentication POST/PUT/DELETE requests combined |
 | 20 upload attempts per 60 seconds | Per IP and per account; images and videos combined |
-| 2 location download attempts per 10 minutes | Per IP and, when signed in, per account |
-| 1 active location ZIP download | Per server process; streams files without buffering the archive |
 | 1 simultaneous upload | Per account |
 | 2 simultaneous uploads | Per server process |
 | 32 simultaneous handled requests | Per process, across the protected routes |

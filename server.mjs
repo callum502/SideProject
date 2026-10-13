@@ -1,7 +1,3 @@
-import { createOfflineMap } from './offline-map.mjs';
-import { Readable } from 'node:stream';
-import { pipeline } from 'node:stream/promises';
-import { locationArchive, zipFiles } from './offline-location.mjs';
 import { createRequestLimits, clientAddress, isUpload, readRequestBody } from './request-limits.mjs';
 import { validLocationLinks } from './location-links.mjs';
 import { duplicateMediaName } from './media-names.mjs';
@@ -109,8 +105,7 @@ function validate(data) {
 }
 const body = readRequestBody;
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml', '.json': 'application/json' };
-export async function createGuideServer({ distDir = path.join(root, 'dist'), live = false, auth = createAuth(), storage = createStorage(), contentStore = createContentStore({ storage }), deployment = deploymentConfig(), requestLimits = createRequestLimits(), offlineMap = createOfflineMap() } = {}) {
-  let downloading=false;
+export async function createGuideServer({ distDir = path.join(root, 'dist'), live = false, auth = createAuth(), storage = createStorage(), contentStore = createContentStore({ storage }), deployment = deploymentConfig(), requestLimits = createRequestLimits() } = {}) {
   const sessions = new Map();
   const oauthAttempts = new Map();
   const clients = new Set();
@@ -182,27 +177,6 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         for(const [key,value] of sessions)if(value.user?.id===user.id)sessions.delete(key);
         res.setHeader('Set-Cookie','sideproj_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'+deployment.secureCookie);
         return json(200,{deleted:true});
-      }
-      if (url.pathname === '/api/location-download' && req.method === 'GET') {
-        if(downloading)throw Object.assign(fail('Another location download is in progress. Please try again shortly.',503),{retryAfter:30});
-        const id=url.searchParams.get('id');
-        if(!id || !/^[0-9a-f-]{36}$/i.test(id))throw fail('Invalid location.',400);
-        downloading=true;
-        const controller=new AbortController();
-        const cancel=()=>controller.abort();res.once('close',cancel);
-        const deadline=setTimeout(cancel,30*60*1000);deadline.unref();
-        try {
-          const guide=await contentStore.read(user ? session.accessToken : undefined);
-          const place=guide.locations.find(item=>item.id===id);
-          if(!place)throw fail('Location not found.',404);
-          const mapHtml=await offlineMap(place,controller.signal);
-          const name=(place.name.normalize('NFKD').replace(/[^a-zA-Z0-9 -]/g,'').trim().slice(0,70) || 'location')+'-offline.zip';
-          res.setHeader('Content-Type','application/zip');
-          res.setHeader('Content-Disposition','attachment; filename="'+name+'"');
-          res.setHeader('Cache-Control','no-store');
-          await pipeline(Readable.from(zipFiles(locationArchive(place,storage,controller.signal,mapHtml))),res,{signal:controller.signal});
-        } finally {clearTimeout(deadline);res.removeListener('close',cancel);controller.abort();downloading=false;}
-        return;
       }
       if (url.pathname === '/api/storage/usage' && req.method === 'GET') {
         if (!user) throw fail('Log in first.',401);
