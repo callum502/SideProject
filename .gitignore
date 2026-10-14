@@ -13,3 +13,7 @@ data/
 *.tmp
 supabase/.temp/
 supabase/.branches/
+cypress/screenshots/
+cypress/videos/
+cypress/downloads/
+cypress.env.json
