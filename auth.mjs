@@ -106,7 +106,7 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     async signup(values) {
       validateAccountInputs(values);
       const details=profileDetails(values);
-      if (typeof values.name !== 'string' || !values.name.trim() || values.name.trim().length > 120 || typeof values.email !== 'string' || typeof values.password !== 'string' || values.password.length < 12) throw fail('Provide a display name, email and a password of at least 12 characters.');
+      if (typeof values.name !== 'string' || !values.name.trim() || values.name.trim().length > 120 || typeof values.email !== 'string' || typeof values.password !== 'string' || values.password.length < 6) throw fail('Provide a display name, email and a password of at least 6 characters.');
       await checkName(details.name);
       try { await request('/auth/v1/signup', { email: values.email.trim(), password: values.password, data: { display_name: details.name, height_cm:details.height, ape_index_inches:details.apeIndex } }); }
       catch(error) { await checkName(details.name); throw error; }
@@ -128,7 +128,7 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     },
     async reset(values) {
       validateAccountInputs(values);
-      if (typeof values.password !== 'string' || values.password.length < 12 || typeof values.code !== 'string' || typeof values.email !== 'string') throw fail('Enter your email, recovery code and a password of at least 12 characters.');
+      if (typeof values.password !== 'string' || values.password.length < 6 || typeof values.code !== 'string' || typeof values.email !== 'string') throw fail('Enter your email, recovery code and a password of at least 6 characters.');
       const session = await request('/auth/v1/verify', { email: values.email.trim(), token: values.code.trim(), type: 'recovery' });
       await request('/auth/v1/user', { password: values.password }, session.access_token, 'PUT');
       await request('/auth/v1/logout?scope=global', {}, session.access_token);

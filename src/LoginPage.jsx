@@ -59,8 +59,8 @@ export default function LoginPage({ onLogin }) {
         {['reset', 'confirm'].includes(mode) && <label>Email code *<input className="auth-code" name="code" required maxLength={32} autoComplete="one-time-code" inputMode="numeric" placeholder="Enter your code"/></label>}
         {hasPassword && <div className="auth-password-field">
           <label htmlFor="auth-password">{mode === 'reset' ? 'New password' : 'Password'} *</label>
-          <div className="auth-password-input"><input id="auth-password" name="password" type={showPassword ? 'text' : 'password'} required minLength={mode === 'login' ? undefined : 12} maxLength={256} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} aria-describedby={mode !== 'login' ? 'password-hint' : undefined}/><button type="button" className="auth-password-toggle" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Hide' : 'Show'}</button></div>
-          {mode !== 'login' && <small id="password-hint">At least 12 characters.</small>}
+          <div className="auth-password-input"><input id="auth-password" name="password" type={showPassword ? 'text' : 'password'} required minLength={mode === 'login' ? undefined : 6} maxLength={256} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} aria-describedby={mode !== 'login' ? 'password-hint' : undefined}/><button type="button" className="auth-password-toggle" aria-label={showPassword ? 'Hide password' : 'Show password'} aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? 'Hide' : 'Show'}</button></div>
+          {mode !== 'login' && <small id="password-hint">At least 6 characters.</small>}
           {mode === 'login' && <div className="auth-recovery"><button type="button" className="auth-link" onClick={() => change('recover')}>Forgot password?</button></div>}
         </div>}
         <button className="primary auth-submit" type="submit">{busy ? 'Please wait…' : screen.action}</button>
