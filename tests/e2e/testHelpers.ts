@@ -13,6 +13,24 @@
  * cleanup                   Delete locations matching a prefix; throws on failure.
  * deleteLocationsWithPrefix Run cleanup and report failures as warnings.
  *
+ * assertLocationExistsDB - Verify location existence and fields through the API.
+ *
+ * assertLocationRemovedFromDB - Verify location deletion through the API.
+ *
+ * assertBoulderExistsDB - Verify boulder existence and fields through the API.
+ *
+ * assertBoulderRemovedFromDB - Verify boulder deletion through the API.
+ *
+ * assertProblemExistsDB - Verify problem existence and fields through the API.
+ *
+ * assertProblemRemovedFromDB - Verify problem deletion through the API.
+ *
+ * assertLocationOldDetailsRemovedFromDB - Verify each edited field no longer has its old value.
+ *
+ * assertBoulderOldDetailsRemovedFromDB - Verify each edited field no longer has its old value.
+ *
+ * assertProblemOldDetailsRemovedFromDB - Verify each edited field no longer has its old value.
+ *
  * Internal helpers
  * submit                    Submit a dialog and verify the save response.
  * fill                      Populate the active dialog's fields.
@@ -263,5 +281,197 @@ export async function deleteLocationsWithPrefix(page: Page, prefix: string, info
     const warning = 'Cleanup warning for ' + prefix + ': ' + String(error);
     console.warn(warning);
     info.annotations.push({ type: 'cleanup warning', description: warning });
+  }
+}
+
+/**
+ * Verify location existence and expected fields in database-backed GET /api/guide results.
+ * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
+ * @param page - Signed-in page whose session is used for the API request.
+ * @param locationId - ID of the location to locate.
+ * @param expectedFields - Submitted values to verify against persisted data.
+ */
+export async function assertLocationExistsDB(page: Page, locationId: string, expectedFields: Record<string, string>) {
+  // Fetch fresh persisted data, independently of the current page UI.
+  const savedGuide = await guide(page);
+  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
+  // Verify the record exists and every supplied field was saved correctly.
+  expect(savedLocation, 'API/DB: location exists').toBeDefined();
+  expect(savedLocation, 'API/DB: location has the expected saved fields').toMatchObject(expectedFields);
+}
+
+/**
+ * Verify location deletion in database-backed GET /api/guide results.
+ * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
+ * @param page - Signed-in page whose session is used for the API request.
+ * @param locationId - ID of the location to locate.
+ */
+export async function assertLocationRemovedFromDB(page: Page, locationId: string) {
+  // Fetch fresh persisted data, independently of the current page UI.
+  const savedGuide = await guide(page);
+  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
+  // Verify this exact ID is absent from persisted data.
+  expect(savedLocation, 'API/DB: location was removed').toBeUndefined();
+}
+
+/**
+ * Verify boulder existence and expected fields in database-backed GET /api/guide results.
+ * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
+ * @param page - Signed-in page whose session is used for the API request.
+ * @param locationId - ID of the location to locate.
+ * @param boulderId - ID of the boulder to locate.
+ * @param expectedFields - Submitted values to verify against persisted data.
+ */
+export async function assertBoulderExistsDB(page: Page, locationId: string, boulderId: string, expectedFields: Record<string, string>) {
+  // Fetch fresh persisted data, independently of the current page UI.
+  const savedGuide = await guide(page);
+  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
+  // A missing parent must not be mistaken for successful child deletion.
+  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
+  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
+  // Verify the record exists and every supplied field was saved correctly.
+  expect(savedBoulder, 'API/DB: boulder exists').toBeDefined();
+  expect(savedBoulder, 'API/DB: boulder has the expected saved fields').toMatchObject(expectedFields);
+}
+
+/**
+ * Verify boulder deletion in database-backed GET /api/guide results.
+ * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
+ * @param page - Signed-in page whose session is used for the API request.
+ * @param locationId - ID of the location to locate.
+ * @param boulderId - ID of the boulder to locate.
+ */
+export async function assertBoulderRemovedFromDB(page: Page, locationId: string, boulderId: string) {
+  // Fetch fresh persisted data, independently of the current page UI.
+  const savedGuide = await guide(page);
+  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
+  // A missing parent must not be mistaken for successful child deletion.
+  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
+  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
+  // Verify this exact ID is absent from persisted data.
+  expect(savedBoulder, 'API/DB: boulder was removed').toBeUndefined();
+}
+
+/**
+ * Verify problem existence and expected fields in database-backed GET /api/guide results.
+ * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
+ * @param page - Signed-in page whose session is used for the API request.
+ * @param locationId - ID of the location to locate.
+ * @param boulderId - ID of the boulder to locate.
+ * @param problemId - ID of the problem to locate.
+ * @param expectedFields - Submitted values to verify against persisted data.
+ */
+export async function assertProblemExistsDB(page: Page, locationId: string, boulderId: string, problemId: string, expectedFields: Record<string, string>) {
+  // Fetch fresh persisted data, independently of the current page UI.
+  const savedGuide = await guide(page);
+  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
+  // A missing parent must not be mistaken for successful child deletion.
+  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
+  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
+  // A missing parent must not be mistaken for successful child deletion.
+  expect(savedBoulder, 'API/DB: parent boulder still exists').toBeDefined();
+  const savedProblem = savedBoulder.problems.find((item: { id: string }) => item.id === problemId);
+  // Verify the record exists and every supplied field was saved correctly.
+  expect(savedProblem, 'API/DB: problem exists').toBeDefined();
+  expect(savedProblem, 'API/DB: problem has the expected saved fields').toMatchObject(expectedFields);
+}
+
+/**
+ * Verify problem deletion in database-backed GET /api/guide results.
+ * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
+ * @param page - Signed-in page whose session is used for the API request.
+ * @param locationId - ID of the location to locate.
+ * @param boulderId - ID of the boulder to locate.
+ * @param problemId - ID of the problem to locate.
+ */
+export async function assertProblemRemovedFromDB(page: Page, locationId: string, boulderId: string, problemId: string) {
+  // Fetch fresh persisted data, independently of the current page UI.
+  const savedGuide = await guide(page);
+  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
+  // A missing parent must not be mistaken for successful child deletion.
+  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
+  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
+  // A missing parent must not be mistaken for successful child deletion.
+  expect(savedBoulder, 'API/DB: parent boulder still exists').toBeDefined();
+  const savedProblem = savedBoulder.problems.find((item: { id: string }) => item.id === problemId);
+  // Verify this exact ID is absent from persisted data.
+  expect(savedProblem, 'API/DB: problem was removed').toBeUndefined();
+}
+
+/**
+ * Verify each supplied old field value has been replaced on the same location ID.
+ * Reads persisted data through GET /api/guide, not direct SQL.
+ * Only pass fields deliberately changed by the edit; other records may share these values.
+ * @param page - Signed-in page used for the API request.
+ * @param locationId - ID of the location to locate.
+ * @param oldFields - Field names mapped to their values before the edit.
+ */
+export async function assertLocationOldDetailsRemovedFromDB(page: Page, locationId: string, oldFields: Record<string, string>) {
+  // Fetch fresh persisted data, independently of the current page UI.
+  const savedGuide = await guide(page);
+  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
+  // Deletion must not count as successfully editing the record.
+  expect(savedLocation, 'API/DB: edited location still exists').toBeDefined();
+  // Check every old value separately so one changed field cannot hide another unchanged field.
+  expect(Object.keys(oldFields).length, 'At least one old field must be checked').toBeGreaterThan(0);
+  for (const [field, oldValue] of Object.entries(oldFields)) {
+    expect(savedLocation, 'API/DB: edited field remains present: ' + field).toHaveProperty(field);
+    expect(savedLocation[field], 'API/DB: location no longer has the old ' + field).not.toEqual(oldValue);
+  }
+}
+
+/**
+ * Verify each supplied old field value has been replaced on the same boulder ID.
+ * Reads persisted data through GET /api/guide, not direct SQL.
+ * Only pass fields deliberately changed by the edit; other records may share these values.
+ * @param page - Signed-in page used for the API request.
+ * @param locationId - ID of the location to locate.
+ * @param boulderId - ID of the boulder to locate.
+ * @param oldFields - Field names mapped to their values before the edit.
+ */
+export async function assertBoulderOldDetailsRemovedFromDB(page: Page, locationId: string, boulderId: string, oldFields: Record<string, string>) {
+  // Fetch fresh persisted data, independently of the current page UI.
+  const savedGuide = await guide(page);
+  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
+  // A missing parent must not be mistaken for successful child deletion.
+  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
+  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
+  // Deletion must not count as successfully editing the record.
+  expect(savedBoulder, 'API/DB: edited boulder still exists').toBeDefined();
+  // Check every old value separately so one changed field cannot hide another unchanged field.
+  expect(Object.keys(oldFields).length, 'At least one old field must be checked').toBeGreaterThan(0);
+  for (const [field, oldValue] of Object.entries(oldFields)) {
+    expect(savedBoulder, 'API/DB: edited field remains present: ' + field).toHaveProperty(field);
+    expect(savedBoulder[field], 'API/DB: boulder no longer has the old ' + field).not.toEqual(oldValue);
+  }
+}
+
+/**
+ * Verify each supplied old field value has been replaced on the same problem ID.
+ * Reads persisted data through GET /api/guide, not direct SQL.
+ * Only pass fields deliberately changed by the edit; other records may share these values.
+ * @param page - Signed-in page used for the API request.
+ * @param locationId - ID of the location to locate.
+ * @param boulderId - ID of the boulder to locate.
+ * @param problemId - ID of the problem to locate.
+ * @param oldFields - Field names mapped to their values before the edit.
+ */
+export async function assertProblemOldDetailsRemovedFromDB(page: Page, locationId: string, boulderId: string, problemId: string, oldFields: Record<string, string>) {
+  // Fetch fresh persisted data, independently of the current page UI.
+  const savedGuide = await guide(page);
+  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
+  // A missing parent must not be mistaken for successful child deletion.
+  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
+  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
+  // A missing parent must not be mistaken for successful child deletion.
+  expect(savedBoulder, 'API/DB: parent boulder still exists').toBeDefined();
+  const savedProblem = savedBoulder.problems.find((item: { id: string }) => item.id === problemId);
+  // Deletion must not count as successfully editing the record.
+  expect(savedProblem, 'API/DB: edited problem still exists').toBeDefined();
+  // Check every old value separately so one changed field cannot hide another unchanged field.
+  expect(Object.keys(oldFields).length, 'At least one old field must be checked').toBeGreaterThan(0);
+  for (const [field, oldValue] of Object.entries(oldFields)) {
+    expect(savedProblem, 'API/DB: edited field remains present: ' + field).toHaveProperty(field);
+    expect(savedProblem[field], 'API/DB: problem no longer has the old ' + field).not.toEqual(oldValue);
   }
 }
