@@ -87,6 +87,8 @@
   .btn.small { padding: 3px 9px; font-size: 12.5px; }
   .field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
   .field input[type=number] { width: 54px; padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+  .field select { padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+  .field:has(input:disabled) { opacity: .6; }
   .sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 2px; }
   .hint { font-size: 12px; color: var(--flaky); display: inline-flex; align-items: center; gap: 4px; }
   input[type=checkbox] { accent-color: var(--accent); margin: 0; width: 15px; height: 15px; }
@@ -183,6 +185,7 @@
   .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
   .shot { display: block; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--code-bg); }
   .shot img { display: block; width: 100%; }
+  .video { display: block; width: 100%; max-height: 62vh; border-radius: 8px; border: 1px solid var(--border); background: #000; }
   .links { display: flex; flex-wrap: wrap; gap: 8px; }
   .ai { border: 1px dashed var(--border); border-radius: 10px; padding: 14px 16px; background: var(--panel-2); display: grid; gap: 6px; }
   .ai-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
@@ -221,6 +224,14 @@
           <span class="hint" id="workerHint" hidden title="Every guide save is checked against one shared revision. Tests that save while another test saves get 409 &quot;This guide changed&quot;, even when they edit different records.">⚠ Parallel guide saves can fail with 409</span>
           <label class="field" title="Number of Playwright workers (--workers)">Workers <input id="workers" type="number" min="1" max="16" value="1"></label>
           <label class="field"><input id="headed" type="checkbox"> Headed</label>
+          <label class="field" title="Pause before every browser action so runs are easier to follow, live (headed) or in the video. The test timeout is raised to match.">Slow-mo
+            <select id="slowMo">
+              <option value="0">Off</option>
+              <option value="250">250 ms</option>
+              <option value="500">500 ms</option>
+              <option value="1000">1 s</option>
+              <option value="2000">2 s</option>
+            </select></label>
           <span class="sep"></span>
           <button id="runSelected" class="btn primary"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg><span>Run selected</span></button>
           <button id="runAll" class="btn">Run all</button>
@@ -285,7 +296,11 @@ $('#headed').checked = store.get('headed', false);
 const syncHint = () => $('#workerHint').hidden = Number($('#workers').value) <= 1;
 syncHint();
 $('#workers').addEventListener('input', () => { store.set('workers', Number($('#workers').value)); syncHint(); });
+// Slow-mo defaults to 500 ms. (New storage key, so earlier saved "Off" values don't carry over.)
+$('#slowMo').value = String(store.get('slowMoMs', 500));
+if (!$('#slowMo').value) $('#slowMo').value = '500';
 $('#headed').addEventListener('change', () => store.set('headed', $('#headed').checked));
+$('#slowMo').addEventListener('change', () => store.set('slowMoMs', Number($('#slowMo').value)));
 
 // Latest recorded result for a test: the live run first, then the most recent run that included it.
 function lastResult(id) {
@@ -296,7 +311,7 @@ function lastResult(id) {
 }
 const failedIds = () => S.tests.filter(t => { const r = lastResult(t.id); return r && isFail(r); }).map(t => t.id);
 async function run(ids) {
-  try { await api('/api/run', { ids, workers: Number($('#workers').value) || 1, headed: $('#headed').checked }); }
+  try { await api('/api/run', { ids, workers: Number($('#workers').value) || 1, headed: $('#headed').checked, slowMo: Number($('#slowMo').value) || 0 }); }
   catch (e) { notice(e.message); }
 }
 let noticeTimer;
@@ -418,6 +433,7 @@ function bindView() {
       const it = e.target.closest('[data-pick]'); if (it) { S.picked = it.dataset.pick; S.userPicked = true; S.detailTab = null; renderRun(); return; }
       const d = e.target.closest('[data-dtab]'); if (d) { S.detailTab = d.dataset.dtab; renderRun(); return; }
       const tr = e.target.closest('[data-trace]'); if (tr) api('/api/trace', { runId: S.viewedId, file: tr.dataset.trace }).catch(err => notice(err.message));
+      if (e.target.closest('[data-open-external]')) api('/api/open-in-browser', { hash: 'results=' + S.viewedId }).then(() => notice('Opened this run in your default browser.')).catch(err => notice(err.message));
     });
     $('#runBody').addEventListener('keydown', e => {
       if (!['ArrowDown', 'ArrowUp'].includes(e.key) || !e.target.closest('.list')) return;
@@ -510,6 +526,7 @@ function renderRun() {
 
   // Keep the detail panel and console scroll positions across live re-renders.
   const detailScroll = body.querySelector('.detail-body')?.scrollTop || 0;
+  const oldDetail = body.querySelector('.split')?.lastElementChild || null;
   const logEl = body.querySelector('#log');
   const stick = !logEl || logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
   const errs = r.errors || [];
@@ -554,23 +571,32 @@ function renderRun() {
           <span class="meta"><span class="loc mono">${esc(t.file)}:${t.line}</span>${t.steps?.length ? `<span class="ticks" title="${esc(t.steps.map(s => s.title + ': ' + (s.state || '')).join('\n'))}">${t.steps.map(s => `<i class="${esc(s.state)}"></i>`).join('')}</span>` : ''}</span>
         </button>`).join('') : '<div class="empty">Nothing to show.</div>'}</div>
     </section>
-    ${S.picked ? renderDetail(r.tests[S.picked]) : '<section class="panel"><div class="empty">Select a test to see details.</div></section>'}
+    <div id="detailSlot"></div>
   </div>`;
-  const db = body.querySelector('.detail-body'); if (db) db.scrollTop = detailScroll;
+  // Reuse the existing detail panel when nothing in it changed, so a playing video isn't restarted
+  // by live updates for other tests.
+  const detailHtml = S.picked ? renderDetail(r.tests[S.picked]) : '<section class="panel"><div class="empty">Select a test to see details.</div></section>';
+  const slot = body.querySelector('#detailSlot');
+  if (oldDetail && detailHtml === S.lastDetailHtml) slot.replaceWith(oldDetail);
+  else { slot.outerHTML = detailHtml; const db = body.querySelector('.detail-body'); if (db) db.scrollTop = detailScroll; }
+  S.lastDetailHtml = detailHtml;
 }
 
 function detailTabs(t) {
   const shots = (t.attachments || []).filter(a => a.file && a.contentType?.startsWith('image/'));
+  const videos = (t.attachments || []).filter(a => a.file && a.contentType?.startsWith('video/'));
+  const files = (t.attachments || []).filter(a => !videos.includes(a));
   const tabs = [];
   if (t.errors?.length) tabs.push(['error', 'Error']);
+  if (videos.length) tabs.push(['video', 'Video']);
   if (t.steps?.length) tabs.push(['steps', 'Steps', t.steps.length]);
-  if (t.attachments?.length) tabs.push(['artifacts', 'Artifacts', t.attachments.length]);
+  if (files.length) tabs.push(['artifacts', 'Artifacts', files.length]);
   if (isFail(t)) tabs.push(['ai', 'AI analysis']);
-  return { tabs, shots };
+  return { tabs, shots, videos };
 }
 
 function renderDetail(t) {
-  const { tabs, shots } = detailTabs(t);
+  const { tabs, shots, videos } = detailTabs(t);
   if (!tabs.some(([k]) => k === S.detailTab)) S.detailTab = tabs[0]?.[0] || null;
   const fileUrl = f => `/api/runs/${encodeURIComponent(S.viewedId)}/files/${encodeURIComponent(f)}`;
   const failedStep = t.steps?.find(s => s.state === 'failed');
@@ -589,9 +615,16 @@ function renderDetail(t) {
       ${s.error ? `<div class="msg">${esc((s.error.message || '').split('\n')[0])}</div>` : ''}
     </div>`).join('')}</div>`;
   } else if (S.detailTab === 'artifacts') {
-    const others = (t.attachments || []).filter(a => !shots.includes(a));
+    const others = (t.attachments || []).filter(a => !shots.includes(a) && !videos.includes(a));
     content = `${shots.length ? `<div class="shots">${shots.map(a => `<a class="shot" href="${fileUrl(a.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(a.file)}" alt="${esc(a.name)}"></a>`).join('')}</div>` : ''}
       ${others.length ? `<div class="links">${others.map(a => a.name === 'trace' && a.file ? `<button class="btn small" data-trace="${esc(a.file)}">Open trace viewer</button>` : a.file ? `<a class="btn small" href="${fileUrl(a.file)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : '').join('')}</div>` : ''}`;
+  } else if (S.detailTab === 'video') {
+    content = videos.map(a => `<div>
+        <video class="video" controls preload="metadata" src="${fileUrl(a.file)}" onerror="this.hidden=true;this.nextElementSibling.hidden=false"></video>
+        <div class="banner" hidden>This browser can't play the recording (WebM). VS Code's built-in browser is a known case. Open this run in your normal browser instead.
+          <div class="links" style="margin-top:8px"><button class="btn small" data-open-external>Open in your browser</button></div></div>
+      </div>`).join('') +
+      '<div class="loc">Each action is marked on the video: an outline on the element it used and the action name top right. The current step is shown top left.</div>';
   } else if (S.detailTab === 'ai') {
     content = renderAnalysis(t);
   }
@@ -632,7 +665,7 @@ function renderResultsList() {
     return `<tr data-run="${esc(r.id)}" class="${r.id === S.liveId ? 'live' : ''}">
       <td><span class="pill ${esc(r.status)}"><span class="dot ${esc(r.status)}"></span>${esc(LABEL[r.status] || r.status)}</span></td>
       <td><div>${esc(fmtAgo(r.startedAt))}</div><div class="loc">${esc(fmtTime(r.startedAt))}</div></td>
-      <td>${parts}</td>
+      <td>${parts}${r.video ? ' <span class="pill" title="Recorded with video: open the run and pick a test to watch it">▶ Video</span>' : ''}</td>
       <td><div class="bar hist-bar">${barHtml(c, r.total)}</div></td>
       <td class="num">${r.workers}</td>
       <td class="num">${r.endedAt ? fmtDur(r.endedAt - r.startedAt) : '…'}</td>

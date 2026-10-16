@@ -13,7 +13,8 @@ const root = path.resolve(here, '..');
 const runsDir = path.join(here, '.runs');
 const PORT = Number(process.env.DASHBOARD_PORT || 5190);
 const HOST = '127.0.0.1';
-const MAX_RUNS = 30;
+// Older runs are deleted with their videos, traces and screenshots.
+const MAX_RUNS = 5;
 const MARKER = '@@PWDASH@@';
 const playwright = (...args) => [process.execPath, ['--preserve-symlinks', '--preserve-symlinks-main', path.join(root, 'node_modules/@playwright/test/cli.js'), ...args]];
 
@@ -64,7 +65,7 @@ const summarize = run => {
   for (const t of Object.values(run.tests)) counts[t.state] = (counts[t.state] || 0) + 1;
   // Per-test outcome lets the Tests view show each test's latest result across runs.
   const results = Object.fromEntries(Object.values(run.tests).map(t => [t.id, { state: t.state, duration: t.duration }]));
-  return { id: run.id, startedAt: run.startedAt, endedAt: run.endedAt, status: run.status, workers: run.workers, headed: run.headed, total: Object.keys(run.tests).length, counts, results };
+  return { id: run.id, startedAt: run.startedAt, endedAt: run.endedAt, status: run.status, workers: run.workers, headed: run.headed, slowMo: run.slowMo || 0, video: !!run.video, total: Object.keys(run.tests).length, counts, results };
 };
 
 async function saveRun(run) {
@@ -76,12 +77,19 @@ async function pruneRuns() {
   for (const id of ids.slice(MAX_RUNS)) await rm(path.join(runsDir, id), { recursive: true, force: true });
 }
 
-async function startRun({ ids, workers, headed }) {
+async function startRun({ ids, workers, headed, slowMo }) {
   if (current) throw Object.assign(new Error('A run is already in progress.'), { status: 409 });
   const { tests } = testCache || await listTests();
   const selected = Array.isArray(ids) && ids.length ? tests.filter(t => ids.includes(t.id)) : tests;
   if (!selected.length) throw Object.assign(new Error('No tests selected.'), { status: 400 });
   workers = Math.max(1, Math.min(16, Number(workers) || 1));
+  slowMo = Math.max(0, Math.min(5000, Math.round(Number(slowMo)) || 0));
+  // Dashboard runs always record video, so every result can be watched back.
+  const video = true;
+  // Video annotations and slow-mo both pause on every action, so the 60s test timeout is raised:
+  // 2 min for the annotations plus 200 slowed actions' worth of slow-mo (220s at 500 ms; the
+  // longest test, account CRUD, takes about 37s at that speed). Stop still ends a run.
+  const timeout = 120000 + slowMo * 200;
 
   const id = new Date().toISOString().replace(/[:.]/g, '-') + '-' + randomBytes(2).toString('hex');
   const dir = path.join(runsDir, id);
@@ -89,6 +97,7 @@ async function startRun({ ids, workers, headed }) {
 
   const args = ['test', `--workers=${workers}`, `--add-reporter=${path.join(here, 'stream-reporter.mjs')}`];
   if (headed) args.push('--headed');
+  args.push(`--timeout=${timeout}`);
   if (selected.length !== tests.length) {
     const listFile = path.join(dir, 'test-list.txt');
     await writeFile(listFile, selected.map(t => [t.file, ...t.titlePath].join(' › ')).join('\n'));
@@ -96,13 +105,13 @@ async function startRun({ ids, workers, headed }) {
   }
 
   const run = {
-    id, startedAt: Date.now(), endedAt: null, status: 'running', workers, headed: !!headed,
-    command: `playwright test --workers=${workers}${headed ? ' --headed' : ''}${selected.length !== tests.length ? ` --test-list (${selected.length} tests)` : ''}`,
+    id, startedAt: Date.now(), endedAt: null, status: 'running', workers, headed: !!headed, slowMo, video,
+    command: `playwright test --workers=${workers}${headed ? ' --headed' : ''}${slowMo ? ` (slow-mo ${slowMo} ms)` : ''}${selected.length !== tests.length ? ` --test-list (${selected.length} tests)` : ''}`,
     tests: Object.fromEntries(selected.map(t => [t.id, { ...t, state: 'queued', steps: [], errors: [], attachments: [], duration: null, analysis: null }])),
     errors: [], log: '',
   };
   const [cmd, cmdArgs] = playwright(...args);
-  const child = spawn(cmd, cmdArgs, { cwd: root, env: { ...process.env, PLAYWRIGHT_HTML_OPEN: 'never', FORCE_COLOR: '0' } });
+  const child = spawn(cmd, cmdArgs, { cwd: root, env: { ...process.env, PLAYWRIGHT_HTML_OPEN: 'never', FORCE_COLOR: '0', PW_SLOW_MO: String(slowMo), PW_VIDEO: video ? '1' : '0' } });
   current = { run, child, dir, pending: [] };
   broadcast({ type: 'runStart', run });
 
@@ -209,11 +218,21 @@ async function listRuns() {
   return runs;
 }
 
-async function serveFile(res, file) {
+async function serveFile(res, file, req) {
   try {
     const s = await stat(file);
     if (!s.isFile()) throw new Error();
-    res.writeHead(200, { 'content-type': types[path.extname(file).toLowerCase()] || 'application/octet-stream', 'content-length': s.size });
+    const type = types[path.extname(file).toLowerCase()] || 'application/octet-stream';
+    // Byte ranges let the browser seek within recorded videos.
+    const range = /^bytes=(\d*)-(\d*)$/.exec(req?.headers.range || '');
+    if (range && (range[1] || range[2])) {
+      const start = range[1] ? Number(range[1]) : Math.max(0, s.size - Number(range[2]));
+      const end = range[1] && range[2] ? Math.min(Number(range[2]), s.size - 1) : s.size - 1;
+      if (start > end || start >= s.size) { res.writeHead(416, { 'content-range': `bytes */${s.size}` }); return res.end(); }
+      res.writeHead(206, { 'content-type': type, 'content-length': end - start + 1, 'content-range': `bytes ${start}-${end}/${s.size}`, 'accept-ranges': 'bytes' });
+      return createReadStream(file, { start, end }).pipe(res);
+    }
+    res.writeHead(200, { 'content-type': type, 'content-length': s.size, 'accept-ranges': 'bytes' });
     createReadStream(file).pipe(res);
   } catch { send(res, 404, { error: 'Not found' }); }
 }
@@ -247,6 +266,16 @@ const server = http.createServer(async (req, res) => {
       if (p === '/api/run') return send(res, 200, summarize(await startRun(body)));
       if (p === '/api/stop') return send(res, 200, { stopped: stopRun() });
       if (p === '/api/tests/refresh') return send(res, 200, await listTests());
+      if (p === '/api/open-in-browser') {
+        // Open a dashboard page in the system browser (e.g. when VS Code's browser can't play WebM).
+        // Only this dashboard's own URL is opened, with a validated hash route.
+        const hash = String(body.hash || '');
+        if (!/^[\w=.-]*$/.test(hash)) return send(res, 400, { error: 'Invalid page.' });
+        const url = `http://${HOST}:${PORT}/#${hash}`;
+        const [cmd, args] = process.platform === 'win32' ? ['rundll32', ['url.dll,FileProtocolHandler', url]] : [process.platform === 'darwin' ? 'open' : 'xdg-open', [url]];
+        spawn(cmd, args, { detached: true, stdio: 'ignore' }).unref();
+        return send(res, 200, { opened: true });
+      }
       if (p === '/api/trace') {
         const run = await loadRun(String(body.runId));
         const file = run && inside(path.join(runsDir, run.id), String(body.file));
@@ -269,7 +298,7 @@ const server = http.createServer(async (req, res) => {
     }
     if ((m = p.match(/^\/api\/runs\/([\w-]+)\/files\/(.+)$/))) {
       const file = inside(path.join(runsDir, m[1]), m[2]);
-      return file ? serveFile(res, file) : send(res, 404, { error: 'Not found' });
+      return file ? serveFile(res, file, req) : send(res, 404, { error: 'Not found' });
     }
     if (p === '/api/events') {
       res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache', connection: 'keep-alive' });
@@ -285,6 +314,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 await mkdir(runsDir, { recursive: true });
+await pruneRuns();
 server.listen(PORT, HOST, () => console.log(`Test dashboard: http://${HOST}:${PORT}`));
 const shutdown = () => { stopRun(); setTimeout(() => process.exit(0), 300); };
 process.on('SIGINT', shutdown);

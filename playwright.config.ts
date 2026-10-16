@@ -33,6 +33,25 @@ export default defineConfig({
     browserName: 'chromium',
     screenshot: 'only-on-failure',
     trace: 'retain-on-failure',
+    // The test dashboard's Slow-mo option sets PW_SLOW_MO (ms) to pause before each browser action.
+    launchOptions: { slowMo: Number(process.env.PW_SLOW_MO) || 0 },
+    // The dashboard's Record video option sets PW_VIDEO=1: record every test and draw each action
+    // onto the video (red dot at the click point, outline on the target element, action title).
+    // Playwright holds each annotation for `duration` before the next action, so recorded runs are slower.
+    video: process.env.PW_VIDEO === '1' ? {
+      mode: 'on',
+      show: {
+        actions: {
+          duration: 600,
+          style: {
+            point: 'width: 22px; height: 22px; border-radius: 50%; background: rgba(239, 68, 68, .45); box-shadow: 0 0 0 3px rgba(239, 68, 68, .9)',
+            highlight: 'outline: 3px solid rgba(239, 68, 68, .9); outline-offset: 2px; background: rgba(239, 68, 68, .1)',
+            title: 'font-size: 16px',
+          },
+        },
+        test: { level: 'step', position: 'top-left', fontSize: 14 },
+      },
+    } : 'off',
   },
   webServer: {
     command: 'npm run dev',
