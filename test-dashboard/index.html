@@ -1,0 +1,498 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Dashboard</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --border: #dfe3e8; --text: #1b1f24; --muted: #5f6b7a;
+    --accent: #2f6fde; --accent-text: #fff;
+    --pass: #1f8a4c; --pass-bg: #e3f4ea; --fail: #c93a3a; --fail-bg: #fbe7e7;
+    --flaky: #a86a00; --flaky-bg: #fdf1dc; --skip: #6b7684; --skip-bg: #eceff2; --run: #2f6fde; --run-bg: #e4edfc;
+    --code-bg: #f3f4f6; --shadow: 0 1px 2px rgba(16,24,40,.06);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418; --panel: #181c21; --panel-2: #1f242a; --border: #2c333b; --text: #e6e9ed; --muted: #95a0ad;
+      --accent: #4c8af0; --pass: #4cc283; --pass-bg: #163325; --fail: #f07070; --fail-bg: #3a1c1c;
+      --flaky: #e0a844; --flaky-bg: #3a2c12; --skip: #8a96a3; --skip-bg: #252a30; --run: #6aa1f5; --run-bg: #1a2a44;
+      --code-bg: #0d1013; --shadow: none;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  button, input { font: inherit; color: inherit; }
+  code, pre, .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
+
+  header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-left: auto; }
+  .btn { border: 1px solid var(--border); background: var(--panel); padding: 6px 12px; border-radius: 7px; cursor: pointer; white-space: nowrap; }
+  .btn:hover:not(:disabled) { background: var(--panel-2); }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+  .btn.danger { color: var(--fail); border-color: color-mix(in srgb, var(--fail) 40%, var(--border)); }
+  .btn.small { padding: 3px 9px; font-size: 12.5px; }
+  .field { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+  .field input[type=number] { width: 58px; padding: 5px 6px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); }
+  a { color: var(--accent); }
+
+  .layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; padding: 16px 20px 40px; align-items: start; }
+  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+  .panel-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  .panel-head h2 { font-size: 13px; margin: 0; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 650; }
+  .panel-head .spacer { flex: 1; }
+  aside { display: grid; gap: 16px; position: sticky; top: 72px; min-width: 0; grid-template-columns: minmax(0, 1fr); }
+  @media (max-width: 900px) { aside { position: static; } }
+
+  .search { width: 100%; padding: 6px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-2); }
+  .tests { max-height: 52vh; overflow: auto; padding: 4px 0; }
+  .file-group { padding: 2px 0; }
+  .file-row, .test-row { display: flex; align-items: center; gap: 8px; padding: 4px 12px; cursor: pointer; user-select: none; }
+  .file-row { font-weight: 600; font-size: 12.5px; color: var(--muted); }
+  .test-row { padding-left: 30px; }
+  .file-row:hover, .test-row:hover { background: var(--panel-2); }
+  .test-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  input[type=checkbox] { accent-color: var(--accent); margin: 0; }
+  .sel-count { font-size: 12.5px; color: var(--muted); padding: 8px 12px; border-top: 1px solid var(--border); }
+
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--border); }
+  .dot.passed { background: var(--pass); } .dot.failed { background: var(--fail); } .dot.flaky { background: var(--flaky); }
+  .dot.skipped, .dot.stopped { background: var(--skip); } .dot.running { background: var(--run); animation: pulse 1s infinite; }
+  .dot.queued { background: transparent; border: 1.5px solid var(--skip); }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  .runs { max-height: 30vh; overflow: auto; }
+  .run-item { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 8px; align-items: center; padding: 7px 12px; cursor: pointer; border-top: 1px solid var(--border); }
+  .run-item:first-child { border-top: 0; }
+  .run-item:hover { background: var(--panel-2); }
+  .run-item.active { background: var(--run-bg); }
+  .run-item .when { font-size: 13px; }
+  .run-item .meta { grid-column: 2 / 4; font-size: 12px; color: var(--muted); }
+  .empty { padding: 14px 12px; color: var(--muted); font-size: 13px; }
+
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--skip-bg); color: var(--skip); }
+  .pill.passed { background: var(--pass-bg); color: var(--pass); } .pill.failed { background: var(--fail-bg); color: var(--fail); }
+  .pill.flaky { background: var(--flaky-bg); color: var(--flaky); } .pill.running { background: var(--run-bg); color: var(--run); }
+
+  main { display: grid; gap: 16px; min-width: 0; }
+  .summary { padding: 14px 16px; display: grid; gap: 12px; }
+  .summary-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .summary-top .title { font-weight: 650; font-size: 15px; }
+  .summary-top .cmd { color: var(--muted); }
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+  .tile { background: var(--panel-2); border-radius: 8px; padding: 9px 12px; }
+  .tile .label { font-size: 12px; color: var(--muted); }
+  .tile .value { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .tile.passed .value { color: var(--pass); } .tile.failed .value { color: var(--fail); } .tile.flaky .value { color: var(--flaky); }
+  .bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--panel-2); }
+  .bar span { display: block; transition: width .3s; }
+  .bar .passed { background: var(--pass); } .bar .failed { background: var(--fail); } .bar .flaky { background: var(--flaky); } .bar .skipped, .bar .stopped { background: var(--skip); } .bar .running { background: var(--run); opacity: .6; }
+
+  .tabs { display: flex; gap: 4px; }
+  .tab { border: 0; background: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); }
+  .tab.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
+
+  .result { border-top: 1px solid var(--border); }
+  .result:first-child { border-top: 0; }
+  .result-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 11px 14px; cursor: pointer; }
+  .result-head:hover { background: var(--panel-2); }
+  .result-head .name { font-weight: 600; }
+  .result-head .loc { color: var(--muted); font-size: 12.5px; }
+  .result-head .dur { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
+  .chev { transition: transform .15s; color: var(--muted); width: 12px; }
+  .result.open .chev { transform: rotate(90deg); }
+  .steps { display: flex; flex-wrap: wrap; gap: 5px; flex-basis: 100%; padding-left: 41px; }
+  .step { font-size: 12px; padding: 1px 8px; border-radius: 5px; background: var(--skip-bg); color: var(--skip); }
+  .step.passed { background: var(--pass-bg); color: var(--pass); } .step.failed { background: var(--fail-bg); color: var(--fail); font-weight: 600; } .step.running { background: var(--run-bg); color: var(--run); }
+  .result-body { padding: 0 14px 16px 41px; display: grid; gap: 12px; }
+  .section-label { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+  pre { margin: 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 7px; overflow: auto; max-height: 360px; white-space: pre-wrap; word-break: break-word; }
+  pre.error { border-left: 3px solid var(--fail); }
+  .artifacts { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
+  .shot { display: block; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; max-width: 320px; }
+  .shot img { display: block; width: 100%; }
+  .links { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .ai { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; background: var(--panel-2); }
+  .ai-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .ai-head .badge { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--border); color: var(--muted); }
+  .ai p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+
+  details.log summary { cursor: pointer; padding: 10px 14px; color: var(--muted); font-weight: 600; }
+  details.log pre { margin: 0 14px 14px; max-height: 420px; }
+  .banner { padding: 10px 14px; border-radius: 8px; background: var(--fail-bg); color: var(--fail); white-space: pre-wrap; }
+  .warn { font-size: 12.5px; color: var(--flaky); }
+  .placeholder { padding: 40px 20px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Test Dashboard</h1>
+  <span id="live" class="pill">Idle</span>
+  <div class="controls">
+    <label class="field" title="Number of Playwright workers (--workers)">Workers <input id="workers" type="number" min="1" max="16" value="1"></label>
+    <label class="field"><input id="headed" type="checkbox"> Headed</label>
+    <button id="runSelected" class="btn primary">Run selected</button>
+    <button id="runAll" class="btn">Run all</button>
+    <button id="runFailed" class="btn" title="Re-run tests that failed in the run being viewed">Re-run failed</button>
+    <button id="stop" class="btn danger" disabled>Stop</button>
+    <a class="btn" href="/report/" target="_blank" rel="noopener">HTML report</a>
+  </div>
+  <div id="workerWarn" class="warn" hidden>Tests share one account and database (see tests/e2e/README.md), so more than one worker can make tests collide.</div>
+</header>
+
+<div class="layout">
+  <aside>
+    <section class="panel">
+      <div class="panel-head">
+        <input id="filter" class="search" type="search" placeholder="Filter tests…">
+      </div>
+      <div class="panel-head">
+        <label class="field"><input id="selectAll" type="checkbox"> Select all</label>
+        <span class="spacer"></span>
+        <button id="refresh" class="btn small" title="Re-scan test files">Refresh</button>
+      </div>
+      <div id="tests" class="tests"><div class="empty">Loading tests…</div></div>
+      <div id="selCount" class="sel-count"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Run history</h2></div>
+      <div id="runs" class="runs"><div class="empty">No runs yet.</div></div>
+    </section>
+  </aside>
+
+  <main>
+    <div id="listError" class="banner" hidden></div>
+    <section class="panel" id="summaryPanel">
+      <div class="placeholder">Select tests and press <b>Run selected</b>, or <b>Run all</b>.</div>
+    </section>
+    <section class="panel" id="resultsPanel" hidden>
+      <div class="panel-head">
+        <h2>Results</h2><span class="spacer"></span>
+        <div class="tabs" id="tabs">
+          <button class="tab active" data-tab="all">All</button>
+          <button class="tab" data-tab="failed">Failed</button>
+          <button class="tab" data-tab="passed">Passed</button>
+        </div>
+      </div>
+      <div id="results"></div>
+    </section>
+    <section class="panel" id="logPanel" hidden>
+      <details class="log"><summary>Console output</summary><pre id="log" class="mono"></pre></details>
+    </section>
+  </main>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
+const api = async (url, body) => {
+  const res = await fetch(url, body === undefined ? {} : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+};
+const store = {
+  get(k, d) { try { const v = localStorage.getItem('pwdash.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem('pwdash.' + k, JSON.stringify(v)); } catch {} },
+};
+const fmtDur = ms => ms == null ? '' : ms < 1000 ? `${ms} ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60000)}m ${Math.round(ms % 60000 / 1000)}s`;
+const fmtTime = t => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+const STATE_LABEL = { passed: 'Passed', failed: 'Failed', flaky: 'Flaky', skipped: 'Skipped', running: 'Running', queued: 'Queued', stopped: 'Stopped' };
+
+let tests = [];
+let selected = new Set(store.get('selected', []));
+let runs = [];
+let viewed = null;        // full run object being displayed
+let liveRunId = null;     // id of the run in progress
+let tab = 'all';
+const open = new Set();   // expanded result ids
+
+$('#workers').value = store.get('workers', 1);
+$('#headed').checked = store.get('headed', false);
+const syncWorkerWarn = () => $('#workerWarn').hidden = Number($('#workers').value) <= 1;
+syncWorkerWarn();
+$('#workers').addEventListener('input', () => { store.set('workers', Number($('#workers').value)); syncWorkerWarn(); });
+$('#headed').addEventListener('change', () => store.set('headed', $('#headed').checked));
+
+// ---------- Test list ----------
+async function loadTests(refresh) {
+  $('#listError').hidden = true;
+  try {
+    const data = refresh ? await api('/api/tests/refresh', {}) : await api('/api/tests');
+    tests = data.tests;
+    const ids = new Set(tests.map(t => t.id));
+    selected = new Set([...selected].filter(id => ids.has(id)));
+    if (!store.get('selected', null)) tests.forEach(t => selected.add(t.id));
+  } catch (e) {
+    tests = [];
+    $('#listError').textContent = 'Could not list tests:\n' + e.message;
+    $('#listError').hidden = false;
+  }
+  renderTests();
+}
+
+function latestState(id) { return viewed?.tests?.[id]?.state; }
+
+function renderTests() {
+  const q = $('#filter').value.trim().toLowerCase();
+  const visible = tests.filter(t => !q || (t.file + ' ' + t.titlePath.join(' ')).toLowerCase().includes(q));
+  const byFile = new Map();
+  for (const t of visible) (byFile.get(t.file) || byFile.set(t.file, []).get(t.file)).push(t);
+  if (!visible.length) $('#tests').innerHTML = `<div class="empty">${tests.length ? 'No tests match the filter.' : 'No tests found.'}</div>`;
+  else $('#tests').innerHTML = [...byFile].map(([file, list]) => {
+    const n = list.filter(t => selected.has(t.id)).length;
+    return `<div class="file-group">
+      <div class="file-row" data-file="${esc(file)}"><input type="checkbox" ${n === list.length ? 'checked' : ''} data-indeterminate="${n > 0 && n < list.length}"><span>${esc(file)}</span></div>
+      ${list.map(t => `<div class="test-row" data-id="${esc(t.id)}" title="${esc(t.titlePath.join(' › '))}">
+        <input type="checkbox" ${selected.has(t.id) ? 'checked' : ''}>
+        <span class="name">${esc(t.titlePath.join(' › '))}</span>
+        <span class="dot ${latestState(t.id) || ''}" title="${esc(STATE_LABEL[latestState(t.id)] || 'Not run in this view')}"></span>
+      </div>`).join('')}
+    </div>`;
+  }).join('');
+  $('#tests').querySelectorAll('[data-indeterminate=true]').forEach(c => c.indeterminate = true);
+  const all = tests.length && tests.every(t => selected.has(t.id));
+  $('#selectAll').checked = !!all;
+  $('#selectAll').indeterminate = !all && selected.size > 0;
+  $('#selCount').textContent = `${selected.size} of ${tests.length} selected`;
+  store.set('selected', [...selected]);
+  syncButtons();
+}
+
+$('#tests').addEventListener('click', e => {
+  const row = e.target.closest('.test-row, .file-row');
+  if (!row) return;
+  if (row.dataset.id) selected.has(row.dataset.id) ? selected.delete(row.dataset.id) : selected.add(row.dataset.id);
+  else {
+    const list = tests.filter(t => t.file === row.dataset.file);
+    const allOn = list.every(t => selected.has(t.id));
+    list.forEach(t => allOn ? selected.delete(t.id) : selected.add(t.id));
+  }
+  renderTests();
+});
+$('#selectAll').addEventListener('change', e => { selected = new Set(e.target.checked ? tests.map(t => t.id) : []); renderTests(); });
+$('#filter').addEventListener('input', renderTests);
+$('#refresh').addEventListener('click', () => loadTests(true));
+
+// ---------- Running ----------
+function syncButtons() {
+  const busy = !!liveRunId;
+  $('#runSelected').disabled = busy || !selected.size;
+  $('#runAll').disabled = busy || !tests.length;
+  $('#runFailed').disabled = busy || !failedIds().length;
+  $('#stop').disabled = !busy;
+  const live = $('#live');
+  live.className = 'pill' + (busy ? ' running' : '');
+  live.textContent = busy ? 'Running…' : 'Idle';
+}
+const failedIds = () => viewed ? Object.values(viewed.tests).filter(t => t.state === 'failed' || t.state === 'flaky').map(t => t.id).filter(id => tests.some(t => t.id === id)) : [];
+
+async function run(ids) {
+  try {
+    await api('/api/run', { ids, workers: Number($('#workers').value) || 1, headed: $('#headed').checked });
+  } catch (e) { alertBanner(e.message); }
+}
+function alertBanner(msg) { $('#listError').textContent = msg; $('#listError').hidden = false; setTimeout(() => $('#listError').hidden = true, 6000); }
+$('#runSelected').addEventListener('click', () => run([...selected]));
+$('#runAll').addEventListener('click', () => run([]));
+$('#runFailed').addEventListener('click', () => run(failedIds()));
+$('#stop').addEventListener('click', () => api('/api/stop', {}).catch(e => alertBanner(e.message)));
+
+// ---------- Run history ----------
+async function loadRuns() {
+  runs = await api('/api/runs').catch(() => []);
+  renderRuns();
+}
+function renderRuns() {
+  if (!runs.length) { $('#runs').innerHTML = '<div class="empty">No runs yet.</div>'; return; }
+  $('#runs').innerHTML = runs.map(r => {
+    const c = r.counts;
+    const parts = [c.passed && `${c.passed} passed`, c.failed && `${c.failed} failed`, c.flaky && `${c.flaky} flaky`, c.skipped && `${c.skipped} skipped`].filter(Boolean).join(' · ') || `${r.total} tests`;
+    return `<div class="run-item ${viewed?.id === r.id ? 'active' : ''}" data-run="${esc(r.id)}">
+      <span class="dot ${esc(r.status)}"></span><span class="when">${esc(fmtTime(r.startedAt))}</span>
+      <span class="pill ${esc(r.status)}">${esc(STATE_LABEL[r.status] || r.status)}</span>
+      <span class="meta">${esc(parts)} · ${r.workers} worker${r.workers > 1 ? 's' : ''}${r.endedAt ? ' · ' + fmtDur(r.endedAt - r.startedAt) : ''}</span>
+    </div>`;
+  }).join('');
+}
+$('#runs').addEventListener('click', async e => {
+  const item = e.target.closest('[data-run]');
+  if (!item) return;
+  open.clear();
+  showRun(await api('/api/runs/' + item.dataset.run));
+});
+
+function showRun(r) {
+  viewed = r;
+  if (r) store.set('viewedRun', r.id);
+  // Expand failures by default so the error is visible without clicking.
+  if (r) for (const t of Object.values(r.tests)) if (t.state === 'failed' && !open.has('seen:' + r.id + t.id)) { open.add(t.id); open.add('seen:' + r.id + t.id); }
+  renderRuns(); renderTests(); renderRun();
+}
+
+// ---------- Run view ----------
+function renderRun() {
+  const r = viewed;
+  if (!r) return;
+  const list = Object.values(r.tests);
+  const counts = { passed: 0, failed: 0, flaky: 0, skipped: 0, running: 0, queued: 0, stopped: 0 };
+  list.forEach(t => counts[t.state] = (counts[t.state] || 0) + 1);
+  const total = list.length || 1;
+  const elapsed = (r.endedAt || Date.now()) - r.startedAt;
+  $('#summaryPanel').innerHTML = `<div class="summary">
+    <div class="summary-top">
+      <span class="title">${esc(fmtTime(r.startedAt))}</span>
+      <span class="pill ${esc(r.status)}">${esc(STATE_LABEL[r.status] || r.status)}</span>
+      <span class="cmd mono">${esc(r.command || '')}</span>
+    </div>
+    <div class="tiles">
+      <div class="tile"><div class="label">Tests</div><div class="value">${list.length}</div></div>
+      <div class="tile passed"><div class="label">Passed</div><div class="value">${counts.passed}</div></div>
+      <div class="tile failed"><div class="label">Failed</div><div class="value">${counts.failed}</div></div>
+      ${counts.flaky ? `<div class="tile flaky"><div class="label">Flaky</div><div class="value">${counts.flaky}</div></div>` : ''}
+      <div class="tile"><div class="label">Skipped</div><div class="value">${counts.skipped + counts.stopped}</div></div>
+      <div class="tile"><div class="label">Duration</div><div class="value" id="elapsed">${fmtDur(elapsed)}</div></div>
+    </div>
+    <div class="bar">${['passed', 'flaky', 'failed', 'skipped', 'stopped', 'running'].map(s => counts[s] ? `<span class="${s}" style="width:${counts[s] / total * 100}%"></span>` : '').join('')}</div>
+    ${(r.errors || []).map(e => `<pre class="error">${esc(e.message || e.stack)}</pre>`).join('')}
+  </div>`;
+
+  $('#resultsPanel').hidden = false;
+  const order = { failed: 0, flaky: 1, running: 2, queued: 3, passed: 4, skipped: 5, stopped: 6 };
+  const shown = list
+    .filter(t => tab === 'all' || (tab === 'failed' ? ['failed', 'flaky'].includes(t.state) : t.state === 'passed'))
+    .sort((a, b) => (order[a.state] - order[b.state]) || a.file.localeCompare(b.file) || a.line - b.line);
+  $('#results').innerHTML = shown.length ? shown.map(renderResult).join('') : `<div class="empty">Nothing to show.</div>`;
+
+  $('#logPanel').hidden = !r.log;
+  const logEl = $('#log');
+  const stick = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+  logEl.textContent = r.log || '';
+  if (stick) logEl.scrollTop = logEl.scrollHeight;
+  syncButtons();
+}
+
+function renderResult(t) {
+  const isOpen = open.has(t.id);
+  const hasDetail = t.errors?.length || t.attachments?.length || ['failed', 'flaky'].includes(t.state);
+  const steps = t.steps?.length ? `<div class="steps">${t.steps.map(s => `<span class="step ${esc(s.state)}" title="${esc(fmtDur(s.duration))}">${esc(s.title)}</span>`).join('')}</div>` : '';
+  return `<div class="result ${isOpen ? 'open' : ''}" data-result="${esc(t.id)}">
+    <div class="result-head">
+      <span class="chev">${hasDetail ? '▸' : ''}</span>
+      <span class="pill ${esc(t.state)}"><span class="dot ${esc(t.state)}"></span>${esc(STATE_LABEL[t.state] || t.state)}</span>
+      <span class="name">${esc(t.titlePath.join(' › '))}</span>
+      <span class="loc mono">${esc(t.file)}:${t.line}</span>
+      <span class="dur">${t.retry ? `retry ${t.retry} · ` : ''}${fmtDur(t.duration)}</span>
+      ${steps}
+    </div>
+    ${isOpen && hasDetail ? renderDetail(t) : ''}
+  </div>`;
+}
+
+function renderDetail(t) {
+  const fileUrl = f => `/api/runs/${encodeURIComponent(viewed.id)}/files/${encodeURIComponent(f)}`;
+  const failedStep = t.steps?.find(s => s.state === 'failed');
+  const shots = (t.attachments || []).filter(a => a.file && a.contentType?.startsWith('image/'));
+  const others = (t.attachments || []).filter(a => !shots.includes(a));
+  const errors = (t.errors || []).map(e => `
+    ${e.location ? `<div class="loc mono">at ${esc(e.location.file.split(/[\\/]/).slice(-2).join('/'))}:${e.location.line}:${e.location.column}</div>` : ''}
+    <pre class="error mono">${esc(e.message || e.value)}</pre>
+    ${e.snippet ? `<pre class="mono">${esc(e.snippet)}</pre>` : ''}`).join('');
+  const links = others.map(a => {
+    if (a.name === 'trace' && a.file) return `<button class="btn small" data-trace="${esc(a.file)}">Open trace</button>`;
+    if (a.file) return `<a class="btn small" href="${fileUrl(a.file)}" target="_blank" rel="noopener">${esc(a.name)}</a>`;
+    return '';
+  }).join('');
+  const notes = (t.annotations || []).filter(a => a.description).map(a => `<div class="warn">${esc(a.type)}: ${esc(a.description)}</div>`).join('');
+  return `<div class="result-body">
+    ${failedStep ? `<div><div class="section-label">Failed step</div>${esc(failedStep.title)}</div>` : ''}
+    ${errors ? `<div><div class="section-label">Error</div>${errors}</div>` : ''}
+    ${notes}
+    ${shots.length || links ? `<div><div class="section-label">Artifacts</div><div class="artifacts">
+      ${shots.map(a => `<a class="shot" href="${fileUrl(a.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(a.file)}" alt="${esc(a.name)}"></a>`).join('')}
+      <div class="links">${links}</div></div></div>` : ''}
+    ${['failed', 'flaky'].includes(t.state) ? renderAnalysis(t) : ''}
+  </div>`;
+}
+
+// Placeholder for AI failure analysis. Each test result carries an `analysis` field
+// (null for now) which will hold the suggested cause and fix.
+function renderAnalysis(t) {
+  const a = t.analysis;
+  if (a) return `<div class="ai"><div class="ai-head">AI analysis <span class="badge">${esc(a.category || '')}</span></div>
+    <p><b>Likely cause:</b> ${esc(a.cause)}</p><p><b>Suggested fix:</b> ${esc(a.fix)}</p></div>`;
+  return `<div class="ai"><div class="ai-head">AI analysis <span class="badge">Not configured</span></div>
+    <p>Suggested cause and fix for this failure will appear here, for example an expected UI change to accept or an app bug with a drafted report.</p></div>`;
+}
+
+$('#results').addEventListener('click', e => {
+  const trace = e.target.closest('[data-trace]');
+  if (trace) { api('/api/trace', { runId: viewed.id, file: trace.dataset.trace }).catch(err => alertBanner(err.message)); return; }
+  if (e.target.closest('.result-body')) return;
+  const row = e.target.closest('[data-result]');
+  if (!row) return;
+  const id = row.dataset.result;
+  open.has(id) ? open.delete(id) : open.add(id);
+  renderRun();
+});
+$('#tabs').addEventListener('click', e => {
+  const b = e.target.closest('[data-tab]');
+  if (!b) return;
+  tab = b.dataset.tab;
+  $('#tabs').querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === b));
+  renderRun();
+});
+
+// ---------- Live updates ----------
+let renderQueued = false;
+const scheduleRender = () => { if (renderQueued) return; renderQueued = true; requestAnimationFrame(() => { renderQueued = false; renderRun(); renderTests(); }); };
+
+function connect() {
+  const es = new EventSource('/api/events');
+  es.onmessage = ({ data }) => {
+    const e = JSON.parse(data);
+    if (e.type === 'runStart') {
+      liveRunId = e.run.id; open.clear();
+      showRun(e.run); loadRuns();
+    } else if (e.type === 'update' && viewed?.id === e.runId) {
+      if (e.test) viewed.tests[e.test.id] = e.test;
+      if (e.test?.state === 'failed') open.add(e.test.id);
+      viewed.errors = e.errors; viewed.status = e.status;
+      scheduleRender();
+    } else if (e.type === 'log' && viewed?.id === e.runId) {
+      viewed.log = (viewed.log || '') + e.text;
+      scheduleRender();
+    } else if (e.type === 'runEnd') {
+      liveRunId = null;
+      if (!viewed || viewed.id === e.run.id) showRun(e.run);
+      loadRuns();
+    }
+  };
+  es.onerror = () => { $('#live').textContent = 'Disconnected'; };
+  es.onopen = () => syncButtons();
+}
+
+setInterval(() => { if (liveRunId && viewed?.id === liveRunId && $('#elapsed')) $('#elapsed').textContent = fmtDur(Date.now() - viewed.startedAt); }, 1000);
+
+(async () => {
+  connect();
+  const [{ current }] = await Promise.all([api('/api/state').catch(() => ({})), loadTests(), loadRuns()]);
+  if (current) { liveRunId = current.id; showRun(current); }
+  else {
+    const id = store.get('viewedRun', null);
+    const target = runs.find(r => r.id === id) || runs[0];
+    if (target) showRun(await api('/api/runs/' + target.id).catch(() => null));
+  }
+  syncButtons();
+})();
+</script>
+</body>
+</html>

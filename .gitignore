@@ -21,3 +21,6 @@ cypress.env.json
 test-results/
 playwright-report/
 playwright/.auth/
+
+# Test dashboard run history (copies of failure screenshots/traces)
+test-dashboard/.runs/

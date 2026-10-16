@@ -24,3 +24,7 @@ Run only CRUD tests: `npm run test:e2e -- --grep CRUD`.
 Run one file: `npm run test:e2e -- location-crud.spec.ts`.
 
 Failed runs retain a screenshot and trace. These can include test credentials or tokens, so use disposable local accounts and keep artifacts private. Generated artifacts are ignored by Git. Legacy Cypress artifact ignore rules remain to protect existing local files.
+
+## Test dashboard
+
+`npm run test:dashboard` starts a local dashboard at http://127.0.0.1:5190 (`DASHBOARD_PORT` to change). It lists the Playwright tests, runs selected tests or all tests with a chosen worker count (optionally headed), streams pass/fail and step progress live, and keeps the last 30 runs in `test-dashboard/.runs/` (git-ignored) with copies of failure screenshots, traces and error context. The configured list/html reporters still run, so the HTML report link stays current. Each test result has an `analysis` field reserved for AI failure analysis. The worker warning above still applies: keep workers at 1 until test data is isolated.
