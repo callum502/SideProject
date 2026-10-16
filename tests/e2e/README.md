@@ -28,6 +28,14 @@ Email confirmation uses the test code `0000`. `playwright.config.ts` passes `E2E
 
 This test needs `SUPABASE_SECRET_KEY` in `.env.local` to be the local **Secret key** (`sb_secret_…`, shown by `npx supabase status`). Cleanup uses the same key to delete leftover `test_account_` accounts from earlier runs.
 
+### Failure triage
+
+In a run, every failed test is **Triage needed**. Open the test and either **Retry** it (or **Retry all**), which re-runs it inside the same run with the run's settings and adds the new attempts to its history, so a pass moves it to **Passed**, or choose **Mark as bugged**. Marking requires a new bug report with a written description, or adding it to an existing open report with an optional note. The error, failed step, screenshot and video are attached automatically. **Unmark** undoes it. Reports are listed on the Bugs page, can be closed or reopened, and are stored in `test-dashboard/bugs/` (git-ignored, because screenshots and videos can show credentials). They are kept separately from the 5-run history, so they outlive the runs they came from.
+
+### Example failure
+
+`example-failure.spec.ts` logs in, then fails on purpose (`expect(true).toBe(false)`). It is a known failure for trying out the dashboard's failure views, retries and AI analysis. It is tagged `@example`; leave it out of a normal run with `npm run test:e2e -- --grep-invert @example`.
+
 Run only CRUD tests: `npm run test:e2e -- --grep CRUD`.
 Run one file: `npm run test:e2e -- location-crud.spec.ts`.
 

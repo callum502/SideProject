@@ -13,7 +13,7 @@
     --bg: #f5f6f8; --panel: #ffffff; --panel-2: #f0f2f5; --hover: #eef1f5; --border: #dfe3e8; --text: #1b1f24; --muted: #5f6b7a; --faint: #8a94a3;
     --accent: #2f6fde; --accent-text: #fff; --accent-soft: #e4edfc;
     --pass: #1f8a4c; --pass-bg: #e3f4ea; --fail: #c93a3a; --fail-bg: #fbe7e7;
-    --flaky: #a86a00; --flaky-bg: #fdf1dc; --skip: #6b7684; --skip-bg: #eceff2; --run: #2f6fde; --run-bg: #e4edfc;
+    --warn: #a86a00; --warn-bg: #fdf1dc; --skip: #6b7684; --skip-bg: #eceff2; --run: #2f6fde; --run-bg: #e4edfc;
     --code-bg: #f6f7f9; --shadow: 0 1px 2px rgba(16,24,40,.06);
     color-scheme: light;
   }
@@ -21,7 +21,7 @@
     --bg: #0e1013; --panel: #15181d; --panel-2: #1b1f25; --hover: #20252c; --border: #272d35; --text: #e4e7eb; --muted: #949eab; --faint: #6b7480;
     --accent: #5b8def; --accent-text: #fff; --accent-soft: #1b2a45;
     --pass: #4cc283; --pass-bg: #13291e; --fail: #f07373; --fail-bg: #331a1b;
-    --flaky: #e0a844; --flaky-bg: #33270f; --skip: #8a96a3; --skip-bg: #20252b; --run: #6aa1f5; --run-bg: #18263d;
+    --warn: #e0a844; --warn-bg: #33270f; --skip: #8a96a3; --skip-bg: #20252b; --run: #6aa1f5; --run-bg: #18263d;
     --code-bg: #0b0d10; --shadow: none;
     color-scheme: dark;
   }
@@ -30,7 +30,7 @@
       --bg: #0e1013; --panel: #15181d; --panel-2: #1b1f25; --hover: #20252c; --border: #272d35; --text: #e4e7eb; --muted: #949eab; --faint: #6b7480;
       --accent: #5b8def; --accent-text: #fff; --accent-soft: #1b2a45;
       --pass: #4cc283; --pass-bg: #13291e; --fail: #f07373; --fail-bg: #331a1b;
-      --flaky: #e0a844; --flaky-bg: #33270f; --skip: #8a96a3; --skip-bg: #20252b; --run: #6aa1f5; --run-bg: #18263d;
+      --warn: #e0a844; --warn-bg: #33270f; --skip: #8a96a3; --skip-bg: #20252b; --run: #6aa1f5; --run-bg: #18263d;
       --code-bg: #0b0d10; --shadow: none;
       color-scheme: dark;
     }
@@ -90,7 +90,7 @@
   .field select { padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
   .field:has(input:disabled) { opacity: .6; }
   .sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 2px; }
-  .hint { font-size: 12px; color: var(--flaky); display: inline-flex; align-items: center; gap: 4px; }
+  .hint { font-size: 12px; color: var(--warn); display: inline-flex; align-items: center; gap: 4px; }
   input[type=checkbox] { accent-color: var(--accent); margin: 0; width: 15px; height: 15px; }
   .search { flex: 1; min-width: 160px; max-width: 360px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); }
 
@@ -102,7 +102,8 @@
   .banner { padding: 10px 14px; border-radius: 10px; background: var(--fail-bg); color: var(--fail); white-space: pre-wrap; }
 
   .seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--panel-2); border-radius: 8px; }
-  .seg button { border: 0; background: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 13px; }
+  .seg button { border: 0; background: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .panel-head .seg { flex-wrap: wrap; }
   .seg button.active { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
   :root[data-theme="dark"] .seg button.active { background: var(--hover); }
   .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); padding: 0 14px; overflow-x: auto; }
@@ -113,16 +114,16 @@
 
   /* ---------- Status ---------- */
   .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--border); display: inline-block; }
-  .dot.passed { background: var(--pass); } .dot.failed { background: var(--fail); } .dot.flaky { background: var(--flaky); }
+  .dot.passed { background: var(--pass); } .dot.failed { background: var(--fail); }
   .dot.skipped, .dot.stopped { background: var(--skip); } .dot.running { background: var(--run); animation: pulse 1s infinite; }
   .dot.queued { background: transparent; border: 1.5px solid var(--skip); }
   @keyframes pulse { 50% { opacity: .3; } }
   .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--skip-bg); color: var(--skip); white-space: nowrap; }
   .pill.passed { background: var(--pass-bg); color: var(--pass); } .pill.failed { background: var(--fail-bg); color: var(--fail); }
-  .pill.flaky { background: var(--flaky-bg); color: var(--flaky); } .pill.running { background: var(--run-bg); color: var(--run); }
+  .pill.running { background: var(--run-bg); color: var(--run); }
   .bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--panel-2); min-width: 60px; }
   .bar span { display: block; transition: width .3s; }
-  .bar .passed { background: var(--pass); } .bar .failed { background: var(--fail); } .bar .flaky { background: var(--flaky); } .bar .skipped, .bar .stopped { background: var(--skip); } .bar .running { background: var(--run); opacity: .6; }
+  .bar .passed { background: var(--pass); } .bar .failed { background: var(--fail); } .bar .skipped, .bar .stopped { background: var(--skip); } .bar .running { background: var(--run); opacity: .6; }
 
   /* ---------- Tests view ---------- */
   .rows { overflow-x: auto; }
@@ -148,7 +149,7 @@
   .stats { display: flex; flex-wrap: wrap; gap: 8px 28px; }
   .stat .label { font-size: 12px; color: var(--muted); }
   .stat .value { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; }
-  .stat.passed .value { color: var(--pass); } .stat.failed .value { color: var(--fail); } .stat.flaky .value { color: var(--flaky); }
+  .stat.passed .value { color: var(--pass); } .stat.failed .value { color: var(--fail); }
 
   .split { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
   @media (max-width: 1100px) { .split { grid-template-columns: 1fr; } }
@@ -168,12 +169,16 @@
   @media (max-width: 1100px) { .detail { position: static; max-height: none; } }
   .detail-head { padding: 14px 16px 10px; display: grid; gap: 6px; }
   .detail-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
+  .seg.attempts { justify-self: start; margin-top: 4px; }
+  .seg.attempts .dot { width: 7px; height: 7px; }
   .detail-head .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; color: var(--muted); font-size: 12.5px; }
   .detail-body { padding: 16px; overflow: auto; display: grid; gap: 14px; align-content: start; }
   .section-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
   pre { margin: 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; overflow: auto; max-height: 420px; white-space: pre-wrap; word-break: break-word; }
   pre.error { border-left: 3px solid var(--fail); }
   pre.snippet { white-space: pre; word-break: normal; }
+  /* Long unwrapped lines (code snippets) scroll inside their box instead of widening the panel. */
+  .detail-body > *, .detail-body pre { min-width: 0; max-width: 100%; }
   .steps { display: grid; gap: 0; }
   .step { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--border); }
   .step:last-child { border-bottom: 0; }
@@ -192,7 +197,37 @@
   .ai .badge { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--border); color: var(--muted); }
   .ai p { margin: 0; color: var(--muted); }
   .console pre { border: 0; border-radius: 0 0 12px 12px; max-height: calc(100vh - 290px); min-height: 200px; }
-  .warn { font-size: 12.5px; color: var(--flaky); }
+  .warn { font-size: 12.5px; color: var(--warn); }
+
+  /* ---------- Triage ---------- */
+  .dot.investigate { background: var(--warn); } .dot.bugged { background: var(--fail); }
+  .pill.investigate { background: var(--warn-bg); color: var(--warn); } .pill.bugged { background: var(--fail-bg); color: var(--fail); }
+  .bar .investigate { background: var(--warn); } .bar .bugged { background: var(--fail); }
+  .stat.investigate .value { color: var(--warn); } .stat.bugged .value { color: var(--fail); }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+  .buglink { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 10px; border-radius: 8px; background: var(--fail-bg); color: var(--fail); text-decoration: none; font-weight: 550; }
+  .actions .buglink { max-width: min(480px, 100%); }
+  .banner.ok { background: var(--pass-bg); color: var(--pass); }
+  .buglink:hover { text-decoration: underline; }
+  dialog.modal { width: min(640px, calc(100vw - 32px)); border: 1px solid var(--border); border-radius: 14px; background: var(--panel); color: var(--text); padding: 0; box-shadow: 0 20px 60px rgba(0,0,0,.4); }
+  dialog.modal::backdrop { background: rgba(0,0,0,.5); }
+  dialog.modal form { display: grid; gap: 14px; padding: 18px 20px 20px; }
+  .modal-head { display: flex; align-items: center; gap: 10px; }
+  .modal-head h2 { margin: 0; font-size: 16px; flex: 1; }
+  dialog.modal label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 550; }
+  dialog.modal input, dialog.modal textarea, dialog.modal select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); font: inherit; color: var(--text); }
+  dialog.modal textarea { resize: vertical; min-height: 110px; }
+  .evidence { font-size: 12.5px; color: var(--muted); background: var(--panel-2); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; }
+  .evidence b { color: var(--text); font-weight: 600; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .bug-head { padding: 16px; display: grid; gap: 10px; }
+  .bug-head h2 { margin: 0; font-size: 18px; }
+  .bug-head .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+  .bug-desc { padding: 0 16px 16px; white-space: pre-wrap; line-height: 1.55; }
+  .occ { padding: 14px 16px; border-top: 1px solid var(--border); display: grid; gap: 10px; }
+  .occ .media { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .occ .media img, .occ .media video { width: 100%; border-radius: 8px; border: 1px solid var(--border); background: #000; display: block; }
+  .pill.open { background: var(--fail-bg); color: var(--fail); } .pill.closed { background: var(--skip-bg); color: var(--skip); }
 
   /* ---------- History view ---------- */
   .hist-bar { width: 120px; }
@@ -209,6 +244,9 @@
     <a class="nav-item" href="#results" data-nav="results">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
       Results <span class="count" id="navResults"></span></a>
+    <a class="nav-item" href="#bugs" data-nav="bugs">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="8" y="6" width="8" height="14" rx="4"/><path d="M12 10v10M8 13H4M20 13h-4M8 17H5M19 17h-3M9 6 7 3M15 6l2-3M8 9H5M19 9h-3"/></svg>
+      Bugs <span class="count" id="navBugs"></span></a>
     <div class="sidebar-foot">
       <button class="nav-item btn-reset" id="theme" style="border:0;background:none;cursor:pointer;width:100%;text-align:left"></button>
       <div class="conn" id="conn"><span class="dot queued"></span>Connecting…</div>
@@ -231,6 +269,13 @@
               <option value="500">500 ms</option>
               <option value="1000">1 s</option>
               <option value="2000">2 s</option>
+            </select></label>
+          <label class="field" title="Re-attempt a failed test within the same run. A test that passes on a retry counts as passed; every attempt keeps its own error, steps and video.">Retries
+            <select id="retries">
+              <option value="0">0</option>
+              <option value="1">1</option>
+              <option value="2">2</option>
+              <option value="3">3</option>
             </select></label>
           <span class="sep"></span>
           <button id="runSelected" class="btn primary"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg><span>Run selected</span></button>
@@ -267,14 +312,24 @@ const store = {
 const fmtDur = ms => ms == null ? '' : ms < 1000 ? `${ms} ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60000)}m ${Math.round(ms % 60000 / 1000)}s`;
 const fmtTime = t => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
 const fmtAgo = t => { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : fmtTime(t); };
-const LABEL = { passed: 'Passed', failed: 'Failed', flaky: 'Flaky', skipped: 'Skipped', running: 'Running', queued: 'Queued', stopped: 'Stopped' };
-const ORDER = { failed: 0, flaky: 1, running: 2, queued: 3, passed: 4, skipped: 5, stopped: 6 };
-const isFail = t => t.state === 'failed' || t.state === 'flaky';
+const LABEL = { passed: 'Passed', failed: 'Failed', investigate: 'Triage needed', bugged: 'Bugged', skipped: 'Skipped', running: 'Running', queued: 'Queued', stopped: 'Stopped' };
+const ORDER = { investigate: 0, bugged: 1, running: 2, queued: 3, passed: 4, skipped: 5, stopped: 6 };
+// Run filter tabs: every test state belongs to exactly one tab, so a test can always be found.
+const FILTER_GROUPS = { running: ['running', 'queued'], investigate: ['investigate'], bugged: ['bugged'], passed: ['passed'], skipped: ['skipped', 'stopped'] };
+const isFail = t => t.state === 'failed';
+// Triage of a test: a failure needs triage until it passes on a retry or is linked to a bug report.
+const triage = t => t.state === 'failed' ? (t.bug ? 'bugged' : 'investigate') : t.state;
+// A finished run is labelled by what still needs doing: triage first, then bugs.
+const runState = (status, c) => ['running', 'stopped'].includes(status) ? status : c.investigate ? 'investigate' : c.bugged ? 'bugged' : status === 'failed' ? 'failed' : 'passed';
+const bugLabel = n => 'BUG-' + String(n).padStart(3, '0');
+// Attempts a test made in a run: 1, plus one per retry.
+const attemptCount = t => t.attempts?.length || (['queued', 'stopped'].includes(t.state) ? 0 : 1);
 
 const S = {
   tests: [], selected: new Set(store.get('selected', [])), firstVisit: store.get('selected', null) === null,
   runs: [], cache: new Map(), viewedId: null, liveId: null,
   view: 'tests', resultFilter: 'all', runTab: 'results', picked: null, detailTab: null, filter: '',
+  bugs: [], bugCache: new Map(), bugId: null,
 };
 const viewed = () => S.cache.get(S.viewedId) || null;
 const live = () => S.cache.get(S.liveId) || null;
@@ -301,6 +356,9 @@ $('#slowMo').value = String(store.get('slowMoMs', 500));
 if (!$('#slowMo').value) $('#slowMo').value = '500';
 $('#headed').addEventListener('change', () => store.set('headed', $('#headed').checked));
 $('#slowMo').addEventListener('change', () => store.set('slowMoMs', Number($('#slowMo').value)));
+$('#retries').value = String(store.get('retries', 0));
+if (!$('#retries').value) $('#retries').value = '0';
+$('#retries').addEventListener('change', () => store.set('retries', Number($('#retries').value)));
 
 // Latest recorded result for a test: the live run first, then the most recent run that included it.
 function lastResult(id) {
@@ -311,22 +369,23 @@ function lastResult(id) {
 }
 const failedIds = () => S.tests.filter(t => { const r = lastResult(t.id); return r && isFail(r); }).map(t => t.id);
 async function run(ids) {
-  try { await api('/api/run', { ids, workers: Number($('#workers').value) || 1, headed: $('#headed').checked, slowMo: Number($('#slowMo').value) || 0 }); }
+  try { await api('/api/run', { ids, workers: Number($('#workers').value) || 1, headed: $('#headed').checked, slowMo: Number($('#slowMo').value) || 0, retries: Number($('#retries').value) || 0 }); }
   catch (e) { notice(e.message); }
 }
 let noticeTimer;
-function notice(msg) { $('#notice').textContent = msg; $('#notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => $('#notice').hidden = true, 7000); }
+// Errors show red; pass ok=true for confirmations.
+function notice(msg, ok = false) { $('#notice').textContent = msg; $('#notice').classList.toggle('ok', ok); $('#notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => $('#notice').hidden = true, 7000); }
 $('#runSelected').addEventListener('click', () => run([...S.selected]));
 $('#runAll').addEventListener('click', () => run([]));
 $('#runFailed').addEventListener('click', () => run(failedIds()));
 $('#stop').addEventListener('click', () => api('/api/stop', {}).catch(e => notice(e.message)));
 
 function counts(r) {
-  const c = { passed: 0, failed: 0, flaky: 0, skipped: 0, running: 0, queued: 0, stopped: 0 };
-  for (const t of Object.values(r.tests)) c[t.state] = (c[t.state] || 0) + 1;
+  const c = { passed: 0, investigate: 0, bugged: 0, skipped: 0, running: 0, queued: 0, stopped: 0 };
+  for (const t of Object.values(r.tests)) c[triage(t)] = (c[triage(t)] || 0) + 1;
   return c;
 }
-const barHtml = (c, total) => ['passed', 'flaky', 'failed', 'skipped', 'stopped', 'running'].map(s => c[s] ? `<span class="${s}" style="width:${c[s] / (total || 1) * 100}%"></span>` : '').join('');
+const barHtml = (c, total) => ['passed', 'investigate', 'bugged', 'skipped', 'stopped', 'running'].map(s => c[s] ? `<span class="${s}" style="width:${c[s] / (total || 1) * 100}%"></span>` : '').join('');
 
 function renderChrome() {
   const busy = !!S.liveId;
@@ -336,24 +395,29 @@ function renderChrome() {
   $('#runFailed').disabled = busy || !failedIds().length;
   // Run controls belong to the Tests view; the live strip (with Stop) shows on every view.
   $('#controls').hidden = S.view !== 'tests';
-  $('#back').hidden = S.view !== 'run';
+  $('#back').hidden = !['run', 'bug'].includes(S.view);
+  $('#back').href = S.view === 'bug' ? '#bugs' : '#results';
+  $('#back').lastChild.textContent = S.view === 'bug' ? 'All bugs' : 'All results';
   const l = live();
   $('#liveStrip').hidden = !l;
   if (l) {
     const c = counts(l), total = Object.keys(l.tests).length, done = total - c.running - c.queued;
     const starting = !done && !c.running;
-    $('#liveText').textContent = starting ? `Starting Playwright and the app server… ${fmtDur(Date.now() - l.startedAt)}` : `${done}/${total} done${c.failed ? ` · ${c.failed} failed` : ''} · ${fmtDur(Date.now() - l.startedAt)}`;
+    $('#liveText').textContent = starting ? `Starting Playwright and the app server… ${fmtDur(Date.now() - l.startedAt)}` : `${done}/${total} done${c.investigate + c.bugged ? ` · ${c.investigate + c.bugged} failed` : ''} · ${fmtDur(Date.now() - l.startedAt)}`;
     $('#liveBar').innerHTML = barHtml(c, total);
     $('#liveLink').hidden = S.view === 'run' && S.viewedId === S.liveId;
     $('#liveLink').href = '#results=' + l.id;
   }
   // Sidebar: Results stays highlighted while viewing a single run.
-  document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === (S.view === 'run' ? 'results' : S.view)));
+  document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === ({ run: 'results', bug: 'bugs' }[S.view] || S.view)));
+  const openBugs = S.bugs.filter(b => b.status === 'open').length;
+  $('#navBugs').textContent = openBugs || '';
   $('#navTests').textContent = S.tests.length || '';
   $('#navResults').innerHTML = S.liveId ? '<span class="dot running"></span>' : S.runs.length || '';
   // Title.
   const r = viewed();
-  const titles = { tests: ['Tests', S.loading && !S.tests.length ? 'Loading…' : `${S.selected.size} of ${S.tests.length} selected`], run: ['Results', r ? fmtTime(r.startedAt) : 'Run not found'], results: ['Results', S.loading && !S.runs.length ? 'Loading…' : `${S.runs.length} recent runs`] };
+  const titles = { tests: ['Tests', S.loading && !S.tests.length ? 'Loading…' : `${S.selected.size} of ${S.tests.length} selected`], run: ['Results', r ? fmtTime(r.startedAt) : 'Run not found'], results: ['Results', S.loading && !S.runs.length ? 'Loading…' : `${S.runs.length} recent runs`],
+    bugs: ['Bugs', `${openBugs} open · ${S.bugs.length - openBugs} closed`], bug: ['Bugs', S.bugCache.get(S.bugId) ? bugLabel(S.bugCache.get(S.bugId).number) : 'Report not found'] };
   $('#viewTitle').textContent = titles[S.view][0];
   $('#viewSub').textContent = titles[S.view][1];
 }
@@ -361,14 +425,17 @@ function renderChrome() {
 // ---------- Routing ----------
 async function route() {
   const hash = location.hash.slice(1);
-  // #tests, #results (all runs) or #results=<id> (one run).
+  // #tests, #results (all runs), #results=<id> (one run), #bugs or #bugs=<id> (one report).
   const [name, id] = hash.split('=');
-  S.view = name === 'results' ? (id ? 'run' : 'results') : 'tests';
+  S.view = name === 'results' ? (id ? 'run' : 'results') : name === 'bugs' ? (id ? 'bug' : 'bugs') : 'tests';
   if (S.view === 'run' && id !== S.viewedId) await openRun(id);
+  if (S.view === 'bug') { S.bugId = id; await loadBug(id); }
   mount();
 }
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' && S.view === 'run' && !e.target.closest('input, textarea, select')) location.hash = 'results';
+  if (e.key !== 'Escape' || e.target.closest('input, textarea, select, dialog')) return;
+  if (S.view === 'run') location.hash = 'results';
+  if (S.view === 'bug') location.hash = 'bugs';
 });
 async function openRun(id) {
   if (!S.cache.has(id) || (id !== S.liveId && !S.cache.get(id).endedAt)) {
@@ -395,6 +462,8 @@ function mount() {
       <div class="rows" id="testRows"></div>
     </section>`;
   else if (S.view === 'run') v.innerHTML = `<section class="panel" id="runHead"></section><div id="runBody"></div>`;
+  else if (S.view === 'bugs') v.innerHTML = `<section class="panel"><div class="rows" id="bugRows"></div></section>`;
+  else if (S.view === 'bug') v.innerHTML = `<div id="bugBody" style="display:grid;gap:16px"></div>`;
   else v.innerHTML = `<section class="panel"><div class="rows" id="resRows"></div></section>`;
   bindView();
   update();
@@ -404,6 +473,8 @@ function update() {
   renderChrome();
   if (S.view === 'tests') renderTests();
   else if (S.view === 'run') renderRun();
+  else if (S.view === 'bugs') renderBugsList();
+  else if (S.view === 'bug') renderBug();
   else renderResultsList();
 }
 
@@ -432,7 +503,12 @@ function bindView() {
       const f = e.target.closest('[data-filter]'); if (f) { S.resultFilter = f.dataset.filter; renderRun(); return; }
       const it = e.target.closest('[data-pick]'); if (it) { S.picked = it.dataset.pick; S.userPicked = true; S.detailTab = null; renderRun(); return; }
       const d = e.target.closest('[data-dtab]'); if (d) { S.detailTab = d.dataset.dtab; renderRun(); return; }
+      const at = e.target.closest('[data-attempt]'); if (at) { S.attemptFor = S.picked; S.attempt = Number(at.dataset.attempt); S.detailTab = null; renderRun(); return; }
       const tr = e.target.closest('[data-trace]'); if (tr) api('/api/trace', { runId: S.viewedId, file: tr.dataset.trace }).catch(err => notice(err.message));
+      if (e.target.closest('[data-retry]')) retry([S.picked]);
+      if (e.target.closest('[data-retry-all]')) retry(Object.values(viewed().tests).filter(t => triage(t) === 'investigate').map(t => t.id));
+      if (e.target.closest('[data-bug]')) openBugDialog(viewed().tests[S.picked]);
+      if (e.target.closest('[data-unbug]')) api(`/api/runs/${S.viewedId}/unbug`, { testId: S.picked }).then(() => notice('Unmarked: the test needs triage again.', true)).catch(err => notice(err.message));
       if (e.target.closest('[data-open-external]')) api('/api/open-in-browser', { hash: 'results=' + S.viewedId }).then(() => notice('Opened this run in your default browser.')).catch(err => notice(err.message));
     });
     $('#runBody').addEventListener('keydown', e => {
@@ -444,6 +520,11 @@ function bindView() {
     });
   }
   if (S.view === 'results') $('#resRows').addEventListener('click', e => { const tr = e.target.closest('tr[data-run]'); if (tr) location.hash = 'results=' + tr.dataset.run; });
+  if (S.view === 'bugs') $('#bugRows').addEventListener('click', e => { const tr = e.target.closest('tr[data-bug-id]'); if (tr) location.hash = 'bugs=' + tr.dataset.bugId; });
+  if (S.view === 'bug') $('#bugBody').addEventListener('click', e => {
+    const st = e.target.closest('[data-bug-status]');
+    if (st) api(`/api/bugs/${S.bugId}/status`, { status: st.dataset.bugStatus }).then(bug => { S.bugCache.set(bug.id, bug); loadBugs(); }).catch(err => notice(err.message));
+  });
 }
 const saveSel = () => store.set('selected', [...S.selected]);
 
@@ -484,7 +565,7 @@ function renderTests() {
           return `<tr data-id="${esc(t.id)}">
             <td class="check"><input type="checkbox" ${S.selected.has(t.id) ? 'checked' : ''}></td>
             <td><div>${esc(t.titlePath.join(' › '))}</div><div class="loc mono">${esc(t.file)}:${t.line}</div></td>
-            <td>${res ? `<a class="last" href="#results=${esc(res.runId || S.liveId)}" title="Open this run"><span class="dot ${esc(res.state)}"></span>${esc(LABEL[res.state] || res.state)}</a>` : '<span class="loc">Not run yet</span>'}</td>
+            <td>${res ? `<a class="last" href="#results=${esc(res.runId || S.liveId)}" title="Open this run"><span class="dot ${esc(triage(res))}"></span>${esc(LABEL[triage(res)] || res.state)}</a>` : '<span class="loc">Not run yet</span>'}</td>
             <td class="num">${res ? fmtDur(res.duration) : ''}</td>
           </tr>`;
         }).join('');
@@ -496,8 +577,8 @@ function renderTests() {
 function shownResults() {
   const r = viewed(); if (!r) return [];
   return Object.values(r.tests)
-    .filter(t => S.resultFilter === 'all' || (S.resultFilter === 'failed' ? isFail(t) : t.state === 'passed'))
-    .sort((a, b) => (ORDER[a.state] - ORDER[b.state]) || a.file.localeCompare(b.file) || a.line - b.line);
+    .filter(t => S.resultFilter === 'all' || FILTER_GROUPS[S.resultFilter]?.includes(triage(t)))
+    .sort((a, b) => (ORDER[triage(a)] - ORDER[triage(b)]) || a.file.localeCompare(b.file) || a.line - b.line);
 }
 
 function renderRun() {
@@ -509,15 +590,16 @@ function renderRun() {
   const elapsed = (r.endedAt || Date.now()) - r.startedAt;
   head.innerHTML = `<div class="run-head">
     <div class="run-title">
-      <span class="pill ${esc(r.status)}"><span class="dot ${esc(r.status)}"></span>${esc(LABEL[r.status] || r.status)}</span>
+      <span class="pill ${esc(runState(r.status, c))}"><span class="dot ${esc(runState(r.status, c))}"></span>${esc(LABEL[runState(r.status, c)])}</span>
       <span class="when">${esc(fmtTime(r.startedAt))}</span>
       <span class="cmd mono">${esc(r.command || '')}</span>
     </div>
     <div class="stats">
       <div class="stat"><div class="label">Tests</div><div class="value">${total}</div></div>
       <div class="stat passed"><div class="label">Passed</div><div class="value">${c.passed}</div></div>
-      <div class="stat failed"><div class="label">Failed</div><div class="value">${c.failed}</div></div>
-      ${c.flaky ? `<div class="stat flaky"><div class="label">Flaky</div><div class="value">${c.flaky}</div></div>` : ''}
+      <div class="stat investigate"><div class="label">Triage needed</div><div class="value">${c.investigate}</div></div>
+      <div class="stat bugged"><div class="label">Bugged</div><div class="value">${c.bugged}</div></div>
+      <div class="stat" title="Total attempts: one per test, plus one per retry"><div class="label">Attempts</div><div class="value">${list.reduce((n, t) => n + attemptCount(t), 0)}</div></div>
       ${c.skipped + c.stopped ? `<div class="stat"><div class="label">Skipped</div><div class="value">${c.skipped + c.stopped}</div></div>` : ''}
       <div class="stat"><div class="label">Duration</div><div class="value">${fmtDur(elapsed)}</div></div>
     </div>
@@ -553,23 +635,27 @@ function renderRun() {
     const next = (shown.find(isFail) || (follow && shown.find(t => t.state === 'running')) || shown[0])?.id || null;
     if (next !== S.picked) { S.picked = next; S.detailTab = null; }
   }
-  const nFail = list.filter(isFail).length;
+  const isLive = r.id === S.liveId;
   body.innerHTML = tabs + `<div class="split">
     <section class="panel">
       <div class="panel-head">
         <div class="seg">
-          <button data-filter="all" class="${S.resultFilter === 'all' ? 'active' : ''}">All</button>
-          <button data-filter="failed" class="${S.resultFilter === 'failed' ? 'active' : ''}">Failed${nFail ? ` (${nFail})` : ''}</button>
-          <button data-filter="passed" class="${S.resultFilter === 'passed' ? 'active' : ''}">Passed</button>
+          <button data-filter="all" class="${S.resultFilter === 'all' ? 'active' : ''}">All (${list.length})</button>
+          <button data-filter="running" class="${S.resultFilter === 'running' ? 'active' : ''}" title="Running now or waiting to run">${c.running + c.queued ? '<span class="dot running"></span> ' : ''}Running (${c.running + c.queued})</button>
+          <button data-filter="investigate" class="${S.resultFilter === 'investigate' ? 'active' : ''}">Triage needed (${c.investigate})</button>
+          <button data-filter="bugged" class="${S.resultFilter === 'bugged' ? 'active' : ''}">Bugged (${c.bugged})</button>
+          <button data-filter="passed" class="${S.resultFilter === 'passed' ? 'active' : ''}">Passed (${c.passed})</button>
+          ${c.skipped + c.stopped ? `<button data-filter="skipped" class="${S.resultFilter === 'skipped' ? 'active' : ''}" title="Did not run, e.g. the run was stopped">Skipped (${c.skipped + c.stopped})</button>` : ''}
         </div>
+        ${c.investigate && !isLive ? `<span class="spacer"></span><button class="btn small" data-retry-all title="Retry every test that needs triage, inside this run">↻ Retry all (${c.investigate})</button>` : ''}
       </div>
       <div class="list">${shown.length ? shown.map(t => `
         <button class="item ${t.id === S.picked ? 'active' : ''}" data-pick="${esc(t.id)}">
-          <span class="dot ${esc(t.state)}" title="${esc(LABEL[t.state])}"></span>
+          <span class="dot ${esc(triage(t))}" title="${esc(LABEL[triage(t)])}"></span>
           <span class="name">${esc(t.titlePath.join(' › '))}</span>
           <span class="dur">${fmtDur(t.duration)}</span>
-          <span class="meta"><span class="loc mono">${esc(t.file)}:${t.line}</span>${t.steps?.length ? `<span class="ticks" title="${esc(t.steps.map(s => s.title + ': ' + (s.state || '')).join('\n'))}">${t.steps.map(s => `<i class="${esc(s.state)}"></i>`).join('')}</span>` : ''}</span>
-        </button>`).join('') : '<div class="empty">Nothing to show.</div>'}</div>
+          <span class="meta"><span class="loc mono">${esc(t.file)}:${t.line}</span>${(t.attempts?.length || 0) > 1 ? `<span class="loc">· ${t.attempts.length} attempts</span>` : ''}${t.steps?.length ? `<span class="ticks" title="${esc(t.steps.map(s => s.title + ': ' + (s.state || '')).join('\n'))}">${t.steps.map(s => `<i class="${esc(s.state)}"></i>`).join('')}</span>` : ''}</span>
+        </button>`).join('') : `<div class="empty">${S.resultFilter === 'running' ? 'Nothing is running in this run. Retry a test that needs triage, or start a run from the Tests page.' : 'Nothing to show.'}</div>`}</div>
     </section>
     <div id="detailSlot"></div>
   </div>`;
@@ -595,7 +681,18 @@ function detailTabs(t) {
   return { tabs, shots, videos };
 }
 
-function renderDetail(t) {
+// Every attempt of a test in this run (failed attempts plus retries), including one in progress.
+function attemptsOf(t) {
+  const list = [...(t.attempts || [])].sort((a, b) => a.retry - b.retry);
+  if (t.state === 'running' && !list.some(a => a.retry === (t.retry || 0))) list.push({ retry: t.retry || 0, state: 'running', steps: t.steps, errors: [], attachments: [] });
+  return list;
+}
+
+function renderDetail(test) {
+  // Show one attempt at a time: the one the user picked, else the latest.
+  const attempts = attemptsOf(test);
+  const shown = (S.attemptFor === test.id && attempts.find(a => a.retry === S.attempt)) || attempts.at(-1) || null;
+  const t = shown ? { ...test, ...shown, state: test.state } : test;
   const { tabs, shots, videos } = detailTabs(t);
   if (!tabs.some(([k]) => k === S.detailTab)) S.detailTab = tabs[0]?.[0] || null;
   const fileUrl = f => `/api/runs/${encodeURIComponent(S.viewedId)}/files/${encodeURIComponent(f)}`;
@@ -629,15 +726,21 @@ function renderDetail(t) {
     content = renderAnalysis(t);
   }
   const notes = (t.annotations || []).filter(a => a.description).map(a => `<div class="warn">${esc(a.type)}: ${esc(a.description)}</div>`).join('');
+  // Triage actions are offered once the run (or its retry) has finished.
+  const tri = triage(test);
+  const actions = S.viewedId === S.liveId ? ''
+    : tri === 'investigate' ? `<div class="actions"><button class="btn small primary" data-retry title="Run this test again inside this run">↻ Retry</button><button class="btn small" data-bug title="Link this failure to a new or existing bug report">Mark as bugged…</button></div>`
+    : tri === 'bugged' ? `<div class="actions"><a class="buglink" href="#bugs=${esc(test.bug.id)}">${bugLabel(test.bug.number)} · ${esc(test.bug.title)}</a><button class="btn small" data-unbug title="Remove from the report; the test needs triage again">Unmark</button></div>` : '';
   return `<section class="panel detail">
     <div class="detail-head">
       <h2>${esc(t.titlePath.join(' › '))}</h2>
       <div class="row">
-        <span class="pill ${esc(t.state)}"><span class="dot ${esc(t.state)}"></span>${esc(LABEL[t.state] || t.state)}</span>
+        <span class="pill ${esc(tri)}"><span class="dot ${esc(tri)}"></span>${esc(LABEL[tri] || tri)}</span>
         <span class="mono">${esc(t.file)}:${t.line}</span>
         ${t.duration != null ? `<span>${fmtDur(t.duration)}</span>` : ''}
-        ${t.retry ? `<span>retry ${t.retry}</span>` : ''}
       </div>
+      ${attempts.length > 1 ? `<div class="seg attempts">${attempts.map(a => `<button data-attempt="${a.retry}" class="${a.retry === shown?.retry ? 'active' : ''}"><span class="dot ${esc(a.state)}"></span> Attempt ${a.retry + 1}${a.duration != null ? ` · ${fmtDur(a.duration)}` : ''}</button>`).join('')}</div>` : ''}
+      ${actions}
       ${notes}
     </div>
     ${tabs.length ? `<div class="tabs">${tabs.map(([k, label, n]) => `<button data-dtab="${k}" class="${S.detailTab === k ? 'active' : ''}">${label}${n ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</div>
@@ -660,17 +763,142 @@ async function loadRuns() { S.runs = await api('/api/runs').catch(() => []); upd
 function renderResultsList() {
   const el = $('#resRows'); if (!el) return;
   if (!S.runs.length) { el.innerHTML = `<div class="empty">${S.loading ? 'Loading…' : 'No runs yet. Pick tests on the <a href="#tests">Tests</a> page and run them.'}</div>`; return; }
-  el.innerHTML = `<table><thead><tr><th>Status</th><th>Started</th><th>Results</th><th></th><th class="num">Workers</th><th class="num">Duration</th></tr></thead><tbody>${S.runs.map(r => {
-    const c = r.counts, parts = [c.passed && `${c.passed} passed`, c.failed && `<span style="color:var(--fail)">${c.failed} failed</span>`, c.flaky && `${c.flaky} flaky`, (c.skipped || c.stopped) && `${(c.skipped || 0) + (c.stopped || 0)} skipped`].filter(Boolean).join(' · ') || `${r.total} tests`;
+  el.innerHTML = `<table><thead><tr><th>Status</th><th>Started</th><th>Results</th><th></th><th class="num" title="Total attempts: one per test, plus one per retry">Attempts</th><th class="num">Workers</th><th class="num">Duration</th></tr></thead><tbody>${S.runs.map(r => {
+    const c = r.counts, parts = [c.passed && `${c.passed} passed`, c.investigate && `<span style="color:var(--warn)">${c.investigate} triage needed</span>`, c.bugged && `<span style="color:var(--fail)">${c.bugged} bugged</span>`, (c.skipped || c.stopped) && `${(c.skipped || 0) + (c.stopped || 0)} skipped`].filter(Boolean).join(' · ') || `${r.total} tests`;
     return `<tr data-run="${esc(r.id)}" class="${r.id === S.liveId ? 'live' : ''}">
-      <td><span class="pill ${esc(r.status)}"><span class="dot ${esc(r.status)}"></span>${esc(LABEL[r.status] || r.status)}</span></td>
+      <td><span class="pill ${esc(runState(r.status, c))}"><span class="dot ${esc(runState(r.status, c))}"></span>${esc(LABEL[runState(r.status, c)])}</span></td>
       <td><div>${esc(fmtAgo(r.startedAt))}</div><div class="loc">${esc(fmtTime(r.startedAt))}</div></td>
-      <td>${parts}${r.video ? ' <span class="pill" title="Recorded with video: open the run and pick a test to watch it">▶ Video</span>' : ''}</td>
+      <td>${parts}</td>
       <td><div class="bar hist-bar">${barHtml(c, r.total)}</div></td>
+      <td class="num">${r.attempts ?? '—'}${r.attempts > r.total ? ` <span class="loc">(${r.attempts - r.total} ${r.attempts - r.total === 1 ? 'retry' : 'retries'})</span>` : ''}</td>
       <td class="num">${r.workers}</td>
       <td class="num">${r.endedAt ? fmtDur(r.endedAt - r.startedAt) : '…'}</td>
     </tr>`;
   }).join('')}</tbody></table>`;
+}
+
+// ---------- Triage actions ----------
+// Retry tests that need triage inside the viewed run (same settings as the run).
+async function retry(ids) {
+  try { await api(`/api/runs/${S.viewedId}/retry`, { ids }); }
+  catch (e) { notice(e.message); }
+}
+
+// "Mark as bugged": a new report needs a written description; adding to an existing report takes an optional note.
+// The error, failed step, screenshot and video are attached automatically.
+function openBugDialog(test) {
+  const failed = [...(test.attempts || [])].reverse().find(a => a.state === 'failed') || test;
+  const firstLine = (String(failed.errors?.[0]?.message || '').split('\n').find(l => l.trim()) || '').replace(/^\s*Error:\s*/, '');
+  const step = failed.steps?.find(s => s.state === 'failed')?.title;
+  const media = (failed.attachments || []).filter(a => /^(image|video)\//.test(a.contentType || '')).map(a => a.contentType.startsWith('video/') ? 'video' : 'screenshot');
+  // Reports that already include this test come first.
+  const open = S.bugs.filter(b => b.status === 'open').sort((a, b) => (b.tests.includes(test.id) - a.tests.includes(test.id)) || b.number - a.number);
+  const dlg = document.createElement('dialog');
+  dlg.className = 'modal';
+  dlg.innerHTML = `<form novalidate>
+    <div class="modal-head"><h2>Mark as bugged</h2><button type="button" class="btn small" data-close aria-label="Close">✕</button></div>
+    <div class="loc">${esc(test.titlePath.join(' › '))} · <span class="mono">${esc(test.file)}:${test.line}</span></div>
+    <div class="seg"><button type="button" data-mode="new" class="active">New report</button><button type="button" data-mode="existing" ${open.length ? '' : 'disabled title="No open reports yet"'}>Add to existing${open.length ? ` (${open.length})` : ''}</button></div>
+    <div data-pane="new" style="display:grid;gap:12px">
+      <label>Title<input name="title" maxlength="200" value="${esc((test.title + ': ' + firstLine).slice(0, 160))}"></label>
+      <label>What's wrong?<textarea name="description" maxlength="20000" placeholder="Describe the bug: what you expected to happen and what happened instead."></textarea></label>
+    </div>
+    <div data-pane="existing" hidden style="display:grid;gap:12px">
+      <label>Report<select name="bug">${open.map(b => `<option value="${esc(b.id)}">${bugLabel(b.number)} · ${esc(b.title)}${b.tests.includes(test.id) ? ' (already has this test)' : ''}</option>`).join('')}</select></label>
+      <label>Note (optional)<textarea name="note" maxlength="5000" placeholder="Anything different about this occurrence?"></textarea></label>
+    </div>
+    <div class="evidence"><b>Attached automatically</b>
+      <span>Error: ${esc(firstLine || 'none recorded')}</span>
+      ${step ? `<span>Failed step: ${esc(step)}</span>` : ''}
+      <span>Attempt ${(failed.retry ?? 0) + 1} of ${(test.attempts || []).length || 1}${media.length ? ' · ' + media.join(' and ') : ''}</span>
+    </div>
+    <div class="banner" data-error hidden></div>
+    <div class="modal-actions"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary" data-submit>Create report</button></div>
+  </form>`;
+  document.body.append(dlg);
+  let mode = 'new';
+  const form = dlg.querySelector('form'), errEl = dlg.querySelector('[data-error]');
+  const close = () => { dlg.close(); dlg.remove(); };
+  dlg.addEventListener('close', () => dlg.remove());
+  dlg.addEventListener('click', e => {
+    if (e.target.closest('[data-close]')) close();
+    const m = e.target.closest('[data-mode]');
+    if (m && !m.disabled) {
+      mode = m.dataset.mode;
+      dlg.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b === m));
+      dlg.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== mode);
+      dlg.querySelector('[data-submit]').textContent = mode === 'new' ? 'Create report' : 'Add to report';
+      errEl.hidden = true;
+    }
+  });
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const v = Object.fromEntries(new FormData(form));
+    const showError = msg => { errEl.textContent = msg; errEl.hidden = false; };
+    if (mode === 'new' && !v.title.trim()) return showError('Give the report a title.');
+    if (mode === 'new' && v.description.trim().length < 10) return showError('Describe the bug (at least 10 characters) before creating the report.');
+    dlg.querySelector('[data-submit]').disabled = true;
+    try {
+      const bug = mode === 'new'
+        ? await api('/api/bugs', { runId: S.viewedId, testId: test.id, title: v.title, description: v.description })
+        : await api(`/api/bugs/${v.bug}/link`, { runId: S.viewedId, testId: test.id, note: v.note });
+      close();
+      notice(`Marked as bugged: ${bugLabel(bug.number)}.`, true);
+    } catch (err) { showError(err.message); dlg.querySelector('[data-submit]').disabled = false; }
+  });
+  dlg.showModal();
+  dlg.querySelector(mode === 'new' ? 'textarea[name=description]' : 'select').focus();
+}
+
+async function loadBugs() {
+  S.bugs = await api('/api/bugs').catch(() => []);
+  if (S.view === 'bug' && S.bugId) await loadBug(S.bugId);
+  update();
+}
+async function loadBug(id) {
+  try { S.bugCache.set(id, await api('/api/bugs/' + id)); } catch { S.bugCache.delete(id); }
+}
+
+function renderBugsList() {
+  const el = $('#bugRows'); if (!el) return;
+  if (!S.bugs.length) { el.innerHTML = '<div class="empty">No bug reports yet. Open a run, pick a test that needs triage and choose “Mark as bugged”.</div>'; return; }
+  el.innerHTML = `<table><thead><tr><th>Report</th><th>Title</th><th>Status</th><th class="num">Occurrences</th><th class="num">Updated</th></tr></thead><tbody>${S.bugs.map(b => `
+    <tr data-bug-id="${esc(b.id)}">
+      <td class="mono">${bugLabel(b.number)}</td>
+      <td>${esc(b.title)}</td>
+      <td><span class="pill ${b.status}">${b.status === 'open' ? 'Open' : 'Closed'}</span></td>
+      <td class="num">${b.occurrences}</td>
+      <td class="num">${esc(fmtAgo(b.updatedAt))}</td>
+    </tr>`).join('')}</tbody></table>`;
+}
+
+function renderBug() {
+  const el = $('#bugBody'); if (!el) return;
+  const b = S.bugCache.get(S.bugId);
+  if (!b) { el.innerHTML = '<section class="panel"><div class="empty">This bug report could not be found. <a href="#bugs">Back to all bugs</a></div></section>'; return; }
+  const fileUrl = f => `/api/bugs/${encodeURIComponent(b.id)}/files/${encodeURIComponent(f)}`;
+  const kept = new Set(S.runs.map(r => r.id));
+  el.innerHTML = `<section class="panel">
+      <div class="bug-head">
+        <div class="row"><span class="mono loc">${bugLabel(b.number)}</span><span class="pill ${b.status}">${b.status === 'open' ? 'Open' : 'Closed'}</span><span class="loc">Reported ${esc(fmtTime(b.createdAt))}</span><span class="spacer"></span>
+          <button class="btn small" data-bug-status="${b.status === 'open' ? 'closed' : 'open'}">${b.status === 'open' ? 'Close report' : 'Reopen'}</button></div>
+        <h2>${esc(b.title)}</h2>
+      </div>
+      <div class="bug-desc">${esc(b.description)}</div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><h2>Occurrences (${b.occurrences.length})</h2></div>
+      ${b.occurrences.length ? b.occurrences.slice().reverse().map(o => `<div class="occ">
+        <div class="row" style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center">
+          <b>${esc(o.title)}</b><span class="mono loc">${esc(o.file)}:${o.line}</span>
+          <span class="loc">${kept.has(o.runId) ? `<a href="#results=${esc(o.runId)}">Run ${esc(fmtTime(o.runStartedAt))}</a>` : `Run ${esc(fmtTime(o.runStartedAt))} (no longer kept)`} · attempt ${o.attempt} of ${o.attempts}</span>
+        </div>
+        ${o.step ? `<div class="callout"><span class="dot failed"></span>Failed in step “${esc(o.step)}”</div>` : ''}
+        ${o.error ? `<pre class="error mono">${esc(o.error)}</pre>` : ''}
+        ${o.note ? `<div><div class="section-label">Note</div><div style="white-space:pre-wrap">${esc(o.note)}</div></div>` : ''}
+        ${o.files.length ? `<div class="media">${o.files.map(x => x.contentType.startsWith('video/') ? `<video controls preload="metadata" src="${fileUrl(x.file)}"></video>` : `<a href="${fileUrl(x.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(x.file)}" alt="${esc(x.name)}"></a>`).join('')}</div>` : ''}
+      </div>`).join('') : '<div class="empty">No tests are linked to this report.</div>'}
+    </section>`;
 }
 
 // ---------- Live updates ----------
@@ -684,6 +912,13 @@ function connect() {
       S.cache.set(e.run.id, e.run); S.liveId = e.run.id;
       loadRuns();
       location.hash = 'results=' + e.run.id;
+      schedule();
+    } else if (e.type === 'testChanged') {
+      // A test was marked or unmarked as bugged.
+      const r = S.cache.get(e.runId); if (r) r.tests[e.test.id] = e.test;
+      loadRuns();
+    } else if (e.type === 'bugs') {
+      loadBugs();
     } else if (e.type === 'update') {
       const r = S.cache.get(e.runId); if (!r) return;
       if (e.test) r.tests[e.test.id] = e.test;
@@ -705,7 +940,7 @@ setInterval(() => { if (S.liveId) renderChrome(); }, 1000);
   connect();
   // Show the requested view immediately; listing tests takes a few seconds while Playwright scans files.
   S.loading = true; route();
-  const [{ current }] = await Promise.all([api('/api/state').catch(() => ({})), loadTests(), loadRuns()]);
+  const [{ current }] = await Promise.all([api('/api/state').catch(() => ({})), loadTests(), loadRuns(), loadBugs()]);
   if (current) { S.cache.set(current.id, current); S.liveId = current.id; }
   S.loading = false;
   await route();

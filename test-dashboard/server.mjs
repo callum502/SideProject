@@ -60,12 +60,18 @@ async function listTests() {
   return testCache;
 }
 
+// Triage of a finished test: failures need triage until they pass on a retry or are linked to a bug report.
+const triage = t => t.state === 'failed' ? (t.bug ? 'bugged' : 'investigate') : t.state;
+
 const summarize = run => {
-  const counts = { passed: 0, failed: 0, flaky: 0, skipped: 0, running: 0, queued: 0 };
-  for (const t of Object.values(run.tests)) counts[t.state] = (counts[t.state] || 0) + 1;
+  const counts = { passed: 0, investigate: 0, bugged: 0, skipped: 0, running: 0, queued: 0 };
+  for (const t of Object.values(run.tests)) counts[triage(t)] = (counts[triage(t)] || 0) + 1;
+  // Total attempts across tests (1 per test that ran, plus retries).
+  // Runs recorded before attempts were tracked count 1 per test that ran.
+  const attempts = Object.values(run.tests).reduce((n, t) => n + (t.attempts?.length || (['queued', 'stopped'].includes(t.state) ? 0 : 1)), 0);
   // Per-test outcome lets the Tests view show each test's latest result across runs.
-  const results = Object.fromEntries(Object.values(run.tests).map(t => [t.id, { state: t.state, duration: t.duration }]));
-  return { id: run.id, startedAt: run.startedAt, endedAt: run.endedAt, status: run.status, workers: run.workers, headed: run.headed, slowMo: run.slowMo || 0, video: !!run.video, total: Object.keys(run.tests).length, counts, results };
+  const results = Object.fromEntries(Object.values(run.tests).map(t => [t.id, { state: t.state, duration: t.duration, bug: t.bug || null }]));
+  return { id: run.id, startedAt: run.startedAt, endedAt: run.endedAt, status: run.status, workers: run.workers, headed: run.headed, slowMo: run.slowMo || 0, retries: run.retries || 0, attempts, total: Object.keys(run.tests).length, counts, results };
 };
 
 async function saveRun(run) {
@@ -77,13 +83,15 @@ async function pruneRuns() {
   for (const id of ids.slice(MAX_RUNS)) await rm(path.join(runsDir, id), { recursive: true, force: true });
 }
 
-async function startRun({ ids, workers, headed, slowMo }) {
+async function startRun({ ids, workers, headed, slowMo, retries }) {
   if (current) throw Object.assign(new Error('A run is already in progress.'), { status: 409 });
   const { tests } = testCache || await listTests();
   const selected = Array.isArray(ids) && ids.length ? tests.filter(t => ids.includes(t.id)) : tests;
   if (!selected.length) throw Object.assign(new Error('No tests selected.'), { status: 400 });
   workers = Math.max(1, Math.min(16, Number(workers) || 1));
   slowMo = Math.max(0, Math.min(5000, Math.round(Number(slowMo)) || 0));
+  // Failed tests are re-attempted within the same run; passing on a retry counts as passed.
+  retries = Math.max(0, Math.min(3, Math.round(Number(retries)) || 0));
   // Dashboard runs always record video, so every result can be watched back.
   const video = true;
   // Video annotations and slow-mo both pause on every action, so the 60s test timeout is raised:
@@ -97,7 +105,7 @@ async function startRun({ ids, workers, headed, slowMo }) {
 
   const args = ['test', `--workers=${workers}`, `--add-reporter=${path.join(here, 'stream-reporter.mjs')}`];
   if (headed) args.push('--headed');
-  args.push(`--timeout=${timeout}`);
+  args.push(`--timeout=${timeout}`, `--retries=${retries}`);
   if (selected.length !== tests.length) {
     const listFile = path.join(dir, 'test-list.txt');
     await writeFile(listFile, selected.map(t => [t.file, ...t.titlePath].join(' › ')).join('\n'));
@@ -105,14 +113,41 @@ async function startRun({ ids, workers, headed, slowMo }) {
   }
 
   const run = {
-    id, startedAt: Date.now(), endedAt: null, status: 'running', workers, headed: !!headed, slowMo, video,
-    command: `playwright test --workers=${workers}${headed ? ' --headed' : ''}${slowMo ? ` (slow-mo ${slowMo} ms)` : ''}${selected.length !== tests.length ? ` --test-list (${selected.length} tests)` : ''}`,
-    tests: Object.fromEntries(selected.map(t => [t.id, { ...t, state: 'queued', steps: [], errors: [], attachments: [], duration: null, analysis: null }])),
+    id, startedAt: Date.now(), endedAt: null, status: 'running', workers, headed: !!headed, slowMo, retries, video,
+    command: `playwright test --workers=${workers}${retries ? ` --retries=${retries}` : ''}${headed ? ' --headed' : ''}${slowMo ? ` (slow-mo ${slowMo} ms)` : ''}${selected.length !== tests.length ? ` --test-list (${selected.length} tests)` : ''}`,
+    tests: Object.fromEntries(selected.map(t => [t.id, { ...t, state: 'queued', steps: [], errors: [], attachments: [], attempts: [], attemptBase: 0, duration: null, analysis: null }])),
     errors: [], log: '',
   };
+  launch(run, dir, args, { slowMo, video });
+  return run;
+}
+
+// Retry tests that need triage inside their original run, with the run's own settings.
+// New attempts are added after the existing ones; a pass moves the test to Passed.
+async function retryInRun(runId, ids) {
+  if (current) throw Object.assign(new Error('A run is already in progress.'), { status: 409 });
+  const run = await loadRun(runId);
+  if (!run) throw Object.assign(new Error('Run not found.'), { status: 404 });
+  const targets = (Array.isArray(ids) ? ids : []).map(id => run.tests[id]).filter(t => t && triage(t) === 'investigate');
+  if (!targets.length) throw Object.assign(new Error('No tests need triage in this run.'), { status: 400 });
+  const dir = path.join(runsDir, run.id);
+  const listFile = path.join(dir, `retry-${Date.now()}.txt`);
+  await writeFile(listFile, targets.map(t => [t.file, ...t.titlePath].join(' › ')).join('\n'));
+  const slowMo = run.slowMo || 0;
+  const args = ['test', `--workers=${run.workers || 1}`, `--add-reporter=${path.join(here, 'stream-reporter.mjs')}`, `--timeout=${120000 + slowMo * 200}`, '--retries=0', `--test-list=${listFile}`];
+  if (run.headed) args.push('--headed');
+  for (const t of targets) Object.assign(t, { state: 'queued', attemptBase: (t.attempts || []).length, steps: [], errors: [], attachments: [] });
+  Object.assign(run, { status: 'running', endedAt: null, retrying: targets.map(t => t.id), retryStartedAt: Date.now() });
+  run.log = (run.log + `\n──── Retrying ${targets.length} test${targets.length > 1 ? 's' : ''} (${new Date().toLocaleString()}) ────\n`).slice(-200_000);
+  launch(run, dir, args, { slowMo, video: true, append: true });
+  return run;
+}
+
+function launch(run, dir, args, { slowMo, video, append = false }) {
+  const id = run.id;
   const [cmd, cmdArgs] = playwright(...args);
   const child = spawn(cmd, cmdArgs, { cwd: root, env: { ...process.env, PLAYWRIGHT_HTML_OPEN: 'never', FORCE_COLOR: '0', PW_SLOW_MO: String(slowMo), PW_VIDEO: video ? '1' : '0' } });
-  current = { run, child, dir, pending: [] };
+  current = { run, child, dir, pending: [], append };
   broadcast({ type: 'runStart', run });
 
   let buffer = '';
@@ -136,17 +171,18 @@ async function startRun({ ids, workers, headed, slowMo }) {
   child.on('close', async code => {
     if (buffer) onLine(buffer);
     await Promise.all(current.pending);
-    if (run.status === 'running') run.status = current.stopped ? 'stopped' : code === 0 ? 'passed' : 'failed';
     run.endedAt = Date.now();
-    for (const t of Object.values(run.tests)) if (t.state === 'running' || t.state === 'queued') t.state = current.stopped ? 'stopped' : 'skipped';
-    if (current.stopped) run.status = 'stopped';
+    // A retry that didn't finish leaves the test where it was (needing triage).
+    for (const t of Object.values(run.tests)) if (t.state === 'running' || t.state === 'queued') t.state = append ? 'failed' : current.stopped ? 'stopped' : 'skipped';
+    const anyFailed = Object.values(run.tests).some(t => t.state === 'failed');
+    run.status = current.stopped && !append ? 'stopped' : anyFailed || (!append && code !== 0) ? 'failed' : 'passed';
+    delete run.retrying;
     await saveRun(run).catch(() => {});
     current = null;
     broadcast({ type: 'runEnd', run });
     pruneRuns();
   });
   child.on('error', e => { run.errors.push({ message: String(e) }); });
-  return run;
 }
 
 async function handleEvent(run, dir, e) {
@@ -158,7 +194,8 @@ async function handleEvent(run, dir, e) {
       break;
     case 'testBegin':
       if (!t) return;
-      Object.assign(t, { state: 'running', retry: e.retry, workerIndex: e.workerIndex, steps: [], errors: [], attachments: [] });
+      // Attempt numbers continue across in-run retries: attemptBase is the attempts made before this process.
+      Object.assign(t, { state: 'running', retry: (t.attemptBase || 0) + e.retry, workerIndex: e.workerIndex, steps: [], errors: [], attachments: [] });
       break;
     case 'stepBegin':
       if (t) t.steps.push({ title: e.title, state: 'running' });
@@ -171,18 +208,24 @@ async function handleEvent(run, dir, e) {
     }
     case 'testEnd': {
       if (!t) return;
+      const n = (t.attemptBase || 0) + e.retry;
       const attachments = [];
       for (const [i, a] of e.attachments.entries()) {
         const entry = { name: a.name, contentType: a.contentType };
         if (a.path) {
-          const file = `${e.id}-r${e.retry}-${i}${path.extname(a.path)}`.replace(/[^\w.-]/g, '_');
+          const file = `${e.id}-r${n}-${i}${path.extname(a.path)}`.replace(/[^\w.-]/g, '_');
           try { await copyFile(a.path, path.join(dir, file)); entry.file = file; } catch { continue; }
         } else if (a.body) entry.body = a.body;
         attachments.push(entry);
       }
-      const state = e.outcome === 'flaky' ? 'flaky' : e.outcome === 'skipped' ? 'skipped' : e.outcome === 'expected' ? 'passed' : (e.status === 'failed' || e.status === 'timedOut' || e.status === 'interrupted' || e.outcome === 'unexpected') ? 'failed' : 'passed';
-      Object.assign(t, { state, status: e.status, duration: e.duration, retry: e.retry, errors: e.errors.map(cleanError), annotations: e.annotations, attachments });
+      // Only pass or fail: a test that passes on a retry counts as passed (its attempts are kept).
+      const state = e.outcome === 'flaky' ? 'passed' : e.outcome === 'skipped' ? 'skipped' : e.outcome === 'expected' ? 'passed' : (e.status === 'failed' || e.status === 'timedOut' || e.status === 'interrupted' || e.outcome === 'unexpected') ? 'failed' : 'passed';
+      const errors = e.errors.map(cleanError);
       for (const s of t.steps) if (s.state === 'running') s.state = 'failed';
+      // Keep every attempt so a retried test still shows the failed attempt's error, steps and video.
+      const attempt = { retry: n, state: e.status === 'passed' ? 'passed' : e.status === 'skipped' ? 'skipped' : 'failed', status: e.status, duration: e.duration, errors, steps: t.steps, attachments };
+      t.attempts = [...(t.attempts || []).filter(a => a.retry !== n), attempt];
+      Object.assign(t, { state, status: e.status, duration: e.duration, retry: n, errors, annotations: e.annotations, attachments });
       break;
     }
     case 'error':
@@ -193,6 +236,104 @@ async function handleEvent(run, dir, e) {
       break;
   }
   broadcast({ type: 'update', runId: run.id, event: e.type, test: t, errors: run.errors, status: run.status });
+}
+
+// ---------- Bug reports ----------
+// Stored in test-dashboard/bugs/<bug-001>/ (git-ignored), separately from runs so they survive run pruning.
+// Each occurrence keeps a snapshot of the failure (error, step, screenshot, video) for the same reason.
+const bugsDir = path.join(here, 'bugs');
+const fail = (message, status = 400) => Object.assign(new Error(message), { status });
+const bugRef = bug => ({ id: bug.id, number: bug.number, title: bug.title });
+
+async function loadBug(id) {
+  if (!/^bug-\d+$/.test(id)) return null;
+  try { return JSON.parse(await readFile(path.join(bugsDir, id, 'bug.json'), 'utf8')); } catch { return null; }
+}
+async function saveBug(bug) {
+  bug.updatedAt = Date.now();
+  await mkdir(path.join(bugsDir, bug.id), { recursive: true });
+  await writeFile(path.join(bugsDir, bug.id, 'bug.json'), JSON.stringify(bug, null, 1));
+  broadcast({ type: 'bugs' });
+}
+async function listBugs() {
+  const ids = (await readdir(bugsDir).catch(() => [])).filter(id => /^bug-\d+$/.test(id));
+  const bugs = (await Promise.all(ids.map(loadBug))).filter(Boolean).sort((a, b) => b.number - a.number);
+  return bugs.map(b => ({ ...bugRef(b), status: b.status, createdAt: b.createdAt, updatedAt: b.updatedAt, occurrences: b.occurrences.length, tests: [...new Set(b.occurrences.map(o => o.testId))] }));
+}
+
+// Load a finished run's test that is waiting for triage.
+async function investigatable(runId, testId) {
+  if (current?.run.id === runId) throw fail('Wait for this run to finish first.', 409);
+  const run = await loadRun(String(runId));
+  const t = run?.tests[String(testId)];
+  if (!t) throw fail('Test not found in this run.', 404);
+  return { run, t };
+}
+
+// Snapshot the latest failed attempt into the bug's folder.
+async function occurrence(run, t, bug, note) {
+  const failed = [...(t.attempts || [])].reverse().find(a => a.state === 'failed') || t;
+  const files = [];
+  for (const a of failed.attachments || []) {
+    if (!a.file || !/^(image|video)\//.test(a.contentType || '')) continue;
+    const name = `${run.id}-${a.file}`;
+    try { await copyFile(path.join(runsDir, run.id, a.file), path.join(bugsDir, bug.id, name)); files.push({ name: a.name, contentType: a.contentType, file: name }); } catch {}
+  }
+  return {
+    runId: run.id, runStartedAt: run.startedAt, testId: t.id, title: t.titlePath.join(' › '), file: t.file, line: t.line,
+    attempt: (failed.retry ?? 0) + 1, attempts: (t.attempts || []).length || 1,
+    step: failed.steps?.find(s => s.state === 'failed')?.title || null,
+    error: String(failed.errors?.[0]?.message || '').slice(0, 8000), location: failed.errors?.[0]?.location || null,
+    note: note || '', files, addedAt: Date.now(),
+  };
+}
+
+async function linkBug(bug, run, t, note) {
+  await mkdir(path.join(bugsDir, bug.id), { recursive: true });
+  bug.occurrences.push(await occurrence(run, t, bug, note));
+  await saveBug(bug);
+  t.bug = bugRef(bug);
+  await saveRun(run);
+  broadcast({ type: 'testChanged', runId: run.id, test: t, status: run.status });
+}
+
+async function createBug({ runId, testId, title, description }) {
+  title = String(title || '').trim(); description = String(description || '').trim();
+  if (!title || title.length > 200) throw fail('Give the report a title (up to 200 characters).');
+  if (description.length < 10 || description.length > 20000) throw fail('Write a description of the bug (at least 10 characters).');
+  const { run, t } = await investigatable(runId, testId);
+  if (triage(t) !== 'investigate') throw fail('Only tests that need triage can be marked as bugged.');
+  const number = (await listBugs()).reduce((n, b) => Math.max(n, b.number), 0) + 1;
+  const bug = { id: 'bug-' + String(number).padStart(3, '0'), number, title, description, status: 'open', createdAt: Date.now(), occurrences: [] };
+  await linkBug(bug, run, t, '');
+  return bug;
+}
+
+async function addToBug(id, { runId, testId, note }) {
+  const bug = await loadBug(id);
+  if (!bug) throw fail('Bug report not found.', 404);
+  note = String(note || '').trim();
+  if (note.length > 5000) throw fail('Keep the note under 5000 characters.');
+  const { run, t } = await investigatable(runId, testId);
+  if (triage(t) !== 'investigate') throw fail('Only tests that need triage can be marked as bugged.');
+  await linkBug(bug, run, t, note);
+  return bug;
+}
+
+// Undo "Mark as bugged": the test needs triage again and its occurrence leaves the report.
+async function unmarkBug(runId, testId) {
+  const { run, t } = await investigatable(runId, testId);
+  if (!t.bug) throw fail('This test is not marked as bugged.');
+  const bug = await loadBug(t.bug.id);
+  if (bug) {
+    const gone = bug.occurrences.filter(o => o.runId === run.id && o.testId === t.id);
+    bug.occurrences = bug.occurrences.filter(o => !gone.includes(o));
+    for (const f of gone.flatMap(o => o.files)) await rm(path.join(bugsDir, bug.id, f.file), { force: true });
+    await saveBug(bug);
+  }
+  delete t.bug;
+  await saveRun(run);
+  broadcast({ type: 'testChanged', runId: run.id, test: t, status: run.status });
 }
 
 function stopRun() {
@@ -265,6 +406,18 @@ const server = http.createServer(async (req, res) => {
       const body = await readJson(req);
       if (p === '/api/run') return send(res, 200, summarize(await startRun(body)));
       if (p === '/api/stop') return send(res, 200, { stopped: stopRun() });
+      let pm;
+      if ((pm = p.match(/^\/api\/runs\/([\w-]+)\/retry$/))) return send(res, 200, summarize(await retryInRun(pm[1], body.ids)));
+      if ((pm = p.match(/^\/api\/runs\/([\w-]+)\/unbug$/))) { await unmarkBug(pm[1], body.testId); return send(res, 200, { ok: true }); }
+      if (p === '/api/bugs') return send(res, 200, await createBug(body));
+      if ((pm = p.match(/^\/api\/bugs\/(bug-\d+)\/link$/))) return send(res, 200, await addToBug(pm[1], body));
+      if ((pm = p.match(/^\/api\/bugs\/(bug-\d+)\/status$/))) {
+        const bug = await loadBug(pm[1]);
+        if (!bug) return send(res, 404, { error: 'Bug report not found.' });
+        if (!['open', 'closed'].includes(body.status)) return send(res, 400, { error: 'Status must be open or closed.' });
+        bug.status = body.status; await saveBug(bug);
+        return send(res, 200, bug);
+      }
       if (p === '/api/tests/refresh') return send(res, 200, await listTests());
       if (p === '/api/open-in-browser') {
         // Open a dashboard page in the system browser (e.g. when VS Code's browser can't play WebM).
@@ -298,6 +451,15 @@ const server = http.createServer(async (req, res) => {
     }
     if ((m = p.match(/^\/api\/runs\/([\w-]+)\/files\/(.+)$/))) {
       const file = inside(path.join(runsDir, m[1]), m[2]);
+      return file ? serveFile(res, file, req) : send(res, 404, { error: 'Not found' });
+    }
+    if (p === '/api/bugs') return send(res, 200, await listBugs());
+    if ((m = p.match(/^\/api\/bugs\/(bug-\d+)$/))) {
+      const bug = await loadBug(m[1]);
+      return bug ? send(res, 200, bug) : send(res, 404, { error: 'Bug report not found.' });
+    }
+    if ((m = p.match(/^\/api\/bugs\/(bug-\d+)\/files\/(.+)$/))) {
+      const file = inside(path.join(bugsDir, m[1]), m[2]);
       return file ? serveFile(res, file, req) : send(res, 404, { error: 'Not found' });
     }
     if (p === '/api/events') {
