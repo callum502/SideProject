@@ -11,7 +11,6 @@ import { randomBytes } from 'node:crypto';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
 const runsDir = path.join(here, '.runs');
-const reportDir = path.join(root, 'playwright-report');
 const PORT = Number(process.env.DASHBOARD_PORT || 5190);
 const HOST = '127.0.0.1';
 const MAX_RUNS = 30;
@@ -63,7 +62,9 @@ async function listTests() {
 const summarize = run => {
   const counts = { passed: 0, failed: 0, flaky: 0, skipped: 0, running: 0, queued: 0 };
   for (const t of Object.values(run.tests)) counts[t.state] = (counts[t.state] || 0) + 1;
-  return { id: run.id, startedAt: run.startedAt, endedAt: run.endedAt, status: run.status, workers: run.workers, headed: run.headed, total: Object.keys(run.tests).length, counts };
+  // Per-test outcome lets the Tests view show each test's latest result across runs.
+  const results = Object.fromEntries(Object.values(run.tests).map(t => [t.id, { state: t.state, duration: t.duration }]));
+  return { id: run.id, startedAt: run.startedAt, endedAt: run.endedAt, status: run.status, workers: run.workers, headed: run.headed, total: Object.keys(run.tests).length, counts, results };
 };
 
 async function saveRun(run) {
@@ -276,11 +277,6 @@ const server = http.createServer(async (req, res) => {
       clients.add(res);
       req.on('close', () => clients.delete(res));
       return;
-    }
-    if (p.startsWith('/report/') || p === '/report') {
-      const rel = p.slice('/report'.length) || '/';
-      const file = inside(reportDir, rel.endsWith('/') ? rel + 'index.html' : rel);
-      return file ? serveFile(res, file) : send(res, 404, { error: 'Not found' });
     }
     send(res, 404, { error: 'Not found' });
   } catch (e) {

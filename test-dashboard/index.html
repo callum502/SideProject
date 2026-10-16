@@ -1,193 +1,243 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Test Dashboard</title>
+<script>
+  // Apply the saved theme before first paint. Dark is the default; "system" follows the OS.
+  try { const t = JSON.parse(localStorage.getItem('pwdash.theme')); if (t === 'system') document.documentElement.removeAttribute('data-theme'); else if (t) document.documentElement.dataset.theme = t; } catch {}
+</script>
 <style>
   :root {
-    --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --border: #dfe3e8; --text: #1b1f24; --muted: #5f6b7a;
-    --accent: #2f6fde; --accent-text: #fff;
+    --bg: #f5f6f8; --panel: #ffffff; --panel-2: #f0f2f5; --hover: #eef1f5; --border: #dfe3e8; --text: #1b1f24; --muted: #5f6b7a; --faint: #8a94a3;
+    --accent: #2f6fde; --accent-text: #fff; --accent-soft: #e4edfc;
     --pass: #1f8a4c; --pass-bg: #e3f4ea; --fail: #c93a3a; --fail-bg: #fbe7e7;
     --flaky: #a86a00; --flaky-bg: #fdf1dc; --skip: #6b7684; --skip-bg: #eceff2; --run: #2f6fde; --run-bg: #e4edfc;
-    --code-bg: #f3f4f6; --shadow: 0 1px 2px rgba(16,24,40,.06);
+    --code-bg: #f6f7f9; --shadow: 0 1px 2px rgba(16,24,40,.06);
     color-scheme: light;
   }
+  :root[data-theme="dark"] {
+    --bg: #0e1013; --panel: #15181d; --panel-2: #1b1f25; --hover: #20252c; --border: #272d35; --text: #e4e7eb; --muted: #949eab; --faint: #6b7480;
+    --accent: #5b8def; --accent-text: #fff; --accent-soft: #1b2a45;
+    --pass: #4cc283; --pass-bg: #13291e; --fail: #f07373; --fail-bg: #331a1b;
+    --flaky: #e0a844; --flaky-bg: #33270f; --skip: #8a96a3; --skip-bg: #20252b; --run: #6aa1f5; --run-bg: #18263d;
+    --code-bg: #0b0d10; --shadow: none;
+    color-scheme: dark;
+  }
   @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #111418; --panel: #181c21; --panel-2: #1f242a; --border: #2c333b; --text: #e6e9ed; --muted: #95a0ad;
-      --accent: #4c8af0; --pass: #4cc283; --pass-bg: #163325; --fail: #f07070; --fail-bg: #3a1c1c;
-      --flaky: #e0a844; --flaky-bg: #3a2c12; --skip: #8a96a3; --skip-bg: #252a30; --run: #6aa1f5; --run-bg: #1a2a44;
-      --code-bg: #0d1013; --shadow: none;
+    :root:not([data-theme]) {
+      --bg: #0e1013; --panel: #15181d; --panel-2: #1b1f25; --hover: #20252c; --border: #272d35; --text: #e4e7eb; --muted: #949eab; --faint: #6b7480;
+      --accent: #5b8def; --accent-text: #fff; --accent-soft: #1b2a45;
+      --pass: #4cc283; --pass-bg: #13291e; --fail: #f07373; --fail-bg: #331a1b;
+      --flaky: #e0a844; --flaky-bg: #33270f; --skip: #8a96a3; --skip-bg: #20252b; --run: #6aa1f5; --run-bg: #18263d;
+      --code-bg: #0b0d10; --shadow: none;
       color-scheme: dark;
     }
   }
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
+  html, body { height: 100%; }
   body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-  button, input { font: inherit; color: inherit; }
+  button, input, select { font: inherit; color: inherit; }
   code, pre, .mono { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12.5px; }
-
-  header { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 12px 20px; background: var(--panel); border-bottom: 1px solid var(--border); }
-  header h1 { font-size: 16px; margin: 0; font-weight: 650; }
-  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-left: auto; }
-  .btn { border: 1px solid var(--border); background: var(--panel); padding: 6px 12px; border-radius: 7px; cursor: pointer; white-space: nowrap; }
-  .btn:hover:not(:disabled) { background: var(--panel-2); }
-  .btn:disabled { opacity: .5; cursor: default; }
-  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
-  .btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
-  .btn.danger { color: var(--fail); border-color: color-mix(in srgb, var(--fail) 40%, var(--border)); }
-  .btn.small { padding: 3px 9px; font-size: 12.5px; }
-  .field { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-  .field input[type=number] { width: 58px; padding: 5px 6px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); }
   a { color: var(--accent); }
+  svg { flex: none; }
 
-  .layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; padding: 16px 20px 40px; align-items: start; }
-  @media (max-width: 900px) { .layout { grid-template-columns: 1fr; } }
-  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
-  .panel-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--border); }
-  .panel-head h2 { font-size: 13px; margin: 0; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 650; }
-  .panel-head .spacer { flex: 1; }
-  aside { display: grid; gap: 16px; position: sticky; top: 72px; min-width: 0; grid-template-columns: minmax(0, 1fr); }
-  @media (max-width: 900px) { aside { position: static; } }
+  /* ---------- Shell ---------- */
+  .shell { display: grid; grid-template-columns: 216px minmax(0, 1fr); min-height: 100vh; }
+  .sidebar { position: sticky; top: 0; height: 100vh; display: flex; flex-direction: column; gap: 4px; padding: 16px 12px; background: var(--panel); border-right: 1px solid var(--border); }
+  .brand { display: flex; align-items: center; gap: 9px; padding: 2px 8px 16px; font-weight: 650; font-size: 15px; }
+  .brand .logo { color: var(--accent); display: grid; place-items: center; }
+  .nav-item { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 8px; color: var(--muted); text-decoration: none; font-weight: 550; }
+  .nav-item:hover { background: var(--hover); color: var(--text); }
+  .nav-item.active { background: var(--accent-soft); color: var(--text); }
+  .nav-item .count { margin-left: auto; font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .sidebar-foot { margin-top: auto; display: grid; gap: 4px; border-top: 1px solid var(--border); padding-top: 10px; }
+  .sidebar-foot .nav-item { font-weight: 500; font-size: 13px; }
+  .conn { display: flex; align-items: center; gap: 8px; padding: 6px 10px; font-size: 12px; color: var(--faint); }
 
-  .search { width: 100%; padding: 6px 9px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-2); }
-  .tests { max-height: 52vh; overflow: auto; padding: 4px 0; }
-  .file-group { padding: 2px 0; }
-  .file-row, .test-row { display: flex; align-items: center; gap: 8px; padding: 4px 12px; cursor: pointer; user-select: none; }
-  .file-row { font-weight: 600; font-size: 12.5px; color: var(--muted); }
-  .test-row { padding-left: 30px; }
-  .file-row:hover, .test-row:hover { background: var(--panel-2); }
-  .test-row .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  input[type=checkbox] { accent-color: var(--accent); margin: 0; }
-  .sel-count { font-size: 12.5px; color: var(--muted); padding: 8px 12px; border-top: 1px solid var(--border); }
+  .main { display: flex; flex-direction: column; min-width: 0; }
+  .topbar { position: sticky; top: 0; z-index: 5; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
+  .topbar-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 24px; }
+  .topbar h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  .topbar .sub { color: var(--muted); font-size: 13px; }
+  .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-left: auto; }
+  .live-strip { display: flex; align-items: center; gap: 12px; padding: 0 24px 10px; font-size: 12.5px; color: var(--muted); }
+  .live-strip .bar { flex: 1; }
+  .view { padding: 20px 24px 48px; display: grid; gap: 16px; align-content: start; }
 
-  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--border); }
+  @media (max-width: 860px) {
+    .shell { grid-template-columns: 1fr; }
+    .sidebar { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; padding: 10px 16px; border-right: 0; border-bottom: 1px solid var(--border); }
+    .brand { padding: 0 8px 0 0; }
+    .sidebar-foot { margin: 0 0 0 auto; border: 0; padding: 0; display: flex; }
+    .conn { display: none; }
+    .topbar-row, .live-strip { padding-left: 16px; padding-right: 16px; }
+    .view { padding: 16px 16px 40px; }
+  }
+
+  /* ---------- Controls ---------- */
+  .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); background: var(--panel); padding: 6px 12px; border-radius: 8px; cursor: pointer; white-space: nowrap; text-decoration: none; color: var(--text); }
+  .btn:hover:not(:disabled) { background: var(--hover); }
+  .btn:disabled { opacity: .45; cursor: default; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-weight: 600; }
+  .btn.primary:hover:not(:disabled) { background: var(--accent); filter: brightness(1.1); }
+  .btn.danger { color: var(--fail); }
+  .btn.small { padding: 3px 9px; font-size: 12.5px; }
+  .field { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .field input[type=number] { width: 54px; padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+  .sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 2px; }
+  .hint { font-size: 12px; color: var(--flaky); display: inline-flex; align-items: center; gap: 4px; }
+  input[type=checkbox] { accent-color: var(--accent); margin: 0; width: 15px; height: 15px; }
+  .search { flex: 1; min-width: 160px; max-width: 360px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); }
+
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); min-width: 0; }
+  .panel-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .panel-head h2 { font-size: 13px; margin: 0; font-weight: 650; }
+  .spacer { flex: 1; }
+  .empty { padding: 28px 16px; color: var(--muted); text-align: center; }
+  .banner { padding: 10px 14px; border-radius: 10px; background: var(--fail-bg); color: var(--fail); white-space: pre-wrap; }
+
+  .seg { display: inline-flex; gap: 2px; padding: 2px; background: var(--panel-2); border-radius: 8px; }
+  .seg button { border: 0; background: none; padding: 4px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); font-size: 13px; }
+  .seg button.active { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
+  :root[data-theme="dark"] .seg button.active { background: var(--hover); }
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); padding: 0 14px; overflow-x: auto; }
+  .tabs button { border: 0; background: none; padding: 10px 10px 9px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+  .tabs button:hover { color: var(--text); }
+  .tabs button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+  .tabs .n { font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--panel-2); color: var(--muted); }
+
+  /* ---------- Status ---------- */
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--border); display: inline-block; }
   .dot.passed { background: var(--pass); } .dot.failed { background: var(--fail); } .dot.flaky { background: var(--flaky); }
   .dot.skipped, .dot.stopped { background: var(--skip); } .dot.running { background: var(--run); animation: pulse 1s infinite; }
   .dot.queued { background: transparent; border: 1.5px solid var(--skip); }
-  @keyframes pulse { 50% { opacity: .35; } }
-
-  .runs { max-height: 30vh; overflow: auto; }
-  .run-item { display: grid; grid-template-columns: auto 1fr auto; gap: 2px 8px; align-items: center; padding: 7px 12px; cursor: pointer; border-top: 1px solid var(--border); }
-  .run-item:first-child { border-top: 0; }
-  .run-item:hover { background: var(--panel-2); }
-  .run-item.active { background: var(--run-bg); }
-  .run-item .when { font-size: 13px; }
-  .run-item .meta { grid-column: 2 / 4; font-size: 12px; color: var(--muted); }
-  .empty { padding: 14px 12px; color: var(--muted); font-size: 13px; }
-
-  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--skip-bg); color: var(--skip); }
+  @keyframes pulse { 50% { opacity: .3; } }
+  .pill { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--skip-bg); color: var(--skip); white-space: nowrap; }
   .pill.passed { background: var(--pass-bg); color: var(--pass); } .pill.failed { background: var(--fail-bg); color: var(--fail); }
   .pill.flaky { background: var(--flaky-bg); color: var(--flaky); } .pill.running { background: var(--run-bg); color: var(--run); }
-
-  main { display: grid; gap: 16px; min-width: 0; }
-  .summary { padding: 14px 16px; display: grid; gap: 12px; }
-  .summary-top { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
-  .summary-top .title { font-weight: 650; font-size: 15px; }
-  .summary-top .cmd { color: var(--muted); }
-  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
-  .tile { background: var(--panel-2); border-radius: 8px; padding: 9px 12px; }
-  .tile .label { font-size: 12px; color: var(--muted); }
-  .tile .value { font-size: 22px; font-weight: 650; font-variant-numeric: tabular-nums; }
-  .tile.passed .value { color: var(--pass); } .tile.failed .value { color: var(--fail); } .tile.flaky .value { color: var(--flaky); }
-  .bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--panel-2); }
+  .bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--panel-2); min-width: 60px; }
   .bar span { display: block; transition: width .3s; }
   .bar .passed { background: var(--pass); } .bar .failed { background: var(--fail); } .bar .flaky { background: var(--flaky); } .bar .skipped, .bar .stopped { background: var(--skip); } .bar .running { background: var(--run); opacity: .6; }
 
-  .tabs { display: flex; gap: 4px; }
-  .tab { border: 0; background: none; padding: 5px 10px; border-radius: 6px; cursor: pointer; color: var(--muted); }
-  .tab.active { background: var(--panel-2); color: var(--text); font-weight: 600; }
+  /* ---------- Tests view ---------- */
+  .rows { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; font-size: 12px; font-weight: 600; color: var(--faint); padding: 8px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td { padding: 8px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  tbody tr { cursor: pointer; }
+  tbody tr:hover td { background: var(--hover); }
+  tr.file-row td { background: var(--panel-2); font-weight: 600; font-size: 12.5px; color: var(--muted); padding-top: 6px; padding-bottom: 6px; }
+  tr.file-row:hover td { background: var(--hover); }
+  td.check, th.check { width: 36px; padding-right: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); white-space: nowrap; }
+  .last { display: inline-flex; align-items: center; gap: 7px; color: var(--muted); white-space: nowrap; text-decoration: none; }
+  a.last:hover { color: var(--text); text-decoration: underline; }
+  .loc { color: var(--faint); font-size: 12px; }
 
-  .result { border-top: 1px solid var(--border); }
-  .result:first-child { border-top: 0; }
-  .result-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 11px 14px; cursor: pointer; }
-  .result-head:hover { background: var(--panel-2); }
-  .result-head .name { font-weight: 600; }
-  .result-head .loc { color: var(--muted); font-size: 12.5px; }
-  .result-head .dur { margin-left: auto; color: var(--muted); font-variant-numeric: tabular-nums; font-size: 12.5px; }
-  .chev { transition: transform .15s; color: var(--muted); width: 12px; }
-  .result.open .chev { transform: rotate(90deg); }
-  .steps { display: flex; flex-wrap: wrap; gap: 5px; flex-basis: 100%; padding-left: 41px; }
-  .step { font-size: 12px; padding: 1px 8px; border-radius: 5px; background: var(--skip-bg); color: var(--skip); }
-  .step.passed { background: var(--pass-bg); color: var(--pass); } .step.failed { background: var(--fail-bg); color: var(--fail); font-weight: 600; } .step.running { background: var(--run-bg); color: var(--run); }
-  .result-body { padding: 0 14px 16px 41px; display: grid; gap: 12px; }
-  .section-label { font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
-  pre { margin: 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 7px; overflow: auto; max-height: 360px; white-space: pre-wrap; word-break: break-word; }
+  /* ---------- Run view ---------- */
+  .run-head { padding: 14px 16px; display: grid; gap: 12px; }
+  .run-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .run-title .when { font-weight: 650; font-size: 15px; }
+  .run-title .cmd { color: var(--faint); }
+  .stats { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+  .stat .label { font-size: 12px; color: var(--muted); }
+  .stat .value { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .stat.passed .value { color: var(--pass); } .stat.failed .value { color: var(--fail); } .stat.flaky .value { color: var(--flaky); }
+
+  .split { display: grid; grid-template-columns: minmax(260px, 380px) minmax(0, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 1100px) { .split { grid-template-columns: 1fr; } }
+  .list { padding: 6px; display: grid; gap: 2px; }
+  .item { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 3px 10px; align-items: center; padding: 8px 10px; border-radius: 8px; cursor: pointer; border: 1px solid transparent; background: none; text-align: left; width: 100%; }
+  .item:hover { background: var(--hover); }
+  .item.active { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+  .item .name { font-weight: 550; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .dur { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .item .meta { grid-column: 2 / 4; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .item .meta .loc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ticks { display: inline-flex; gap: 2px; margin-left: auto; }
+  .ticks i { width: 14px; height: 4px; border-radius: 2px; background: var(--skip-bg); }
+  .ticks i.passed { background: var(--pass); } .ticks i.failed { background: var(--fail); } .ticks i.running { background: var(--run); }
+
+  .detail { position: sticky; top: 112px; max-height: calc(100vh - 128px); display: flex; flex-direction: column; }
+  @media (max-width: 1100px) { .detail { position: static; max-height: none; } }
+  .detail-head { padding: 14px 16px 10px; display: grid; gap: 6px; }
+  .detail-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
+  .detail-head .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; color: var(--muted); font-size: 12.5px; }
+  .detail-body { padding: 16px; overflow: auto; display: grid; gap: 14px; align-content: start; }
+  .section-label { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+  pre { margin: 0; padding: 10px 12px; background: var(--code-bg); border: 1px solid var(--border); border-radius: 8px; overflow: auto; max-height: 420px; white-space: pre-wrap; word-break: break-word; }
   pre.error { border-left: 3px solid var(--fail); }
-  .artifacts { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-start; }
-  .shot { display: block; border: 1px solid var(--border); border-radius: 7px; overflow: hidden; max-width: 320px; }
+  pre.snippet { white-space: pre; word-break: normal; }
+  .steps { display: grid; gap: 0; }
+  .step { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--border); }
+  .step:last-child { border-bottom: 0; }
+  .step .ic { margin-top: 5px; }
+  .step .t { font-weight: 550; }
+  .step .d { color: var(--faint); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .step .msg { grid-column: 2 / 4; color: var(--fail); font-size: 12.5px; white-space: pre-wrap; }
+  .callout { display: flex; gap: 8px; align-items: center; padding: 8px 12px; border-radius: 8px; background: var(--fail-bg); color: var(--fail); font-weight: 550; }
+  .shots { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .shot { display: block; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--code-bg); }
   .shot img { display: block; width: 100%; }
   .links { display: flex; flex-wrap: wrap; gap: 8px; }
-
-  .ai { border: 1px dashed var(--border); border-radius: 8px; padding: 10px 12px; background: var(--panel-2); }
+  .ai { border: 1px dashed var(--border); border-radius: 10px; padding: 14px 16px; background: var(--panel-2); display: grid; gap: 6px; }
   .ai-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
-  .ai-head .badge { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--border); color: var(--muted); }
-  .ai p { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
-
-  details.log summary { cursor: pointer; padding: 10px 14px; color: var(--muted); font-weight: 600; }
-  details.log pre { margin: 0 14px 14px; max-height: 420px; }
-  .banner { padding: 10px 14px; border-radius: 8px; background: var(--fail-bg); color: var(--fail); white-space: pre-wrap; }
+  .ai .badge { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--border); color: var(--muted); }
+  .ai p { margin: 0; color: var(--muted); }
+  .console pre { border: 0; border-radius: 0 0 12px 12px; max-height: calc(100vh - 290px); min-height: 200px; }
   .warn { font-size: 12.5px; color: var(--flaky); }
-  .placeholder { padding: 40px 20px; text-align: center; color: var(--muted); }
+
+  /* ---------- History view ---------- */
+  .hist-bar { width: 120px; }
+  tr.live td:first-child { box-shadow: inset 3px 0 var(--run); }
 </style>
 </head>
 <body>
-<header>
-  <h1>Test Dashboard</h1>
-  <span id="live" class="pill">Idle</span>
-  <div class="controls">
-    <label class="field" title="Number of Playwright workers (--workers)">Workers <input id="workers" type="number" min="1" max="16" value="1"></label>
-    <label class="field"><input id="headed" type="checkbox"> Headed</label>
-    <button id="runSelected" class="btn primary">Run selected</button>
-    <button id="runAll" class="btn">Run all</button>
-    <button id="runFailed" class="btn" title="Re-run tests that failed in the run being viewed">Re-run failed</button>
-    <button id="stop" class="btn danger" disabled>Stop</button>
-    <a class="btn" href="/report/" target="_blank" rel="noopener">HTML report</a>
-  </div>
-  <div id="workerWarn" class="warn" hidden>Tests share one account and database (see tests/e2e/README.md), so more than one worker can make tests collide.</div>
-</header>
+<div class="shell">
+  <nav class="sidebar" aria-label="Dashboard">
+    <div class="brand"><span class="logo" aria-hidden="true"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2v17.5a2.5 2.5 0 0 1-5 0V2"/><path d="M8.5 2h7"/><path d="M9.5 14h5"/></svg></span>Test Dashboard</div>
+    <a class="nav-item" href="#tests" data-nav="tests">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3 6 1.5 1.5L7 5M3 12l1.5 1.5L7 11M3 18l1.5 1.5L7 17"/></svg>
+      Tests <span class="count" id="navTests"></span></a>
+    <a class="nav-item" href="#results" data-nav="results">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></svg>
+      Results <span class="count" id="navResults"></span></a>
+    <div class="sidebar-foot">
+      <button class="nav-item btn-reset" id="theme" style="border:0;background:none;cursor:pointer;width:100%;text-align:left"></button>
+      <div class="conn" id="conn"><span class="dot queued"></span>Connecting…</div>
+    </div>
+  </nav>
 
-<div class="layout">
-  <aside>
-    <section class="panel">
-      <div class="panel-head">
-        <input id="filter" class="search" type="search" placeholder="Filter tests…">
-      </div>
-      <div class="panel-head">
-        <label class="field"><input id="selectAll" type="checkbox"> Select all</label>
-        <span class="spacer"></span>
-        <button id="refresh" class="btn small" title="Re-scan test files">Refresh</button>
-      </div>
-      <div id="tests" class="tests"><div class="empty">Loading tests…</div></div>
-      <div id="selCount" class="sel-count"></div>
-    </section>
-    <section class="panel">
-      <div class="panel-head"><h2>Run history</h2></div>
-      <div id="runs" class="runs"><div class="empty">No runs yet.</div></div>
-    </section>
-  </aside>
-
-  <main>
-    <div id="listError" class="banner" hidden></div>
-    <section class="panel" id="summaryPanel">
-      <div class="placeholder">Select tests and press <b>Run selected</b>, or <b>Run all</b>.</div>
-    </section>
-    <section class="panel" id="resultsPanel" hidden>
-      <div class="panel-head">
-        <h2>Results</h2><span class="spacer"></span>
-        <div class="tabs" id="tabs">
-          <button class="tab active" data-tab="all">All</button>
-          <button class="tab" data-tab="failed">Failed</button>
-          <button class="tab" data-tab="passed">Passed</button>
+  <div class="main">
+    <header class="topbar">
+      <div class="topbar-row">
+        <a class="btn small" id="back" href="#results" hidden title="Back to all results (Esc)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>All results</a>
+        <div><h1 id="viewTitle">Tests</h1><div class="sub" id="viewSub"></div></div>
+        <div class="controls" id="controls">
+          <span class="hint" id="workerHint" hidden title="Every guide save is checked against one shared revision. Tests that save while another test saves get 409 &quot;This guide changed&quot;, even when they edit different records.">⚠ Parallel guide saves can fail with 409</span>
+          <label class="field" title="Number of Playwright workers (--workers)">Workers <input id="workers" type="number" min="1" max="16" value="1"></label>
+          <label class="field"><input id="headed" type="checkbox"> Headed</label>
+          <span class="sep"></span>
+          <button id="runSelected" class="btn primary"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg><span>Run selected</span></button>
+          <button id="runAll" class="btn">Run all</button>
+          <button id="runFailed" class="btn" title="Re-run tests whose latest result was a failure">Re-run failed</button>
         </div>
       </div>
-      <div id="results"></div>
-    </section>
-    <section class="panel" id="logPanel" hidden>
-      <details class="log"><summary>Console output</summary><pre id="log" class="mono"></pre></details>
-    </section>
-  </main>
+      <div class="live-strip" id="liveStrip" hidden>
+        <span class="pill running"><span class="dot running"></span>Running</span>
+        <span id="liveText"></span>
+        <div class="bar" id="liveBar"></div>
+        <a href="#results" id="liveLink">View</a>
+        <button id="stop" class="btn small danger"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>Stop</button>
+      </div>
+    </header>
+    <div id="notice" class="banner" hidden style="margin: 16px 24px 0"></div>
+    <main class="view" id="view"></main>
+  </div>
 </div>
 
 <script>
@@ -205,222 +255,361 @@ const store = {
 };
 const fmtDur = ms => ms == null ? '' : ms < 1000 ? `${ms} ms` : ms < 60000 ? `${(ms / 1000).toFixed(1)} s` : `${Math.floor(ms / 60000)}m ${Math.round(ms % 60000 / 1000)}s`;
 const fmtTime = t => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' });
-const STATE_LABEL = { passed: 'Passed', failed: 'Failed', flaky: 'Flaky', skipped: 'Skipped', running: 'Running', queued: 'Queued', stopped: 'Stopped' };
+const fmtAgo = t => { const s = (Date.now() - t) / 1000; return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)} min ago` : s < 86400 ? `${Math.floor(s / 3600)} h ago` : fmtTime(t); };
+const LABEL = { passed: 'Passed', failed: 'Failed', flaky: 'Flaky', skipped: 'Skipped', running: 'Running', queued: 'Queued', stopped: 'Stopped' };
+const ORDER = { failed: 0, flaky: 1, running: 2, queued: 3, passed: 4, skipped: 5, stopped: 6 };
+const isFail = t => t.state === 'failed' || t.state === 'flaky';
 
-let tests = [];
-let selected = new Set(store.get('selected', []));
-let runs = [];
-let viewed = null;        // full run object being displayed
-let liveRunId = null;     // id of the run in progress
-let tab = 'all';
-const open = new Set();   // expanded result ids
+const S = {
+  tests: [], selected: new Set(store.get('selected', [])), firstVisit: store.get('selected', null) === null,
+  runs: [], cache: new Map(), viewedId: null, liveId: null,
+  view: 'tests', resultFilter: 'all', runTab: 'results', picked: null, detailTab: null, filter: '',
+};
+const viewed = () => S.cache.get(S.viewedId) || null;
+const live = () => S.cache.get(S.liveId) || null;
 
+// ---------- Theme ----------
+const THEMES = ['dark', 'light', 'system'];
+function applyTheme(t) {
+  if (t === 'system') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = t;
+  const icon = { dark: '<path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/>', light: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>', system: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>' }[t];
+  $('#theme').innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>Theme: ${t[0].toUpperCase() + t.slice(1)}`;
+}
+let theme = store.get('theme', 'dark');
+applyTheme(theme);
+$('#theme').addEventListener('click', () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]; store.set('theme', theme); applyTheme(theme); });
+
+// ---------- Run controls ----------
 $('#workers').value = store.get('workers', 1);
 $('#headed').checked = store.get('headed', false);
-const syncWorkerWarn = () => $('#workerWarn').hidden = Number($('#workers').value) <= 1;
-syncWorkerWarn();
-$('#workers').addEventListener('input', () => { store.set('workers', Number($('#workers').value)); syncWorkerWarn(); });
+const syncHint = () => $('#workerHint').hidden = Number($('#workers').value) <= 1;
+syncHint();
+$('#workers').addEventListener('input', () => { store.set('workers', Number($('#workers').value)); syncHint(); });
 $('#headed').addEventListener('change', () => store.set('headed', $('#headed').checked));
 
-// ---------- Test list ----------
-async function loadTests(refresh) {
-  $('#listError').hidden = true;
-  try {
-    const data = refresh ? await api('/api/tests/refresh', {}) : await api('/api/tests');
-    tests = data.tests;
-    const ids = new Set(tests.map(t => t.id));
-    selected = new Set([...selected].filter(id => ids.has(id)));
-    if (!store.get('selected', null)) tests.forEach(t => selected.add(t.id));
-  } catch (e) {
-    tests = [];
-    $('#listError').textContent = 'Could not list tests:\n' + e.message;
-    $('#listError').hidden = false;
-  }
-  renderTests();
+// Latest recorded result for a test: the live run first, then the most recent run that included it.
+function lastResult(id) {
+  const l = live()?.tests?.[id];
+  if (l && l.state !== 'queued') return l;
+  for (const r of S.runs) { const t = r.results?.[id]; if (t && t.state !== 'queued' && t.state !== 'stopped') return { ...t, runId: r.id }; }
+  return null;
 }
-
-function latestState(id) { return viewed?.tests?.[id]?.state; }
-
-function renderTests() {
-  const q = $('#filter').value.trim().toLowerCase();
-  const visible = tests.filter(t => !q || (t.file + ' ' + t.titlePath.join(' ')).toLowerCase().includes(q));
-  const byFile = new Map();
-  for (const t of visible) (byFile.get(t.file) || byFile.set(t.file, []).get(t.file)).push(t);
-  if (!visible.length) $('#tests').innerHTML = `<div class="empty">${tests.length ? 'No tests match the filter.' : 'No tests found.'}</div>`;
-  else $('#tests').innerHTML = [...byFile].map(([file, list]) => {
-    const n = list.filter(t => selected.has(t.id)).length;
-    return `<div class="file-group">
-      <div class="file-row" data-file="${esc(file)}"><input type="checkbox" ${n === list.length ? 'checked' : ''} data-indeterminate="${n > 0 && n < list.length}"><span>${esc(file)}</span></div>
-      ${list.map(t => `<div class="test-row" data-id="${esc(t.id)}" title="${esc(t.titlePath.join(' › '))}">
-        <input type="checkbox" ${selected.has(t.id) ? 'checked' : ''}>
-        <span class="name">${esc(t.titlePath.join(' › '))}</span>
-        <span class="dot ${latestState(t.id) || ''}" title="${esc(STATE_LABEL[latestState(t.id)] || 'Not run in this view')}"></span>
-      </div>`).join('')}
-    </div>`;
-  }).join('');
-  $('#tests').querySelectorAll('[data-indeterminate=true]').forEach(c => c.indeterminate = true);
-  const all = tests.length && tests.every(t => selected.has(t.id));
-  $('#selectAll').checked = !!all;
-  $('#selectAll').indeterminate = !all && selected.size > 0;
-  $('#selCount').textContent = `${selected.size} of ${tests.length} selected`;
-  store.set('selected', [...selected]);
-  syncButtons();
-}
-
-$('#tests').addEventListener('click', e => {
-  const row = e.target.closest('.test-row, .file-row');
-  if (!row) return;
-  if (row.dataset.id) selected.has(row.dataset.id) ? selected.delete(row.dataset.id) : selected.add(row.dataset.id);
-  else {
-    const list = tests.filter(t => t.file === row.dataset.file);
-    const allOn = list.every(t => selected.has(t.id));
-    list.forEach(t => allOn ? selected.delete(t.id) : selected.add(t.id));
-  }
-  renderTests();
-});
-$('#selectAll').addEventListener('change', e => { selected = new Set(e.target.checked ? tests.map(t => t.id) : []); renderTests(); });
-$('#filter').addEventListener('input', renderTests);
-$('#refresh').addEventListener('click', () => loadTests(true));
-
-// ---------- Running ----------
-function syncButtons() {
-  const busy = !!liveRunId;
-  $('#runSelected').disabled = busy || !selected.size;
-  $('#runAll').disabled = busy || !tests.length;
-  $('#runFailed').disabled = busy || !failedIds().length;
-  $('#stop').disabled = !busy;
-  const live = $('#live');
-  live.className = 'pill' + (busy ? ' running' : '');
-  live.textContent = busy ? 'Running…' : 'Idle';
-}
-const failedIds = () => viewed ? Object.values(viewed.tests).filter(t => t.state === 'failed' || t.state === 'flaky').map(t => t.id).filter(id => tests.some(t => t.id === id)) : [];
-
+const failedIds = () => S.tests.filter(t => { const r = lastResult(t.id); return r && isFail(r); }).map(t => t.id);
 async function run(ids) {
-  try {
-    await api('/api/run', { ids, workers: Number($('#workers').value) || 1, headed: $('#headed').checked });
-  } catch (e) { alertBanner(e.message); }
+  try { await api('/api/run', { ids, workers: Number($('#workers').value) || 1, headed: $('#headed').checked }); }
+  catch (e) { notice(e.message); }
 }
-function alertBanner(msg) { $('#listError').textContent = msg; $('#listError').hidden = false; setTimeout(() => $('#listError').hidden = true, 6000); }
-$('#runSelected').addEventListener('click', () => run([...selected]));
+let noticeTimer;
+function notice(msg) { $('#notice').textContent = msg; $('#notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => $('#notice').hidden = true, 7000); }
+$('#runSelected').addEventListener('click', () => run([...S.selected]));
 $('#runAll').addEventListener('click', () => run([]));
 $('#runFailed').addEventListener('click', () => run(failedIds()));
-$('#stop').addEventListener('click', () => api('/api/stop', {}).catch(e => alertBanner(e.message)));
+$('#stop').addEventListener('click', () => api('/api/stop', {}).catch(e => notice(e.message)));
 
-// ---------- Run history ----------
-async function loadRuns() {
-  runs = await api('/api/runs').catch(() => []);
-  renderRuns();
+function counts(r) {
+  const c = { passed: 0, failed: 0, flaky: 0, skipped: 0, running: 0, queued: 0, stopped: 0 };
+  for (const t of Object.values(r.tests)) c[t.state] = (c[t.state] || 0) + 1;
+  return c;
 }
-function renderRuns() {
-  if (!runs.length) { $('#runs').innerHTML = '<div class="empty">No runs yet.</div>'; return; }
-  $('#runs').innerHTML = runs.map(r => {
-    const c = r.counts;
-    const parts = [c.passed && `${c.passed} passed`, c.failed && `${c.failed} failed`, c.flaky && `${c.flaky} flaky`, c.skipped && `${c.skipped} skipped`].filter(Boolean).join(' · ') || `${r.total} tests`;
-    return `<div class="run-item ${viewed?.id === r.id ? 'active' : ''}" data-run="${esc(r.id)}">
-      <span class="dot ${esc(r.status)}"></span><span class="when">${esc(fmtTime(r.startedAt))}</span>
-      <span class="pill ${esc(r.status)}">${esc(STATE_LABEL[r.status] || r.status)}</span>
-      <span class="meta">${esc(parts)} · ${r.workers} worker${r.workers > 1 ? 's' : ''}${r.endedAt ? ' · ' + fmtDur(r.endedAt - r.startedAt) : ''}</span>
-    </div>`;
-  }).join('');
+const barHtml = (c, total) => ['passed', 'flaky', 'failed', 'skipped', 'stopped', 'running'].map(s => c[s] ? `<span class="${s}" style="width:${c[s] / (total || 1) * 100}%"></span>` : '').join('');
+
+function renderChrome() {
+  const busy = !!S.liveId;
+  $('#runSelected').disabled = busy || !S.selected.size;
+  $('#runSelected span').textContent = S.selected.size && S.selected.size !== S.tests.length ? `Run ${S.selected.size} selected` : 'Run selected';
+  $('#runAll').disabled = busy || !S.tests.length;
+  $('#runFailed').disabled = busy || !failedIds().length;
+  // Run controls belong to the Tests view; the live strip (with Stop) shows on every view.
+  $('#controls').hidden = S.view !== 'tests';
+  $('#back').hidden = S.view !== 'run';
+  const l = live();
+  $('#liveStrip').hidden = !l;
+  if (l) {
+    const c = counts(l), total = Object.keys(l.tests).length, done = total - c.running - c.queued;
+    const starting = !done && !c.running;
+    $('#liveText').textContent = starting ? `Starting Playwright and the app server… ${fmtDur(Date.now() - l.startedAt)}` : `${done}/${total} done${c.failed ? ` · ${c.failed} failed` : ''} · ${fmtDur(Date.now() - l.startedAt)}`;
+    $('#liveBar').innerHTML = barHtml(c, total);
+    $('#liveLink').hidden = S.view === 'run' && S.viewedId === S.liveId;
+    $('#liveLink').href = '#results=' + l.id;
+  }
+  // Sidebar: Results stays highlighted while viewing a single run.
+  document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === (S.view === 'run' ? 'results' : S.view)));
+  $('#navTests').textContent = S.tests.length || '';
+  $('#navResults').innerHTML = S.liveId ? '<span class="dot running"></span>' : S.runs.length || '';
+  // Title.
+  const r = viewed();
+  const titles = { tests: ['Tests', S.loading && !S.tests.length ? 'Loading…' : `${S.selected.size} of ${S.tests.length} selected`], run: ['Results', r ? fmtTime(r.startedAt) : 'Run not found'], results: ['Results', S.loading && !S.runs.length ? 'Loading…' : `${S.runs.length} recent runs`] };
+  $('#viewTitle').textContent = titles[S.view][0];
+  $('#viewSub').textContent = titles[S.view][1];
 }
-$('#runs').addEventListener('click', async e => {
-  const item = e.target.closest('[data-run]');
-  if (!item) return;
-  open.clear();
-  showRun(await api('/api/runs/' + item.dataset.run));
+
+// ---------- Routing ----------
+async function route() {
+  const hash = location.hash.slice(1);
+  // #tests, #results (all runs) or #results=<id> (one run).
+  const [name, id] = hash.split('=');
+  S.view = name === 'results' ? (id ? 'run' : 'results') : 'tests';
+  if (S.view === 'run' && id !== S.viewedId) await openRun(id);
+  mount();
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.view === 'run' && !e.target.closest('input, textarea, select')) location.hash = 'results';
 });
+async function openRun(id) {
+  if (!S.cache.has(id) || (id !== S.liveId && !S.cache.get(id).endedAt)) {
+    try { S.cache.set(id, await api('/api/runs/' + id)); } catch { S.viewedId = null; return; }
+  }
+  if (S.viewedId !== id) { S.picked = null; S.userPicked = false; S.detailTab = null; }
+  S.viewedId = id;
+}
+window.addEventListener('hashchange', route);
 
-function showRun(r) {
-  viewed = r;
-  if (r) store.set('viewedRun', r.id);
-  // Expand failures by default so the error is visible without clicking.
-  if (r) for (const t of Object.values(r.tests)) if (t.state === 'failed' && !open.has('seen:' + r.id + t.id)) { open.add(t.id); open.add('seen:' + r.id + t.id); }
-  renderRuns(); renderTests(); renderRun();
+// ---------- Views ----------
+function mount() {
+  const v = $('#view');
+  if (S.view === 'tests') v.innerHTML = `
+    <div id="listError" class="banner" hidden></div>
+    <section class="panel">
+      <div class="panel-head">
+        <input id="filter" class="search" type="search" placeholder="Filter tests…" value="${esc(S.filter)}">
+        <span class="spacer"></span>
+        <button id="selFailed" class="btn small" title="Select tests whose latest result was a failure">Select failed</button>
+        <button id="selNone" class="btn small">Clear</button>
+        <button id="refresh" class="btn small" title="Re-scan test files">Refresh</button>
+      </div>
+      <div class="rows" id="testRows"></div>
+    </section>`;
+  else if (S.view === 'run') v.innerHTML = `<section class="panel" id="runHead"></section><div id="runBody"></div>`;
+  else v.innerHTML = `<section class="panel"><div class="rows" id="resRows"></div></section>`;
+  bindView();
+  update();
 }
 
-// ---------- Run view ----------
+function update() {
+  renderChrome();
+  if (S.view === 'tests') renderTests();
+  else if (S.view === 'run') renderRun();
+  else renderResultsList();
+}
+
+let renderQueued = false;
+const schedule = () => { if (renderQueued) return; renderQueued = true; requestAnimationFrame(() => { renderQueued = false; update(); }); };
+
+function bindView() {
+  if (S.view === 'tests') {
+    $('#filter').addEventListener('input', e => { S.filter = e.target.value; renderTests(); });
+    $('#refresh').addEventListener('click', () => loadTests(true));
+    $('#selNone').addEventListener('click', () => { S.selected.clear(); saveSel(); update(); });
+    $('#selFailed').addEventListener('click', () => { S.selected = new Set(failedIds()); saveSel(); update(); });
+    $('#testRows').addEventListener('click', e => {
+      if (e.target.closest('a')) return;
+      const row = e.target.closest('tr[data-id], tr[data-file], th.check');
+      if (!row) return;
+      if (row.matches('th.check')) { const all = S.tests.every(t => S.selected.has(t.id)); S.selected = new Set(all ? [] : S.tests.map(t => t.id)); }
+      else if (row.dataset.id) S.selected.has(row.dataset.id) ? S.selected.delete(row.dataset.id) : S.selected.add(row.dataset.id);
+      else { const list = S.tests.filter(t => t.file === row.dataset.file); const on = list.every(t => S.selected.has(t.id)); list.forEach(t => on ? S.selected.delete(t.id) : S.selected.add(t.id)); }
+      saveSel(); update();
+    });
+  }
+  if (S.view === 'run') {
+    $('#runBody').addEventListener('click', e => {
+      const b = e.target.closest('[data-rtab]'); if (b) { S.runTab = b.dataset.rtab; renderRun(); return; }
+      const f = e.target.closest('[data-filter]'); if (f) { S.resultFilter = f.dataset.filter; renderRun(); return; }
+      const it = e.target.closest('[data-pick]'); if (it) { S.picked = it.dataset.pick; S.userPicked = true; S.detailTab = null; renderRun(); return; }
+      const d = e.target.closest('[data-dtab]'); if (d) { S.detailTab = d.dataset.dtab; renderRun(); return; }
+      const tr = e.target.closest('[data-trace]'); if (tr) api('/api/trace', { runId: S.viewedId, file: tr.dataset.trace }).catch(err => notice(err.message));
+    });
+    $('#runBody').addEventListener('keydown', e => {
+      if (!['ArrowDown', 'ArrowUp'].includes(e.key) || !e.target.closest('.list')) return;
+      e.preventDefault();
+      const ids = shownResults().map(t => t.id), i = ids.indexOf(S.picked);
+      S.picked = ids[Math.max(0, Math.min(ids.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))]; S.userPicked = true; S.detailTab = null;
+      renderRun(); $(`[data-pick="${CSS.escape(S.picked)}"]`)?.focus();
+    });
+  }
+  if (S.view === 'results') $('#resRows').addEventListener('click', e => { const tr = e.target.closest('tr[data-run]'); if (tr) location.hash = 'results=' + tr.dataset.run; });
+}
+const saveSel = () => store.set('selected', [...S.selected]);
+
+// ---------- Tests ----------
+async function loadTests(refresh) {
+  try {
+    const data = refresh ? await api('/api/tests/refresh', {}) : await api('/api/tests');
+    S.tests = data.tests;
+    const ids = new Set(S.tests.map(t => t.id));
+    S.selected = new Set([...S.selected].filter(id => ids.has(id)));
+    if (S.firstVisit) { S.tests.forEach(t => S.selected.add(t.id)); S.firstVisit = false; }
+    saveSel();
+    if ($('#listError')) $('#listError').hidden = true;
+  } catch (e) {
+    S.tests = [];
+    if ($('#listError')) { $('#listError').textContent = 'Could not list tests:\n' + e.message; $('#listError').hidden = false; }
+    else notice('Could not list tests: ' + e.message);
+  }
+  update();
+}
+
+function renderTests() {
+  const el = $('#testRows'); if (!el) return;
+  const q = S.filter.trim().toLowerCase();
+  const visible = S.tests.filter(t => !q || (t.file + ' ' + t.titlePath.join(' ')).toLowerCase().includes(q));
+  if (!visible.length) { el.innerHTML = `<div class="empty">${S.tests.length ? 'No tests match the filter.' : S.loading ? 'Loading tests…' : 'No tests found.'}</div>`; return; }
+  const byFile = new Map();
+  for (const t of visible) (byFile.get(t.file) || byFile.set(t.file, []).get(t.file)).push(t);
+  const allOn = S.tests.every(t => S.selected.has(t.id)), someOn = S.selected.size > 0;
+  el.innerHTML = `<table>
+    <thead><tr><th class="check" title="Select all" style="cursor:pointer"><input type="checkbox" ${allOn ? 'checked' : ''} data-ind="${!allOn && someOn}"></th><th>Test</th><th>Last result</th><th class="num">Duration</th></tr></thead>
+    <tbody>${[...byFile].map(([file, list]) => {
+      const n = list.filter(t => S.selected.has(t.id)).length;
+      // A file heading only helps when it groups several tests; each row already shows its file.
+      return (list.length < 2 ? '' : `<tr class="file-row" data-file="${esc(file)}"><td class="check"><input type="checkbox" ${n === list.length ? 'checked' : ''} data-ind="${n > 0 && n < list.length}"></td><td colspan="3">${esc(file)} <span class="loc">· ${list.length} tests</span></td></tr>`) +
+        list.map(t => {
+          const res = lastResult(t.id);
+          return `<tr data-id="${esc(t.id)}">
+            <td class="check"><input type="checkbox" ${S.selected.has(t.id) ? 'checked' : ''}></td>
+            <td><div>${esc(t.titlePath.join(' › '))}</div><div class="loc mono">${esc(t.file)}:${t.line}</div></td>
+            <td>${res ? `<a class="last" href="#results=${esc(res.runId || S.liveId)}" title="Open this run"><span class="dot ${esc(res.state)}"></span>${esc(LABEL[res.state] || res.state)}</a>` : '<span class="loc">Not run yet</span>'}</td>
+            <td class="num">${res ? fmtDur(res.duration) : ''}</td>
+          </tr>`;
+        }).join('');
+    }).join('')}</tbody></table>`;
+  el.querySelectorAll('[data-ind=true]').forEach(c => c.indeterminate = true);
+}
+
+// ---------- Run ----------
+function shownResults() {
+  const r = viewed(); if (!r) return [];
+  return Object.values(r.tests)
+    .filter(t => S.resultFilter === 'all' || (S.resultFilter === 'failed' ? isFail(t) : t.state === 'passed'))
+    .sort((a, b) => (ORDER[a.state] - ORDER[b.state]) || a.file.localeCompare(b.file) || a.line - b.line);
+}
+
 function renderRun() {
-  const r = viewed;
-  if (!r) return;
-  const list = Object.values(r.tests);
-  const counts = { passed: 0, failed: 0, flaky: 0, skipped: 0, running: 0, queued: 0, stopped: 0 };
-  list.forEach(t => counts[t.state] = (counts[t.state] || 0) + 1);
-  const total = list.length || 1;
+  const head = $('#runHead'), body = $('#runBody'); if (!head) return;
+  const r = viewed();
+  if (!r && S.loading) { head.innerHTML = '<div class="empty">Loading…</div>'; body.innerHTML = ''; return; }
+  if (!r) { head.innerHTML = `<div class="empty">This run could not be found. <a href="#results">Back to all results</a></div>`; body.innerHTML = ''; return; }
+  const list = Object.values(r.tests), c = counts(r), total = list.length;
   const elapsed = (r.endedAt || Date.now()) - r.startedAt;
-  $('#summaryPanel').innerHTML = `<div class="summary">
-    <div class="summary-top">
-      <span class="title">${esc(fmtTime(r.startedAt))}</span>
-      <span class="pill ${esc(r.status)}">${esc(STATE_LABEL[r.status] || r.status)}</span>
+  head.innerHTML = `<div class="run-head">
+    <div class="run-title">
+      <span class="pill ${esc(r.status)}"><span class="dot ${esc(r.status)}"></span>${esc(LABEL[r.status] || r.status)}</span>
+      <span class="when">${esc(fmtTime(r.startedAt))}</span>
       <span class="cmd mono">${esc(r.command || '')}</span>
     </div>
-    <div class="tiles">
-      <div class="tile"><div class="label">Tests</div><div class="value">${list.length}</div></div>
-      <div class="tile passed"><div class="label">Passed</div><div class="value">${counts.passed}</div></div>
-      <div class="tile failed"><div class="label">Failed</div><div class="value">${counts.failed}</div></div>
-      ${counts.flaky ? `<div class="tile flaky"><div class="label">Flaky</div><div class="value">${counts.flaky}</div></div>` : ''}
-      <div class="tile"><div class="label">Skipped</div><div class="value">${counts.skipped + counts.stopped}</div></div>
-      <div class="tile"><div class="label">Duration</div><div class="value" id="elapsed">${fmtDur(elapsed)}</div></div>
+    <div class="stats">
+      <div class="stat"><div class="label">Tests</div><div class="value">${total}</div></div>
+      <div class="stat passed"><div class="label">Passed</div><div class="value">${c.passed}</div></div>
+      <div class="stat failed"><div class="label">Failed</div><div class="value">${c.failed}</div></div>
+      ${c.flaky ? `<div class="stat flaky"><div class="label">Flaky</div><div class="value">${c.flaky}</div></div>` : ''}
+      ${c.skipped + c.stopped ? `<div class="stat"><div class="label">Skipped</div><div class="value">${c.skipped + c.stopped}</div></div>` : ''}
+      <div class="stat"><div class="label">Duration</div><div class="value">${fmtDur(elapsed)}</div></div>
     </div>
-    <div class="bar">${['passed', 'flaky', 'failed', 'skipped', 'stopped', 'running'].map(s => counts[s] ? `<span class="${s}" style="width:${counts[s] / total * 100}%"></span>` : '').join('')}</div>
-    ${(r.errors || []).map(e => `<pre class="error">${esc(e.message || e.stack)}</pre>`).join('')}
+    <div class="bar">${barHtml(c, total)}</div>
   </div>`;
 
-  $('#resultsPanel').hidden = false;
-  const order = { failed: 0, flaky: 1, running: 2, queued: 3, passed: 4, skipped: 5, stopped: 6 };
-  const shown = list
-    .filter(t => tab === 'all' || (tab === 'failed' ? ['failed', 'flaky'].includes(t.state) : t.state === 'passed'))
-    .sort((a, b) => (order[a.state] - order[b.state]) || a.file.localeCompare(b.file) || a.line - b.line);
-  $('#results').innerHTML = shown.length ? shown.map(renderResult).join('') : `<div class="empty">Nothing to show.</div>`;
+  // Keep the detail panel and console scroll positions across live re-renders.
+  const detailScroll = body.querySelector('.detail-body')?.scrollTop || 0;
+  const logEl = body.querySelector('#log');
+  const stick = !logEl || logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
+  const errs = r.errors || [];
+  const tabs = `<div class="tabs" style="padding:0;margin-bottom:12px">
+    <button data-rtab="results" class="${S.runTab === 'results' ? 'active' : ''}">Tests <span class="n">${total}</span></button>
+    <button data-rtab="console" class="${S.runTab === 'console' ? 'active' : ''}">Console</button>
+    ${errs.length ? `<button data-rtab="errors" class="${S.runTab === 'errors' ? 'active' : ''}">Run errors <span class="n">${errs.length}</span></button>` : ''}
+  </div>`;
 
-  $('#logPanel').hidden = !r.log;
-  const logEl = $('#log');
-  const stick = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 20;
-  logEl.textContent = r.log || '';
-  if (stick) logEl.scrollTop = logEl.scrollHeight;
-  syncButtons();
+  if (S.runTab === 'console') {
+    body.innerHTML = tabs + `<section class="panel console"><pre id="log" class="mono">${esc(r.log || 'No output yet.')}</pre></section>`;
+    const l = $('#log'); if (stick) l.scrollTop = l.scrollHeight; else l.scrollTop = logEl.scrollTop;
+    return;
+  }
+  if (S.runTab === 'errors' && errs.length) {
+    body.innerHTML = tabs + `<section class="panel" style="padding:16px;display:grid;gap:10px">${errs.map(e => `<pre class="error mono">${esc(e.message || e.stack)}</pre>`).join('')}</section>`;
+    return;
+  }
+
+  const shown = shownResults();
+  // During a live run, follow the first failure (or the running test) until the user picks one.
+  const follow = r.id === S.liveId && !S.userPicked;
+  if (follow || !S.picked || !r.tests[S.picked] || !shown.some(t => t.id === S.picked)) {
+    const next = (shown.find(isFail) || (follow && shown.find(t => t.state === 'running')) || shown[0])?.id || null;
+    if (next !== S.picked) { S.picked = next; S.detailTab = null; }
+  }
+  const nFail = list.filter(isFail).length;
+  body.innerHTML = tabs + `<div class="split">
+    <section class="panel">
+      <div class="panel-head">
+        <div class="seg">
+          <button data-filter="all" class="${S.resultFilter === 'all' ? 'active' : ''}">All</button>
+          <button data-filter="failed" class="${S.resultFilter === 'failed' ? 'active' : ''}">Failed${nFail ? ` (${nFail})` : ''}</button>
+          <button data-filter="passed" class="${S.resultFilter === 'passed' ? 'active' : ''}">Passed</button>
+        </div>
+      </div>
+      <div class="list">${shown.length ? shown.map(t => `
+        <button class="item ${t.id === S.picked ? 'active' : ''}" data-pick="${esc(t.id)}">
+          <span class="dot ${esc(t.state)}" title="${esc(LABEL[t.state])}"></span>
+          <span class="name">${esc(t.titlePath.join(' › '))}</span>
+          <span class="dur">${fmtDur(t.duration)}</span>
+          <span class="meta"><span class="loc mono">${esc(t.file)}:${t.line}</span>${t.steps?.length ? `<span class="ticks" title="${esc(t.steps.map(s => s.title + ': ' + (s.state || '')).join('\n'))}">${t.steps.map(s => `<i class="${esc(s.state)}"></i>`).join('')}</span>` : ''}</span>
+        </button>`).join('') : '<div class="empty">Nothing to show.</div>'}</div>
+    </section>
+    ${S.picked ? renderDetail(r.tests[S.picked]) : '<section class="panel"><div class="empty">Select a test to see details.</div></section>'}
+  </div>`;
+  const db = body.querySelector('.detail-body'); if (db) db.scrollTop = detailScroll;
 }
 
-function renderResult(t) {
-  const isOpen = open.has(t.id);
-  const hasDetail = t.errors?.length || t.attachments?.length || ['failed', 'flaky'].includes(t.state);
-  const steps = t.steps?.length ? `<div class="steps">${t.steps.map(s => `<span class="step ${esc(s.state)}" title="${esc(fmtDur(s.duration))}">${esc(s.title)}</span>`).join('')}</div>` : '';
-  return `<div class="result ${isOpen ? 'open' : ''}" data-result="${esc(t.id)}">
-    <div class="result-head">
-      <span class="chev">${hasDetail ? '▸' : ''}</span>
-      <span class="pill ${esc(t.state)}"><span class="dot ${esc(t.state)}"></span>${esc(STATE_LABEL[t.state] || t.state)}</span>
-      <span class="name">${esc(t.titlePath.join(' › '))}</span>
-      <span class="loc mono">${esc(t.file)}:${t.line}</span>
-      <span class="dur">${t.retry ? `retry ${t.retry} · ` : ''}${fmtDur(t.duration)}</span>
-      ${steps}
-    </div>
-    ${isOpen && hasDetail ? renderDetail(t) : ''}
-  </div>`;
+function detailTabs(t) {
+  const shots = (t.attachments || []).filter(a => a.file && a.contentType?.startsWith('image/'));
+  const tabs = [];
+  if (t.errors?.length) tabs.push(['error', 'Error']);
+  if (t.steps?.length) tabs.push(['steps', 'Steps', t.steps.length]);
+  if (t.attachments?.length) tabs.push(['artifacts', 'Artifacts', t.attachments.length]);
+  if (isFail(t)) tabs.push(['ai', 'AI analysis']);
+  return { tabs, shots };
 }
 
 function renderDetail(t) {
-  const fileUrl = f => `/api/runs/${encodeURIComponent(viewed.id)}/files/${encodeURIComponent(f)}`;
+  const { tabs, shots } = detailTabs(t);
+  if (!tabs.some(([k]) => k === S.detailTab)) S.detailTab = tabs[0]?.[0] || null;
+  const fileUrl = f => `/api/runs/${encodeURIComponent(S.viewedId)}/files/${encodeURIComponent(f)}`;
   const failedStep = t.steps?.find(s => s.state === 'failed');
-  const shots = (t.attachments || []).filter(a => a.file && a.contentType?.startsWith('image/'));
-  const others = (t.attachments || []).filter(a => !shots.includes(a));
-  const errors = (t.errors || []).map(e => `
-    ${e.location ? `<div class="loc mono">at ${esc(e.location.file.split(/[\\/]/).slice(-2).join('/'))}:${e.location.line}:${e.location.column}</div>` : ''}
-    <pre class="error mono">${esc(e.message || e.value)}</pre>
-    ${e.snippet ? `<pre class="mono">${esc(e.snippet)}</pre>` : ''}`).join('');
-  const links = others.map(a => {
-    if (a.name === 'trace' && a.file) return `<button class="btn small" data-trace="${esc(a.file)}">Open trace</button>`;
-    if (a.file) return `<a class="btn small" href="${fileUrl(a.file)}" target="_blank" rel="noopener">${esc(a.name)}</a>`;
-    return '';
-  }).join('');
+  let content = '';
+  if (S.detailTab === 'error') {
+    content = `${failedStep ? `<div class="callout"><span class="dot failed"></span>Failed in step “${esc(failedStep.title)}”</div>` : ''}
+      ${t.errors.map(e => `<div>
+        ${e.location ? `<div class="section-label mono">${esc(e.location.file.split(/[\\/]/).slice(-2).join('/'))}:${e.location.line}:${e.location.column}</div>` : ''}
+        <pre class="error mono">${esc(e.message || e.value)}</pre>
+        ${e.snippet ? `<pre class="mono snippet" style="margin-top:8px">${esc(e.snippet)}</pre>` : ''}
+      </div>`).join('')}
+      ${shots[0] ? `<div><div class="section-label">Screenshot at failure</div><a class="shot" style="max-width:420px" href="${fileUrl(shots[0].file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(shots[0].file)}" alt="Screenshot at failure"></a></div>` : ''}`;
+  } else if (S.detailTab === 'steps') {
+    content = `<div class="steps">${t.steps.map(s => `<div class="step">
+      <span class="dot ${esc(s.state)} ic"></span><span class="t">${esc(s.title)}</span><span class="d">${fmtDur(s.duration)}</span>
+      ${s.error ? `<div class="msg">${esc((s.error.message || '').split('\n')[0])}</div>` : ''}
+    </div>`).join('')}</div>`;
+  } else if (S.detailTab === 'artifacts') {
+    const others = (t.attachments || []).filter(a => !shots.includes(a));
+    content = `${shots.length ? `<div class="shots">${shots.map(a => `<a class="shot" href="${fileUrl(a.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(a.file)}" alt="${esc(a.name)}"></a>`).join('')}</div>` : ''}
+      ${others.length ? `<div class="links">${others.map(a => a.name === 'trace' && a.file ? `<button class="btn small" data-trace="${esc(a.file)}">Open trace viewer</button>` : a.file ? `<a class="btn small" href="${fileUrl(a.file)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : '').join('')}</div>` : ''}`;
+  } else if (S.detailTab === 'ai') {
+    content = renderAnalysis(t);
+  }
   const notes = (t.annotations || []).filter(a => a.description).map(a => `<div class="warn">${esc(a.type)}: ${esc(a.description)}</div>`).join('');
-  return `<div class="result-body">
-    ${failedStep ? `<div><div class="section-label">Failed step</div>${esc(failedStep.title)}</div>` : ''}
-    ${errors ? `<div><div class="section-label">Error</div>${errors}</div>` : ''}
-    ${notes}
-    ${shots.length || links ? `<div><div class="section-label">Artifacts</div><div class="artifacts">
-      ${shots.map(a => `<a class="shot" href="${fileUrl(a.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(a.file)}" alt="${esc(a.name)}"></a>`).join('')}
-      <div class="links">${links}</div></div></div>` : ''}
-    ${['failed', 'flaky'].includes(t.state) ? renderAnalysis(t) : ''}
-  </div>`;
+  return `<section class="panel detail">
+    <div class="detail-head">
+      <h2>${esc(t.titlePath.join(' › '))}</h2>
+      <div class="row">
+        <span class="pill ${esc(t.state)}"><span class="dot ${esc(t.state)}"></span>${esc(LABEL[t.state] || t.state)}</span>
+        <span class="mono">${esc(t.file)}:${t.line}</span>
+        ${t.duration != null ? `<span>${fmtDur(t.duration)}</span>` : ''}
+        ${t.retry ? `<span>retry ${t.retry}</span>` : ''}
+      </div>
+      ${notes}
+    </div>
+    ${tabs.length ? `<div class="tabs">${tabs.map(([k, label, n]) => `<button data-dtab="${k}" class="${S.detailTab === k ? 'active' : ''}">${label}${n ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</div>
+    <div class="detail-body">${content}</div>` : `<div class="detail-body"><div class="empty">${t.state === 'running' ? 'Running…' : t.state === 'queued' ? 'Waiting to run.' : 'No details recorded.'}</div></div>`}
+  </section>`;
 }
 
 // Placeholder for AI failure analysis. Each test result carries an `analysis` field
@@ -430,68 +619,63 @@ function renderAnalysis(t) {
   if (a) return `<div class="ai"><div class="ai-head">AI analysis <span class="badge">${esc(a.category || '')}</span></div>
     <p><b>Likely cause:</b> ${esc(a.cause)}</p><p><b>Suggested fix:</b> ${esc(a.fix)}</p></div>`;
   return `<div class="ai"><div class="ai-head">AI analysis <span class="badge">Not configured</span></div>
-    <p>Suggested cause and fix for this failure will appear here, for example an expected UI change to accept or an app bug with a drafted report.</p></div>`;
+    <p>The suggested cause and fix for this failure will appear here, for example an expected UI change to accept, or an app bug with a drafted report.</p></div>`;
 }
 
-$('#results').addEventListener('click', e => {
-  const trace = e.target.closest('[data-trace]');
-  if (trace) { api('/api/trace', { runId: viewed.id, file: trace.dataset.trace }).catch(err => alertBanner(err.message)); return; }
-  if (e.target.closest('.result-body')) return;
-  const row = e.target.closest('[data-result]');
-  if (!row) return;
-  const id = row.dataset.result;
-  open.has(id) ? open.delete(id) : open.add(id);
-  renderRun();
-});
-$('#tabs').addEventListener('click', e => {
-  const b = e.target.closest('[data-tab]');
-  if (!b) return;
-  tab = b.dataset.tab;
-  $('#tabs').querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === b));
-  renderRun();
-});
+// ---------- History ----------
+async function loadRuns() { S.runs = await api('/api/runs').catch(() => []); update(); }
+function renderResultsList() {
+  const el = $('#resRows'); if (!el) return;
+  if (!S.runs.length) { el.innerHTML = `<div class="empty">${S.loading ? 'Loading…' : 'No runs yet. Pick tests on the <a href="#tests">Tests</a> page and run them.'}</div>`; return; }
+  el.innerHTML = `<table><thead><tr><th>Status</th><th>Started</th><th>Results</th><th></th><th class="num">Workers</th><th class="num">Duration</th></tr></thead><tbody>${S.runs.map(r => {
+    const c = r.counts, parts = [c.passed && `${c.passed} passed`, c.failed && `<span style="color:var(--fail)">${c.failed} failed</span>`, c.flaky && `${c.flaky} flaky`, (c.skipped || c.stopped) && `${(c.skipped || 0) + (c.stopped || 0)} skipped`].filter(Boolean).join(' · ') || `${r.total} tests`;
+    return `<tr data-run="${esc(r.id)}" class="${r.id === S.liveId ? 'live' : ''}">
+      <td><span class="pill ${esc(r.status)}"><span class="dot ${esc(r.status)}"></span>${esc(LABEL[r.status] || r.status)}</span></td>
+      <td><div>${esc(fmtAgo(r.startedAt))}</div><div class="loc">${esc(fmtTime(r.startedAt))}</div></td>
+      <td>${parts}</td>
+      <td><div class="bar hist-bar">${barHtml(c, r.total)}</div></td>
+      <td class="num">${r.workers}</td>
+      <td class="num">${r.endedAt ? fmtDur(r.endedAt - r.startedAt) : '…'}</td>
+    </tr>`;
+  }).join('')}</tbody></table>`;
+}
 
 // ---------- Live updates ----------
-let renderQueued = false;
-const scheduleRender = () => { if (renderQueued) return; renderQueued = true; requestAnimationFrame(() => { renderQueued = false; renderRun(); renderTests(); }); };
-
 function connect() {
   const es = new EventSource('/api/events');
+  es.onopen = () => $('#conn').innerHTML = '<span class="dot passed"></span>Connected';
+  es.onerror = () => $('#conn').innerHTML = '<span class="dot failed"></span>Disconnected, retrying…';
   es.onmessage = ({ data }) => {
     const e = JSON.parse(data);
     if (e.type === 'runStart') {
-      liveRunId = e.run.id; open.clear();
-      showRun(e.run); loadRuns();
-    } else if (e.type === 'update' && viewed?.id === e.runId) {
-      if (e.test) viewed.tests[e.test.id] = e.test;
-      if (e.test?.state === 'failed') open.add(e.test.id);
-      viewed.errors = e.errors; viewed.status = e.status;
-      scheduleRender();
-    } else if (e.type === 'log' && viewed?.id === e.runId) {
-      viewed.log = (viewed.log || '') + e.text;
-      scheduleRender();
+      S.cache.set(e.run.id, e.run); S.liveId = e.run.id;
+      loadRuns();
+      location.hash = 'results=' + e.run.id;
+    } else if (e.type === 'update') {
+      const r = S.cache.get(e.runId); if (!r) return;
+      if (e.test) r.tests[e.test.id] = e.test;
+      r.errors = e.errors; r.status = e.status;
+      schedule();
+    } else if (e.type === 'log') {
+      const r = S.cache.get(e.runId); if (!r) return;
+      r.log = (r.log || '') + e.text;
+      if (S.view === 'run' && S.runTab === 'console' && S.viewedId === e.runId) schedule();
     } else if (e.type === 'runEnd') {
-      liveRunId = null;
-      if (!viewed || viewed.id === e.run.id) showRun(e.run);
+      S.cache.set(e.run.id, e.run); S.liveId = null;
       loadRuns();
     }
   };
-  es.onerror = () => { $('#live').textContent = 'Disconnected'; };
-  es.onopen = () => syncButtons();
 }
-
-setInterval(() => { if (liveRunId && viewed?.id === liveRunId && $('#elapsed')) $('#elapsed').textContent = fmtDur(Date.now() - viewed.startedAt); }, 1000);
+setInterval(() => { if (S.liveId) renderChrome(); }, 1000);
 
 (async () => {
   connect();
+  // Show the requested view immediately; listing tests takes a few seconds while Playwright scans files.
+  S.loading = true; route();
   const [{ current }] = await Promise.all([api('/api/state').catch(() => ({})), loadTests(), loadRuns()]);
-  if (current) { liveRunId = current.id; showRun(current); }
-  else {
-    const id = store.get('viewedRun', null);
-    const target = runs.find(r => r.id === id) || runs[0];
-    if (target) showRun(await api('/api/runs/' + target.id).catch(() => null));
-  }
-  syncButtons();
+  if (current) { S.cache.set(current.id, current); S.liveId = current.id; }
+  S.loading = false;
+  await route();
 })();
 </script>
 </body>
