@@ -33,7 +33,7 @@ npm run dev
 
 Restart an existing app server instead of starting a second one. Open http://localhost:5173 and choose Continue with Google. Use the same hostname throughout the app session so the OAuth cookie can be checked. First-time local users should complete their profile. Accounts and roles are separate from production.
 
-Google still requires internet access. Local email accounts remain the preferred choice for automated Cypress tests.
+Google still requires internet access. Local email accounts remain the preferred choice for automated Playwright tests.
 
 If you haven't supplied credentials yet, change only `[auth.external.google]`'s `enabled` to `false` to continue using local email login. Missing credentials with the provider enabled can prevent Supabase starting.
 

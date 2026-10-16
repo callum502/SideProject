@@ -16,3 +16,8 @@ cypress/screenshots/
 cypress/videos/
 cypress/downloads/
 cypress.env.json
+
+# Browser test artifacts can contain local credentials and session data.
+test-results/
+playwright-report/
+playwright/.auth/
