@@ -1,6 +1,6 @@
 ﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAuth } from '../auth.mjs';
+import { createAuth, confirmBypassCode } from '../auth.mjs';
 
 const env = { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'public-test-key' };
 function fixture({ confirmed = true } = {}) {
@@ -112,4 +112,30 @@ test('account deletion requires server credentials and targets only the verified
  assert.equal(JSON.parse(calls[2].options.body).target_user,'verified-user');
  assert.ok(calls[3].url.endsWith('/auth/v1/admin/users/verified-user'));assert.equal(calls[3].options.method,'DELETE');
  assert.equal(calls[3].options.headers.apikey,'server-only');
+});
+
+test('test confirmation code is refused in production and against hosted Supabase',()=>{
+ const local={SUPABASE_URL:'http://127.0.0.1:54321',SUPABASE_PUBLISHABLE_KEY:'public-test-key',E2E_CONFIRM_CODE:'0000'};
+ assert.equal(confirmBypassCode({...local,E2E_CONFIRM_CODE:''}),null);
+ assert.equal(confirmBypassCode(local),'0000');
+ assert.throws(()=>createAuth({env:{...local,NODE_ENV:'production'}}),/must not be set in production/);
+ assert.throws(()=>createAuth({env:{...local,RENDER:'true'}}),/must not be set in production/);
+ assert.throws(()=>createAuth({env:{...local,SUPABASE_URL:'https://test.supabase.co'}}),/local Supabase/);
+});
+
+test('test confirmation code exchanges for a real Supabase code; other codes pass through unchanged',async()=>{
+ const calls=[];
+ const auth=createAuth({env:{SUPABASE_URL:'http://127.0.0.1:54321',SUPABASE_PUBLISHABLE_KEY:'public-test-key',SUPABASE_SECRET_KEY:'server-only',E2E_CONFIRM_CODE:'0000'},fetchImpl:async(url,options)=>{
+  calls.push({url,body:options.body?JSON.parse(options.body):null,headers:options.headers});
+  return new Response(JSON.stringify(url.endsWith('/admin/generate_link')?{email_otp:'482913'}:{}),{status:200});
+ }});
+ await auth.confirm({email:' new@example.com ',code:'0000'});
+ const link=calls.find(call=>call.url.endsWith('/admin/generate_link'));
+ assert.deepEqual(link.body,{type:'signup',email:'new@example.com'});
+ assert.equal(link.headers.apikey,'server-only');
+ assert.deepEqual(calls.find(call=>call.url.endsWith('/verify')).body,{email:'new@example.com',token:'482913',type:'signup'});
+ calls.length=0;
+ await auth.confirm({email:'new@example.com',code:'123456'});
+ assert.ok(!calls.some(call=>call.url.endsWith('/admin/generate_link')));
+ assert.equal(calls.find(call=>call.url.endsWith('/verify')).body.token,'123456');
 });

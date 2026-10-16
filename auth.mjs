@@ -3,10 +3,32 @@ import { loadEnv } from 'vite';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 
+// Browser tests can confirm sign-ups with E2E_CONFIRM_CODE instead of reading the email.
+// Allowed only outside production and against local Supabase; any other setup refuses to start.
+export function confirmBypassCode(env) {
+  const code = env.E2E_CONFIRM_CODE;
+  if (!code) return null;
+  if (env.NODE_ENV === 'production' || env.RENDER === 'true') throw new Error('E2E_CONFIRM_CODE must not be set in production.');
+  let host;
+  try { host = new URL(env.SUPABASE_URL).hostname; } catch {}
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(host)) throw new Error('E2E_CONFIRM_CODE requires SUPABASE_URL to point to local Supabase.');
+  return code;
+}
+
 // Only the publishable key is needed. Passwords and tokens are never written to disk.
 export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''), ...process.env }, fetchImpl = fetch } = {}) {
   const base = env.SUPABASE_URL?.replace(/\/$/, '');
   const key = env.SUPABASE_PUBLISHABLE_KEY;
+  const testConfirmCode = confirmBypassCode(env);
+  // Ask Supabase for a fresh signup code for this email, as if read from the confirmation email.
+  async function testSignupCode(email) {
+    const adminKey = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!adminKey) throw fail('E2E_CONFIRM_CODE requires SUPABASE_SECRET_KEY.', 503);
+    const response = await fetchImpl(base + '/auth/v1/admin/generate_link', { method: 'POST', headers: { apikey: adminKey, Authorization: 'Bearer ' + adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'signup', email }), signal: AbortSignal.timeout(15000) });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || !data.email_otp) throw fail('Could not create a test confirmation code: ' + (data.msg || 'HTTP ' + response.status), 503);
+    return data.email_otp;
+  }
   async function request(route, values, token, method = 'POST') {
     if (!base || !key) throw fail('Account service is not configured. Set the Supabase environment variables and restart.', 503);
     let response;
@@ -115,7 +137,9 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     async confirm(values) {
       validateAccountInputs(values);
       if (typeof values.email !== 'string' || typeof values.code !== 'string') throw fail('Enter your email and confirmation code.');
-      const session = await request('/auth/v1/verify', { email: values.email.trim(), token: values.code.trim(), type: 'signup' });
+      const email = values.email.trim(), code = values.code.trim();
+      const token = testConfirmCode && code === testConfirmCode ? await testSignupCode(email) : code;
+      const session = await request('/auth/v1/verify', { email, token, type: 'signup' });
       // Confirmation is separate from logging in to the local app.
       if (session.access_token) await request('/auth/v1/logout?scope=local', {}, session.access_token);
       return { message: 'Email confirmed. You can now log in.' };

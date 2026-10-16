@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { login, createLocation, editItem, deleteItem, deleteLocationsWithPrefix, assertLocationExistsDB, assertLocationOldDetailsRemovedFromDB, assertLocationRemovedFromDB } from './testHelpers';
+import { login, createLocation, editItem, deleteItem } from './testHelpers';
+import { deleteLocationsWithPrefix, assertLocationExistsDB, assertLocationOldDetailsRemovedFromDB, assertLocationRemovedFromDB } from './apiTestHelpers';
 
 test('location CRUD', async ({ page }, info) => {
   // Keep cleanup scoped to the data created by this test.

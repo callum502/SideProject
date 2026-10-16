@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { login, createLocation, createBoulder, createProblem, editItem, deleteItem, deleteLocationsWithPrefix, assertProblemExistsDB, assertProblemOldDetailsRemovedFromDB, assertProblemRemovedFromDB } from './testHelpers';
+import { login, createLocation, createBoulder, createProblem, editItem, deleteItem } from './testHelpers';
+import { deleteLocationsWithPrefix, assertProblemExistsDB, assertProblemOldDetailsRemovedFromDB, assertProblemRemovedFromDB } from './apiTestHelpers';
 
 test('problem CRUD', async ({ page }, info) => {
   // Keep cleanup scoped to the data created by this test.

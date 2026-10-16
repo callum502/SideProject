@@ -12,6 +12,12 @@ if (!isLocal(env.SUPABASE_URL)) {
 }
 process.env.E2E_EMAIL = env.E2E_EMAIL || '';
 process.env.E2E_PASSWORD = env.E2E_PASSWORD || '';
+// Lets account tests confirm sign-ups without reading email. Only this test server gets it, and auth.mjs
+// refuses it outside local, non-production Supabase. Real codes are 6 digits, so 0000 cannot collide.
+process.env.E2E_CONFIRM_CODE = '0000';
+// Account cleanup removes leftover test accounts through the local Supabase admin API.
+process.env.E2E_SUPABASE_URL = env.SUPABASE_URL;
+process.env.E2E_ADMIN_KEY = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 export default defineConfig({
   testDir: './tests/e2e',
@@ -33,6 +39,6 @@ export default defineConfig({
     url: `${baseURL}/healthz`,
     reuseExistingServer: false,
     timeout: 60000,
-    env: { ...env, PORT: '5174', HOST: '127.0.0.1', NODE_ENV: 'development' },
+    env: { ...env, PORT: '5174', HOST: '127.0.0.1', NODE_ENV: 'development', E2E_CONFIRM_CODE: process.env.E2E_CONFIRM_CODE },
   },
 });

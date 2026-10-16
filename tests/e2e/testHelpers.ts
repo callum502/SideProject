@@ -1,43 +1,30 @@
 /*
- * Helper quick reference
+ * UI helper quick reference
+ * API/DB reads, assertions and cleanup are in apiTestHelpers.ts.
  *
  * locationName              Generate a unique name with a stable cleanup prefix.
- * login                     Sign in through the UI and verify success.
- * guide                     Read persisted guide data from the app API.
+ * login                     Sign in through the UI and verify success; defaults to the E2E account.
  * navigate                  Open Explore or a location, boulder or problem page.
  * createLocation            Create and verify a location; return its saved record.
  * createBoulder             Create and verify a boulder; return its saved record.
  * createProblem             Create and verify a problem; return its saved record.
  * editItem                  Edit the current item and verify its saved heading.
  * deleteItem                Confirm removal of the current item.
- * cleanup                   Delete locations matching a prefix; throws on failure.
- * deleteLocationsWithPrefix Run cleanup and report failures as warnings.
- *
- * assertLocationExistsDB - Verify location existence and fields through the API.
- *
- * assertLocationRemovedFromDB - Verify location deletion through the API.
- *
- * assertBoulderExistsDB - Verify boulder existence and fields through the API.
- *
- * assertBoulderRemovedFromDB - Verify boulder deletion through the API.
- *
- * assertProblemExistsDB - Verify problem existence and fields through the API.
- *
- * assertProblemRemovedFromDB - Verify problem deletion through the API.
- *
- * assertLocationOldDetailsRemovedFromDB - Verify each edited field no longer has its old value.
- *
- * assertBoulderOldDetailsRemovedFromDB - Verify each edited field no longer has its old value.
- *
- * assertProblemOldDetailsRemovedFromDB - Verify each edited field no longer has its old value.
+ * accountDetails            Generate unique sign-up values with a stable cleanup prefix.
+ * createAccount             Sign up, confirm with E2E_CONFIRM_CODE and log in; return the account.
+ * openProfile               Open the signed-in user's profile page from the account menu.
+ * editProfile               Edit display name, height and ape index from the profile page.
+ * deleteAccount             Delete the signed-in account through its confirmation dialog.
  *
  * Internal helpers
  * submit                    Submit a dialog and verify the save response.
  * fill                      Populate the active dialog's fields.
+ * fillProfile               Populate the sign-up or Your profile form.
  */
 
-import { expect, type Page, type TestInfo } from '@playwright/test';
+import { expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { guide, sessionUser, type ProfileFormFields } from './apiTestHelpers';
 
 /**
  * Build a unique location name while retaining a stable cleanup prefix.
@@ -45,14 +32,16 @@ import { randomUUID } from 'node:crypto';
  * @returns The prefix followed by a timestamp and random suffix.
  */
 export const locationName = (prefix: string) => prefix + Date.now() + '_' + randomUUID().slice(0, 6);
+
 /**
- * Log in through the UI using E2E_EMAIL and E2E_PASSWORD and verify the signed-in page.
+ * Log in through the UI and verify the signed-in page.
  * @param page - Browser page to sign in on.
+ * @param credentials - Email and password to use; defaults to E2E_EMAIL and E2E_PASSWORD.
  * @throws If credentials are missing or login assertions fail.
  */
-export async function login(page: Page) {
+export async function login(page: Page, credentials?: { email: string, password: string }) {
   // Read credentials without embedding them in test source.
-  const { E2E_EMAIL: email, E2E_PASSWORD: password } = process.env;
+  const { email, password } = credentials || { email: process.env.E2E_EMAIL, password: process.env.E2E_PASSWORD };
   if (!email || !password) throw new Error('Set E2E_EMAIL and E2E_PASSWORD in .env.local.');
   // Open the login form.
   await page.goto('/#login');
@@ -65,18 +54,7 @@ export async function login(page: Page) {
   // Verify the signed-in account menu is available.
   await expect(page.getByRole('button', { name: /^Account menu for / })).toBeVisible();
 }
-/**
- * Read the latest guide through the app API using the browser session.
- * @param page - Page whose request context supplies the session cookies.
- * @returns The parsed guide containing locations, boulders, problems and its revision.
- * @throws If the API request fails.
- */
-export async function guide(page: Page) {
-  // Fetch the latest persisted guide using the browser session.
-  const response = await page.request.get('/api/guide', { timeout: 10000 });
-  if (!response.ok()) throw new Error('Reading test guide failed: HTTP ' + response.status());
-  return response.json();
-}
+
 /**
  * Open Explore or a detail page and verify it is ready for interaction.
  * Explore is reloaded to refresh the guide after API cleanup. Requires a signed-in session.
@@ -101,6 +79,7 @@ export async function navigate(page: Page, location?: string, boulder?: string, 
   if (location) await expect(page.locator('.detail-banner')).toBeVisible();
   else await expect(page.getByRole('button', { name: /Create location/ })).toBeEnabled();
 }
+
 /**
  * Submit the active dialog and verify a successful guide write and dialog closure.
  * @param page - Browser page with an open form or confirmation dialog.
@@ -117,6 +96,7 @@ async function submit(page: Page, label: string) {
   // Verify the dialog closed after saving.
   await expect(page.getByRole('dialog')).toHaveCount(0);
 }
+
 /**
  * Populate fields in the active dialog; grade fields use dropdown selection.
  * @param page - Browser page containing the active dialog.
@@ -130,6 +110,7 @@ async function fill(page: Page, fields: Record<string, string>) {
     else await input.fill(value);
   }
 }
+
 /**
  * Create a location through the UI and verify its heading and persisted fields.
  * @param page - Signed-in browser page.
@@ -156,6 +137,7 @@ export async function createLocation(page: Page, prefix: string) {
   expect(location, 'location was created with the submitted values').toMatchObject(fields);
   return location;
 }
+
 /**
  * Create a boulder named Test Boulder and verify its heading and persisted fields.
  * @param page - Signed-in browser page.
@@ -185,6 +167,7 @@ export async function createBoulder(page: Page, location: any) {
   expect(boulder, 'boulder was created with the submitted values').toMatchObject(fields);
   return boulder;
 }
+
 /**
  * Create a problem named Test Problem and verify its persisted fields and detail heading.
  * @param page - Signed-in browser page.
@@ -219,6 +202,7 @@ export async function createProblem(page: Page, location: any, boulder: any) {
   await expect(page.getByRole('heading', { name: fields.grade + ' - ' + fields.name, exact: true })).toBeVisible();
   return problem;
 }
+
 /**
  * Edit the current detail-page item, save it and verify its name after reloading.
  * @param page - Signed-in browser page showing the item to edit.
@@ -237,6 +221,7 @@ export async function editItem(page: Page, kind: string, fields: Record<string, 
   // Verify the updated name appears in the page banner.
   await expect(page.locator('.detail-banner')).toContainText(fields.name);
 }
+
 /**
  * Remove the current detail-page item through its confirmation dialog.
  * @param page - Signed-in browser page showing the item to remove.
@@ -248,230 +233,121 @@ export async function deleteItem(page: Page, kind: string) {
   // Confirm deletion and verify it was accepted.
   await submit(page, 'Remove ' + kind);
 }
+
 /**
- * Delete matching locations and their children through the authenticated app API.
- * Matches earlier runs too; locations with other prefixes are preserved.
- * This helper throws on failure. Use deleteLocationsWithPrefix for non-failing test cleanup.
- * @param page - Signed-in browser page with permission to delete the test locations.
- * @param prefix - Prefix beginning with `test_` and containing at least one additional character.
- * @throws If the prefix is unsafe or an API request fails.
+ * Build unique sign-up values while retaining a stable cleanup prefix.
+ * The prefix starts both the email and display name so cleanup can find leftovers from earlier runs.
+ * @param prefix - Test-specific prefix, such as `test_account_`.
+ * @returns Email, password and profile form values for a new account.
  */
-export async function cleanup(page: Page, prefix: string) {
-  if (!prefix.startsWith('test_') || prefix.length <= 5) throw new Error('Cleanup requires a scoped test_ prefix.');
-  // Fetch current data so cleanup preserves unrelated locations and the latest revision.
-  const current = await guide(page);
-  // Remove only locations whose names start with this test prefix.
-  const locations = current.locations.filter((l: any) => !l.name.startsWith(prefix));
-  if (locations.length === current.locations.length) return;
-  // Persist cleanup through the authenticated app API.
-  const response = await page.request.put('/api/guide', { data: { ...current, locations }, timeout: 10000 });
-  if (!response.ok()) throw new Error('Cleanup failed: HTTP ' + response.status());
-}
-/**
- * Run cleanup without replacing the test result if cleanup fails.
- * Failures are logged and added to the test report as cleanup warning annotations.
- * @param page - Signed-in browser page used for cleanup requests.
- * @param prefix - Stable test-specific location prefix to remove across runs.
- * @param info - Playwright test information receiving any cleanup warning.
- */
-export async function deleteLocationsWithPrefix(page: Page, prefix: string, info: TestInfo) {
-  // Catch cleanup failures so they do not replace the actual test result.
-  try { await cleanup(page, prefix); }
-  catch (error) {
-    const warning = 'Cleanup warning for ' + prefix + ': ' + String(error);
-    console.warn(warning);
-    info.annotations.push({ type: 'cleanup warning', description: warning });
-  }
+export function accountDetails(prefix: string) {
+  const name = locationName(prefix);
+  return { email: name + '@example.com', password: 'pw-' + randomUUID(), name, heightFeet: '5', heightInches: '10', apeIndex: '2' };
 }
 
 /**
- * Verify location existence and expected fields in database-backed GET /api/guide results.
- * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
- * @param page - Signed-in page whose session is used for the API request.
- * @param locationId - ID of the location to locate.
- * @param expectedFields - Submitted values to verify against persisted data.
+ * Populate profile fields in the active form.
+ * @param page - Browser page showing the sign-up or Your profile form.
+ * @param fields - Profile form values to enter.
  */
-export async function assertLocationExistsDB(page: Page, locationId: string, expectedFields: Record<string, string>) {
-  // Fetch fresh persisted data, independently of the current page UI.
-  const savedGuide = await guide(page);
-  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
-  // Verify the record exists and every supplied field was saved correctly.
-  expect(savedLocation, 'API/DB: location exists').toBeDefined();
-  expect(savedLocation, 'API/DB: location has the expected saved fields').toMatchObject(expectedFields);
+async function fillProfile(page: Page, fields: ProfileFormFields) {
+  // Enter the display name, then choose height and ape index from their dropdowns.
+  await page.locator('input[name="name"]').fill(fields.name);
+  await page.locator('select[name="heightFeet"]').selectOption(fields.heightFeet);
+  await page.locator('select[name="heightInches"]').selectOption(fields.heightInches);
+  await page.locator('select[name="apeIndex"]').selectOption(fields.apeIndex);
 }
 
 /**
- * Verify location deletion in database-backed GET /api/guide results.
- * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
- * @param page - Signed-in page whose session is used for the API request.
- * @param locationId - ID of the location to locate.
+ * Sign up through the UI, confirm the email with E2E_CONFIRM_CODE, then log in.
+ * The test server exchanges E2E_CONFIRM_CODE for a real Supabase code; see confirmBypassCode in auth.mjs.
+ * @param page - Signed-out browser page.
+ * @param prefix - Stable test-specific prefix used for the email, display name and cleanup.
+ * @returns The new account's credentials, profile form values and ID.
  */
-export async function assertLocationRemovedFromDB(page: Page, locationId: string) {
-  // Fetch fresh persisted data, independently of the current page UI.
-  const savedGuide = await guide(page);
-  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
-  // Verify this exact ID is absent from persisted data.
-  expect(savedLocation, 'API/DB: location was removed').toBeUndefined();
+export async function createAccount(page: Page, prefix: string) {
+  const code = process.env.E2E_CONFIRM_CODE;
+  if (!code) throw new Error('E2E_CONFIRM_CODE is not set. It is configured in playwright.config.ts.');
+  const account = accountDetails(prefix);
+  // Open the sign-up form from the login page.
+  await page.goto('/#login');
+  await page.getByRole('button', { name: 'Sign up', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Find your community', exact: true })).toBeVisible();
+  // Fill the profile, email and password fields.
+  await fillProfile(page, account);
+  await page.locator('input[name="email"]').fill(account.email);
+  await page.locator('input[name="password"]').fill(account.password);
+  // Submit sign-up and verify the server accepted it.
+  const signedUp = page.waitForResponse(r => r.url().endsWith('/api/signup') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Send verification code', exact: true }).click();
+  expect((await signedUp).status(), 'Sign-up succeeded').toBe(200);
+  // Verify the confirmation screen opened with the email carried over.
+  await expect(page.getByRole('heading', { name: 'Check your inbox', exact: true })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('Check your email for a confirmation code.');
+  await expect(page.locator('input[name="email"]')).toHaveValue(account.email);
+  // Enter the test confirmation code and verify the server accepted it.
+  await page.locator('input[name="code"]').fill(code);
+  const confirmed = page.waitForResponse(r => r.url().endsWith('/api/confirm') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Verify email', exact: true }).click();
+  expect((await confirmed).status(), 'Email confirmation succeeded').toBe(200);
+  // Verify confirmation returns to the login screen.
+  await expect(page.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();
+  await expect(page.getByRole('status')).toHaveText('Email confirmed. You can now log in.');
+  // Log in with the new credentials and read the account ID from the session.
+  await login(page, account);
+  const user = await sessionUser(page);
+  expect(user, 'API/DB: new account is signed in').toMatchObject({ email: account.email });
+  return { ...account, id: user.id as string };
 }
 
 /**
- * Verify boulder existence and expected fields in database-backed GET /api/guide results.
- * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
- * @param page - Signed-in page whose session is used for the API request.
- * @param locationId - ID of the location to locate.
- * @param boulderId - ID of the boulder to locate.
- * @param expectedFields - Submitted values to verify against persisted data.
+ * Open the signed-in user's profile page from the account menu and verify its heading.
+ * @param page - Signed-in browser page.
+ * @param name - Display name expected as the profile heading.
  */
-export async function assertBoulderExistsDB(page: Page, locationId: string, boulderId: string, expectedFields: Record<string, string>) {
-  // Fetch fresh persisted data, independently of the current page UI.
-  const savedGuide = await guide(page);
-  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
-  // A missing parent must not be mistaken for successful child deletion.
-  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
-  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
-  // Verify the record exists and every supplied field was saved correctly.
-  expect(savedBoulder, 'API/DB: boulder exists').toBeDefined();
-  expect(savedBoulder, 'API/DB: boulder has the expected saved fields').toMatchObject(expectedFields);
+export async function openProfile(page: Page, name: string) {
+  // Open the account menu and choose Profile.
+  await page.getByRole('button', { name: /^Account menu for / }).click();
+  await page.getByRole('link', { name: 'Profile', exact: true }).click();
+  // Verify the profile page loaded for this user.
+  await expect(page).toHaveURL(/#user=/);
+  await expect(page.getByRole('heading', { level: 1, name, exact: true })).toBeVisible();
 }
 
 /**
- * Verify boulder deletion in database-backed GET /api/guide results.
- * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
- * @param page - Signed-in page whose session is used for the API request.
- * @param locationId - ID of the location to locate.
- * @param boulderId - ID of the boulder to locate.
+ * Edit the signed-in user's profile from their profile page and verify the save.
+ * @param page - Signed-in browser page showing the user's own profile.
+ * @param fields - Replacement profile form values.
  */
-export async function assertBoulderRemovedFromDB(page: Page, locationId: string, boulderId: string) {
-  // Fetch fresh persisted data, independently of the current page UI.
-  const savedGuide = await guide(page);
-  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
-  // A missing parent must not be mistaken for successful child deletion.
-  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
-  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
-  // Verify this exact ID is absent from persisted data.
-  expect(savedBoulder, 'API/DB: boulder was removed').toBeUndefined();
+export async function editProfile(page: Page, fields: ProfileFormFields) {
+  // Open the profile edit form.
+  await page.getByRole('link', { name: 'Edit profile', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Your profile', exact: true })).toBeVisible();
+  // Fill the form with the supplied values.
+  await fillProfile(page, fields);
+  // Save the form and verify the server accepted it.
+  const saved = page.waitForResponse(r => r.url().endsWith('/api/profile') && r.request().method() === 'POST');
+  await page.getByRole('button', { name: 'Save profile', exact: true }).click();
+  expect((await saved).status(), 'Profile save succeeded').toBe(200);
+  // Verify saving returns to Explore.
+  await expect(page).toHaveURL(/#explore$/);
 }
 
 /**
- * Verify problem existence and expected fields in database-backed GET /api/guide results.
- * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
- * @param page - Signed-in page whose session is used for the API request.
- * @param locationId - ID of the location to locate.
- * @param boulderId - ID of the boulder to locate.
- * @param problemId - ID of the problem to locate.
- * @param expectedFields - Submitted values to verify against persisted data.
+ * Delete the signed-in account through the profile page confirmation dialog.
+ * @param page - Signed-in browser page showing the user's own profile.
  */
-export async function assertProblemExistsDB(page: Page, locationId: string, boulderId: string, problemId: string, expectedFields: Record<string, string>) {
-  // Fetch fresh persisted data, independently of the current page UI.
-  const savedGuide = await guide(page);
-  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
-  // A missing parent must not be mistaken for successful child deletion.
-  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
-  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
-  // A missing parent must not be mistaken for successful child deletion.
-  expect(savedBoulder, 'API/DB: parent boulder still exists').toBeDefined();
-  const savedProblem = savedBoulder.problems.find((item: { id: string }) => item.id === problemId);
-  // Verify the record exists and every supplied field was saved correctly.
-  expect(savedProblem, 'API/DB: problem exists').toBeDefined();
-  expect(savedProblem, 'API/DB: problem has the expected saved fields').toMatchObject(expectedFields);
-}
-
-/**
- * Verify problem deletion in database-backed GET /api/guide results.
- * This reads the authenticated app API, not SQL directly. Missing parents fail the check.
- * @param page - Signed-in page whose session is used for the API request.
- * @param locationId - ID of the location to locate.
- * @param boulderId - ID of the boulder to locate.
- * @param problemId - ID of the problem to locate.
- */
-export async function assertProblemRemovedFromDB(page: Page, locationId: string, boulderId: string, problemId: string) {
-  // Fetch fresh persisted data, independently of the current page UI.
-  const savedGuide = await guide(page);
-  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
-  // A missing parent must not be mistaken for successful child deletion.
-  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
-  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
-  // A missing parent must not be mistaken for successful child deletion.
-  expect(savedBoulder, 'API/DB: parent boulder still exists').toBeDefined();
-  const savedProblem = savedBoulder.problems.find((item: { id: string }) => item.id === problemId);
-  // Verify this exact ID is absent from persisted data.
-  expect(savedProblem, 'API/DB: problem was removed').toBeUndefined();
-}
-
-/**
- * Verify each supplied old field value has been replaced on the same location ID.
- * Reads persisted data through GET /api/guide, not direct SQL.
- * Only pass fields deliberately changed by the edit; other records may share these values.
- * @param page - Signed-in page used for the API request.
- * @param locationId - ID of the location to locate.
- * @param oldFields - Field names mapped to their values before the edit.
- */
-export async function assertLocationOldDetailsRemovedFromDB(page: Page, locationId: string, oldFields: Record<string, string>) {
-  // Fetch fresh persisted data, independently of the current page UI.
-  const savedGuide = await guide(page);
-  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
-  // Deletion must not count as successfully editing the record.
-  expect(savedLocation, 'API/DB: edited location still exists').toBeDefined();
-  // Check every old value separately so one changed field cannot hide another unchanged field.
-  expect(Object.keys(oldFields).length, 'At least one old field must be checked').toBeGreaterThan(0);
-  for (const [field, oldValue] of Object.entries(oldFields)) {
-    expect(savedLocation, 'API/DB: edited field remains present: ' + field).toHaveProperty(field);
-    expect(savedLocation[field], 'API/DB: location no longer has the old ' + field).not.toEqual(oldValue);
-  }
-}
-
-/**
- * Verify each supplied old field value has been replaced on the same boulder ID.
- * Reads persisted data through GET /api/guide, not direct SQL.
- * Only pass fields deliberately changed by the edit; other records may share these values.
- * @param page - Signed-in page used for the API request.
- * @param locationId - ID of the location to locate.
- * @param boulderId - ID of the boulder to locate.
- * @param oldFields - Field names mapped to their values before the edit.
- */
-export async function assertBoulderOldDetailsRemovedFromDB(page: Page, locationId: string, boulderId: string, oldFields: Record<string, string>) {
-  // Fetch fresh persisted data, independently of the current page UI.
-  const savedGuide = await guide(page);
-  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
-  // A missing parent must not be mistaken for successful child deletion.
-  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
-  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
-  // Deletion must not count as successfully editing the record.
-  expect(savedBoulder, 'API/DB: edited boulder still exists').toBeDefined();
-  // Check every old value separately so one changed field cannot hide another unchanged field.
-  expect(Object.keys(oldFields).length, 'At least one old field must be checked').toBeGreaterThan(0);
-  for (const [field, oldValue] of Object.entries(oldFields)) {
-    expect(savedBoulder, 'API/DB: edited field remains present: ' + field).toHaveProperty(field);
-    expect(savedBoulder[field], 'API/DB: boulder no longer has the old ' + field).not.toEqual(oldValue);
-  }
-}
-
-/**
- * Verify each supplied old field value has been replaced on the same problem ID.
- * Reads persisted data through GET /api/guide, not direct SQL.
- * Only pass fields deliberately changed by the edit; other records may share these values.
- * @param page - Signed-in page used for the API request.
- * @param locationId - ID of the location to locate.
- * @param boulderId - ID of the boulder to locate.
- * @param problemId - ID of the problem to locate.
- * @param oldFields - Field names mapped to their values before the edit.
- */
-export async function assertProblemOldDetailsRemovedFromDB(page: Page, locationId: string, boulderId: string, problemId: string, oldFields: Record<string, string>) {
-  // Fetch fresh persisted data, independently of the current page UI.
-  const savedGuide = await guide(page);
-  const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
-  // A missing parent must not be mistaken for successful child deletion.
-  expect(savedLocation, 'API/DB: parent location still exists').toBeDefined();
-  const savedBoulder = savedLocation.boulders.find((item: { id: string }) => item.id === boulderId);
-  // A missing parent must not be mistaken for successful child deletion.
-  expect(savedBoulder, 'API/DB: parent boulder still exists').toBeDefined();
-  const savedProblem = savedBoulder.problems.find((item: { id: string }) => item.id === problemId);
-  // Deletion must not count as successfully editing the record.
-  expect(savedProblem, 'API/DB: edited problem still exists').toBeDefined();
-  // Check every old value separately so one changed field cannot hide another unchanged field.
-  expect(Object.keys(oldFields).length, 'At least one old field must be checked').toBeGreaterThan(0);
-  for (const [field, oldValue] of Object.entries(oldFields)) {
-    expect(savedProblem, 'API/DB: edited field remains present: ' + field).toHaveProperty(field);
-    expect(savedProblem[field], 'API/DB: problem no longer has the old ' + field).not.toEqual(oldValue);
-  }
+export async function deleteAccount(page: Page) {
+  // Open the deletion confirmation.
+  await page.getByRole('button', { name: 'Delete account', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: 'Delete your account?', exact: true })).toBeVisible();
+  // Type the confirmation word, submit and verify the server accepted it.
+  await dialog.getByLabel('Type DELETE to confirm').fill('DELETE');
+  const deleted = page.waitForResponse(r => r.url().endsWith('/api/account') && r.request().method() === 'DELETE');
+  await dialog.getByRole('button', { name: 'Permanently delete account', exact: true }).click();
+  expect((await deleted).status(), 'Account deletion succeeded').toBe(200);
+  // Verify deletion signs out to the login page.
+  await expect(page).toHaveURL(/#login$/);
+  await expect(page.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();
 }
