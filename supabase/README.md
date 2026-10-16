@@ -2,7 +2,7 @@
 
 SideProj uses Supabase Auth, PostgreSQL content tables and Supabase Storage. There is no JSON storage mode or local media server.
 
-For a new project, apply every file in `migrations/` in filename order using the Supabase SQL Editor, once each. The Storage migration creates a public `sideproj-media` bucket with a 100 MB file limit. Configure the project's global Storage limit accordingly. Copy `.env.example` to `.env.local` and provide the project URL and publishable key.
+For a new project, apply every file in `migrations/` in filename order using the Supabase SQL Editor, once each. The Storage migration creates a public `sideproj-media` bucket with a 100 MB file limit. Configure the project's global Storage limit accordingly. Create the ignored `.env.local` beside `package.json` and set `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for that project. Account deletion additionally requires the server-only `SUPABASE_SECRET_KEY`; see `ACCOUNTS.md`.
 
 For the existing migrated project, only the new `20260912000200_retire_local_storage.sql` remains to apply. It refuses to run if any media still has a local reference, removes the one-time database migration function and enforces cloud-only media. It deletes no content or files.
 

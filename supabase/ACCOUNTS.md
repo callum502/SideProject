@@ -21,7 +21,7 @@ Supabase's default email sender is restricted to project-team addresses and has 
 
 ## 3. Start the app and create your account
 
-Copy `.env.example` to `.env.local` and fill in your project URL and publishable key. Existing installations can keep their configured `.env.local`. This file is ignored by Git. No secret/service-role key is used.
+Create `.env.local` beside `package.json` and set `SUPABASE_URL` and `SUPABASE_PUBLISHABLE_KEY` for the intended environment. Existing installations can keep their configured `.env.local`. This file is ignored by Git. Login uses the publishable key; account deletion additionally requires the server-only `SUPABASE_SECRET_KEY` described below.
 
 From the project folder run `npm run dev` (restart an already running server). Open http://127.0.0.1:5173, choose **Create an account**, and use **you@example.com** with your own password. Enter the emailed confirmation code. Use your own email address in place of this example.
 
