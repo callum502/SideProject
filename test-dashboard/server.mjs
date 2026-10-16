@@ -6,7 +6,7 @@ import { readFile, writeFile, mkdir, readdir, copyFile, rm, stat } from 'node:fs
 import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -20,7 +20,9 @@ const playwright = (...args) => [process.execPath, ['--preserve-symlinks', '--pr
 
 const stripAnsi = s => typeof s === 'string' ? s.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '') : s;
 const cleanError = e => e && { ...e, message: stripAnsi(e.message), stack: stripAnsi(e.stack), snippet: stripAnsi(e.snippet) };
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webm': 'video/webm', '.zip': 'application/zip', '.md': 'text/markdown; charset=utf-8', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webm': 'video/webm', '.zip': 'application/zip', '.md': 'text/markdown; charset=utf-8', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8', '.ttf': 'font/ttf', '.map': 'application/json' };
+// Monaco (the editor VS Code is built on) powers the Code tab; served from node_modules so it works offline.
+const monacoDir = path.join(root, 'node_modules', 'monaco-editor', 'min');
 
 let testCache = null;
 let current = null; // the run in progress, if any
@@ -122,21 +124,48 @@ async function startRun({ ids, workers, headed, slowMo, retries }) {
   return run;
 }
 
+// Each test keeps at most MAX_ATTEMPTS attempts per run; retrying is blocked until one is deleted.
+const MAX_ATTEMPTS = 5;
+const storedAttempts = t => t.attempts?.length || (['queued', 'stopped'].includes(t.state) ? 0 : 1);
+// Attempt numbers only go up, so a deleted attempt's number is never reused (delete 3 of 5 → next is 6).
+const nextAttempt = t => Math.max(t.nextAttempt || 0, ...(t.attempts || []).map(a => a.retry + 1), t.attempts?.length ? 0 : 1);
+
+// Delete one stored attempt and its files. The test's result follows its latest remaining attempt.
+async function deleteAttempt(runId, testId, retry) {
+  if (current?.run.id === runId) throw fail('Wait for this run to finish first.', 409);
+  const run = await loadRun(String(runId));
+  const t = run?.tests[String(testId)];
+  if (!t) throw fail('Test not found in this run.', 404);
+  const attempt = (t.attempts || []).find(a => a.retry === Number(retry));
+  if (!attempt) throw fail('Attempt not found.', 404);
+  if (t.attempts.length < 2) throw fail("A test's only attempt can't be deleted.");
+  t.nextAttempt = nextAttempt(t);
+  t.attempts = t.attempts.filter(a => a !== attempt);
+  for (const a of attempt.attachments || []) if (a.file) await rm(path.join(runsDir, run.id, a.file), { force: true });
+  const last = [...t.attempts].sort((a, b) => a.retry - b.retry).at(-1);
+  Object.assign(t, { state: last.state === 'passed' ? 'passed' : last.state === 'skipped' ? 'skipped' : 'failed', status: last.status, duration: last.duration, retry: last.retry, errors: last.errors, steps: last.steps, attachments: last.attachments });
+  await saveRun(run);
+  broadcast({ type: 'testChanged', runId: run.id, test: t, status: run.status });
+}
+
 // Retry tests that need triage inside their original run, with the run's own settings.
 // New attempts are added after the existing ones; a pass moves the test to Passed.
 async function retryInRun(runId, ids) {
   if (current) throw Object.assign(new Error('A run is already in progress.'), { status: 409 });
   const run = await loadRun(runId);
   if (!run) throw Object.assign(new Error('Run not found.'), { status: 404 });
-  const targets = (Array.isArray(ids) ? ids : []).map(id => run.tests[id]).filter(t => t && triage(t) === 'investigate');
-  if (!targets.length) throw Object.assign(new Error('No tests need triage in this run.'), { status: 400 });
+  const needTriage = (Array.isArray(ids) ? ids : []).map(id => run.tests[id]).filter(t => t && triage(t) === 'investigate');
+  if (!needTriage.length) throw Object.assign(new Error('No tests need triage in this run.'), { status: 400 });
+  // Tests already holding MAX_ATTEMPTS attempts are skipped until one is deleted.
+  const targets = needTriage.filter(t => storedAttempts(t) < MAX_ATTEMPTS);
+  if (!targets.length) throw Object.assign(new Error(`${needTriage.length > 1 ? 'These tests already have' : 'This test already has'} ${MAX_ATTEMPTS}/${MAX_ATTEMPTS} attempt data stored. Delete attempt data to retry.`), { status: 409 });
   const dir = path.join(runsDir, run.id);
   const listFile = path.join(dir, `retry-${Date.now()}.txt`);
   await writeFile(listFile, targets.map(t => [t.file, ...t.titlePath].join(' › ')).join('\n'));
   const slowMo = run.slowMo || 0;
   const args = ['test', `--workers=${run.workers || 1}`, `--add-reporter=${path.join(here, 'stream-reporter.mjs')}`, `--timeout=${120000 + slowMo * 200}`, '--retries=0', `--test-list=${listFile}`];
   if (run.headed) args.push('--headed');
-  for (const t of targets) Object.assign(t, { state: 'queued', attemptBase: (t.attempts || []).length, steps: [], errors: [], attachments: [] });
+  for (const t of targets) Object.assign(t, { state: 'queued', attemptBase: nextAttempt(t), steps: [], errors: [], attachments: [] });
   Object.assign(run, { status: 'running', endedAt: null, retrying: targets.map(t => t.id), retryStartedAt: Date.now() });
   run.log = (run.log + `\n──── Retrying ${targets.length} test${targets.length > 1 ? 's' : ''} (${new Date().toLocaleString()}) ────\n`).slice(-200_000);
   launch(run, dir, args, { slowMo, video: true, append: true });
@@ -198,12 +227,13 @@ async function handleEvent(run, dir, e) {
       Object.assign(t, { state: 'running', retry: (t.attemptBase || 0) + e.retry, workerIndex: e.workerIndex, steps: [], errors: [], attachments: [] });
       break;
     case 'stepBegin':
-      if (t) t.steps.push({ title: e.title, state: 'running' });
+      // Step locations let the Code tab mark each test.step() line with its result.
+      if (t) t.steps.push({ title: e.title, state: 'running', location: e.location });
       break;
     case 'stepEnd': {
       if (!t) return;
       const step = t.steps.findLast(s => s.title === e.title && s.state === 'running') || (t.steps.push({ title: e.title }), t.steps.at(-1));
-      Object.assign(step, { state: e.error ? 'failed' : 'passed', duration: e.duration, error: cleanError(e.error) });
+      Object.assign(step, { state: e.error ? 'failed' : 'passed', duration: e.duration, error: cleanError(e.error), location: e.location || step.location });
       break;
     }
     case 'testEnd': {
@@ -225,6 +255,7 @@ async function handleEvent(run, dir, e) {
       // Keep every attempt so a retried test still shows the failed attempt's error, steps and video.
       const attempt = { retry: n, state: e.status === 'passed' ? 'passed' : e.status === 'skipped' ? 'skipped' : 'failed', status: e.status, duration: e.duration, errors, steps: t.steps, attachments };
       t.attempts = [...(t.attempts || []).filter(a => a.retry !== n), attempt];
+      t.nextAttempt = Math.max(t.nextAttempt || 0, n + 1);
       Object.assign(t, { state, status: e.status, duration: e.duration, retry: n, errors, annotations: e.annotations, attachments });
       break;
     }
@@ -336,6 +367,37 @@ async function unmarkBug(runId, testId) {
   broadcast({ type: 'testChanged', runId: run.id, test: t, status: run.status });
 }
 
+// ---------- Test source (Code tab) ----------
+// Only files under tests/ can be read or saved from the dashboard.
+const sourceRoot = path.join(root, 'tests');
+const hashOf = text => createHash('sha1').update(text).digest('hex');
+const within = (file, dir) => process.platform === 'win32' ? file.toLowerCase().startsWith(dir.toLowerCase() + path.sep) : file.startsWith(dir + path.sep);
+// Accepts an absolute path (from an error location), a repo-relative path or a path relative to tests/e2e.
+function sourcePath(p) {
+  p = String(p || '');
+  const candidates = path.isAbsolute(p) ? [p] : [path.join(root, p), path.join(sourceRoot, 'e2e', p)];
+  return candidates.map(c => path.resolve(c)).find(c => within(c, sourceRoot)) || null;
+}
+async function readSource(p) {
+  const file = sourcePath(p);
+  if (!file) throw fail('Only files under tests/ can be opened.', 403);
+  let content, s;
+  try { [content, s] = await Promise.all([readFile(file, 'utf8'), stat(file)]); } catch { throw fail('File not found.', 404); }
+  return { path: path.relative(root, file).split(path.sep).join('/'), abs: file, content, mtime: s.mtimeMs, hash: hashOf(content) };
+}
+// Saving is refused if the file changed on disk since it was opened, so edits made elsewhere aren't overwritten.
+async function saveSource({ path: p, content, hash }) {
+  const file = sourcePath(p);
+  if (!file) throw fail('Only files under tests/ can be saved.', 403);
+  if (typeof content !== 'string') throw fail('Nothing to save.');
+  let currentText;
+  try { currentText = await readFile(file, 'utf8'); } catch { throw fail('File not found.', 404); }
+  if (hashOf(currentText) !== hash) throw fail('This file changed on disk since it was opened (for example in VS Code). Reload it before saving.', 409);
+  await writeFile(file, content);
+  testCache = null; // Test titles or lines may have changed; re-list on next request.
+  return readSource(file);
+}
+
 function stopRun() {
   if (!current) return false;
   current.stopped = true;
@@ -409,7 +471,9 @@ const server = http.createServer(async (req, res) => {
       let pm;
       if ((pm = p.match(/^\/api\/runs\/([\w-]+)\/retry$/))) return send(res, 200, summarize(await retryInRun(pm[1], body.ids)));
       if ((pm = p.match(/^\/api\/runs\/([\w-]+)\/unbug$/))) { await unmarkBug(pm[1], body.testId); return send(res, 200, { ok: true }); }
+      if ((pm = p.match(/^\/api\/runs\/([\w-]+)\/delete-attempt$/))) { await deleteAttempt(pm[1], body.testId, body.retry); return send(res, 200, { ok: true }); }
       if (p === '/api/bugs') return send(res, 200, await createBug(body));
+      if (p === '/api/source') return send(res, 200, await saveSource(body));
       if ((pm = p.match(/^\/api\/bugs\/(bug-\d+)\/link$/))) return send(res, 200, await addToBug(pm[1], body));
       if ((pm = p.match(/^\/api\/bugs\/(bug-\d+)\/status$/))) {
         const bug = await loadBug(pm[1]);
@@ -454,6 +518,11 @@ const server = http.createServer(async (req, res) => {
       return file ? serveFile(res, file, req) : send(res, 404, { error: 'Not found' });
     }
     if (p === '/api/bugs') return send(res, 200, await listBugs());
+    if (p === '/api/source') return send(res, 200, await readSource(url.searchParams.get('path')));
+    if (p.startsWith('/vendor/monaco/')) {
+      const file = inside(monacoDir, p.slice('/vendor/monaco'.length));
+      return file ? serveFile(res, file, req) : send(res, 404, { error: 'Not found' });
+    }
     if ((m = p.match(/^\/api\/bugs\/(bug-\d+)$/))) {
       const bug = await loadBug(m[1]);
       return bug ? send(res, 200, bug) : send(res, 404, { error: 'Bug report not found.' });

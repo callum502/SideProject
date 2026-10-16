@@ -27,13 +27,13 @@ export default class StreamReporter {
   }
 
   onStepBegin(test, result, step) {
-    if (step.category === 'test.step' && !step.parent) emit('stepBegin', { id: test.id, title: step.title });
+    if (step.category === 'test.step' && !step.parent) emit('stepBegin', { id: test.id, title: step.title, location: step.location });
   }
 
   onStepEnd(test, result, step) {
     // Only top-level test.step() calls (e.g. Create / Edit / Delete) are reported.
     if (step.category !== 'test.step' || step.parent) return;
-    emit('stepEnd', { id: test.id, title: step.title, duration: step.duration, error: serializeError(step.error) });
+    emit('stepEnd', { id: test.id, title: step.title, duration: step.duration, error: serializeError(step.error), location: step.location });
   }
 
   onStdOut(chunk, test) { emit('log', { stream: 'stdout', id: test?.id, text: chunk.toString() }); }

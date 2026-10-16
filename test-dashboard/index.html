@@ -187,7 +187,49 @@
   @media (max-width: 1100px) { .detail { position: static; max-height: none; } }
   .detail-head { padding: 14px 16px 10px; display: grid; gap: 6px; }
   .detail-head h2 { margin: 0; font-size: 16px; font-weight: 650; }
-  .seg.attempts { justify-self: start; margin-top: 4px; }
+  .seg.attempts { justify-self: start; }
+  .attempt-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 4px; }
+  /* A button at the end of a tab row (e.g. "Delete attempt 3 data"), styled as a small danger button. */
+  .tabs button.tab-action { flex: none; margin: 4px 0 4px auto; padding: 5px 12px; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; line-height: 1.3; font-size: 13px; border: 1px solid color-mix(in srgb, var(--fail) 45%, var(--border)); border-radius: 8px; color: var(--fail); background: var(--panel); }
+  .tabs button.tab-action:hover { background: var(--fail-bg); color: var(--fail); }
+  /* Disabled buttons get no mouse events, so their tooltip lives on a wrapper. */
+  .tip { display: inline-flex; }
+  .tip > button:disabled { pointer-events: none; }
+
+  /* ---------- Code tab (IDE) ---------- */
+  .ide { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--code-bg); display: flex; flex-direction: column; min-width: 0; }
+  .ide-bar { display: flex; align-items: stretch; background: var(--panel-2); border-bottom: 1px solid var(--border); min-height: 36px; }
+  .ide-files { display: flex; overflow-x: auto; min-width: 0; }
+  .ide-file { display: inline-flex; align-items: center; gap: 7px; padding: 0 14px; border: 0; border-right: 1px solid var(--border); border-top: 2px solid transparent; background: none; color: var(--muted); font: 12.5px ui-monospace, "Cascadia Code", Consolas, monospace; cursor: pointer; white-space: nowrap; }
+  .ide-file:hover { color: var(--text); }
+  .ide-file.active { background: var(--code-bg); color: var(--text); border-top-color: var(--accent); }
+  .ide-file .dirty { width: 8px; height: 8px; border-radius: 50%; background: var(--text); opacity: .8; }
+  .ide-file .ts { color: #3178c6; font-weight: 700; font-size: 10px; letter-spacing: .02em; }
+  .ide-actions { margin-left: auto; display: flex; gap: 6px; align-items: center; padding: 0 8px; }
+  .ide-stack { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 10px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--border); }
+  .ide-frame { font: 12px ui-monospace, "Cascadia Code", Consolas, monospace; border: 1px solid var(--border); border-radius: 6px; padding: 1px 8px; background: none; color: var(--text); cursor: pointer; }
+  .ide-frame:hover { background: var(--hover); }
+  .ide-frame.error { border-color: color-mix(in srgb, var(--fail) 50%, var(--border)); color: var(--fail); }
+  .ide-frame.current { box-shadow: inset 0 0 0 1px var(--accent); }
+  .ide-note { padding: 7px 12px; font-size: 12.5px; background: var(--warn-bg); color: var(--warn); border-bottom: 1px solid var(--border); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .ide-editor { height: min(62vh, 640px); min-height: 260px; }
+  .ide-editor .ide-loading { padding: 20px; color: var(--muted); }
+  .ide-status { display: flex; gap: 16px; flex-wrap: wrap; padding: 3px 12px; font-size: 11.5px; background: var(--accent); color: var(--accent-text); }
+  .ide-status .push { margin-left: auto; }
+  /* Editor decorations (rendered inside Monaco). */
+  .ide-line-error { background: rgba(240, 115, 115, .16); }
+  .ide-line-call { background: rgba(91, 141, 239, .10); }
+  .ide-glyph-error::before, .ide-glyph-call::before, .ide-glyph-test::before, .ide-glyph-step-passed::before, .ide-glyph-step-failed::before, .ide-glyph-step-running::before { display: block; text-align: center; font-weight: 700; font-size: 12px; }
+  .ide-glyph-error::before { content: '✕'; color: #f07373; }
+  .ide-glyph-call::before { content: '↳'; color: #6aa1f5; }
+  .ide-glyph-test::before { content: '▶'; color: #8a96a3; font-size: 10px; }
+  .ide-glyph-step-passed::before { content: '✓'; color: #4cc283; }
+  .ide-glyph-step-failed::before { content: '✕'; color: #f07373; }
+  .ide-glyph-step-running::before { content: '●'; color: #6aa1f5; }
+  .ide-after-passed { color: #4cc283 !important; font-style: italic; opacity: .85; }
+  .ide-after-failed { color: #f07373 !important; font-style: italic; }
+  .ide-after-running { color: #6aa1f5 !important; font-style: italic; }
+  .ide-zone { box-sizing: border-box; padding: 4px 12px; border-left: 3px solid #f07373; background: rgba(240, 115, 115, .10); color: #f07373; font: 12px/18px ui-monospace, "Cascadia Code", Consolas, monospace; white-space: pre; overflow: hidden; }
   .seg.attempts .dot { width: 7px; height: 7px; }
   .detail-head .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; color: var(--muted); font-size: 12.5px; }
   .detail-body { padding: 16px; overflow: auto; display: grid; gap: 14px; align-content: start; }
@@ -342,6 +384,9 @@ const runState = (status, c) => ['running', 'stopped'].includes(status) ? status
 const bugLabel = n => 'BUG-' + String(n).padStart(3, '0');
 // Attempts a test made in a run: 1, plus one per retry.
 const attemptCount = t => t.attempts?.length || (['queued', 'stopped'].includes(t.state) ? 0 : 1);
+// Each test stores at most this many attempts per run (matches the server); Retry is blocked until one is deleted.
+const MAX_ATTEMPTS = 5;
+const canRetry = t => attemptCount(t) < MAX_ATTEMPTS;
 
 const S = {
   tests: [], selected: new Set(store.get('selected', [])), firstVisit: store.get('selected', null) === null,
@@ -354,7 +399,9 @@ const live = () => S.cache.get(S.liveId) || null;
 
 // ---------- Theme ----------
 const THEMES = ['dark', 'light', 'system'];
+const isDark = () => document.documentElement.dataset.theme === 'dark' || (!document.documentElement.dataset.theme && matchMedia('(prefers-color-scheme: dark)').matches);
 function applyTheme(t) {
+  setTimeout(() => window.monaco?.editor.setTheme(isDark() ? 'dash-dark' : 'dash-light'));
   if (t === 'system') document.documentElement.removeAttribute('data-theme'); else document.documentElement.dataset.theme = t;
   const icon = { dark: '<path d="M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z"/>', light: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>', system: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>' }[t];
   $('#theme').innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${icon}</svg>Theme: ${t[0].toUpperCase() + t.slice(1)}`;
@@ -524,7 +571,18 @@ function bindView() {
       const at = e.target.closest('[data-attempt]'); if (at) { S.attemptFor = S.picked; S.attempt = Number(at.dataset.attempt); S.detailTab = null; renderRun(); return; }
       const tr = e.target.closest('[data-trace]'); if (tr) api('/api/trace', { runId: S.viewedId, file: tr.dataset.trace }).catch(err => notice(err.message));
       if (e.target.closest('[data-retry]')) retry([S.picked]);
-      if (e.target.closest('[data-retry-all]')) retry(Object.values(viewed().tests).filter(t => triage(t) === 'investigate').map(t => t.id));
+      if (e.target.closest('[data-retry-all]')) retry(Object.values(viewed().tests).filter(t => triage(t) === 'investigate' && canRetry(t)).map(t => t.id));
+      const del = e.target.closest('[data-del-attempt]');
+      if (del) {
+        // Two clicks: the first turns the button into a confirmation for 4 seconds.
+        const key = S.picked + ':' + del.dataset.delAttempt, n = Number(del.dataset.delAttempt) + 1;
+        clearTimeout(S.confirmTimer);
+        if (S.confirmDelete !== key) { S.confirmDelete = key; S.confirmTimer = setTimeout(() => { S.confirmDelete = null; renderRun(); }, 4000); renderRun(); return; }
+        S.confirmDelete = null;
+        api(`/api/runs/${S.viewedId}/delete-attempt`, { testId: S.picked, retry: Number(del.dataset.delAttempt) })
+          .then(() => { S.attemptFor = null; notice(`Deleted attempt ${n} data.`, true); }).catch(err => notice(err.message));
+        return;
+      }
       if (e.target.closest('[data-bug]')) openBugDialog(viewed().tests[S.picked]);
       if (e.target.closest('[data-unbug]')) api(`/api/runs/${S.viewedId}/unbug`, { testId: S.picked }).then(() => notice('Unmarked: the test needs triage again.', true)).catch(err => notice(err.message));
       if (e.target.closest('[data-open-external]')) api('/api/open-in-browser', { hash: 'results=' + S.viewedId }).then(() => notice('Opened this run in your default browser.')).catch(err => notice(err.message));
@@ -665,7 +723,10 @@ function renderRun() {
           <button data-filter="passed" class="${S.resultFilter === 'passed' ? 'active' : ''}">Passed (${c.passed})</button>
           ${c.skipped + c.stopped ? `<button data-filter="skipped" class="${S.resultFilter === 'skipped' ? 'active' : ''}" title="Did not run, e.g. the run was stopped">Skipped (${c.skipped + c.stopped})</button>` : ''}
         </div>
-        ${c.investigate && !isLive ? `<span class="spacer"></span><button class="btn small" data-retry-all title="Retry every test that needs triage, inside this run">↻ Retry all (${c.investigate})</button>` : ''}
+        ${c.investigate && !isLive ? (() => {
+          const room = list.filter(t => triage(t) === 'investigate' && canRetry(t)).length;
+          return `<span class="spacer"></span><span class="tip" title="${room ? '' : `Attempt data full (${MAX_ATTEMPTS}/${MAX_ATTEMPTS}) for every test that needs triage. Please delete data from an attempt to retry.`}"><button class="btn small" data-retry-all ${room ? '' : 'disabled'} title="${room ? `Retry every test that needs triage, inside this run${room < c.investigate ? ` (${c.investigate - room} with ${MAX_ATTEMPTS}/${MAX_ATTEMPTS} attempt data stored are skipped)` : ''}` : `Every test that needs triage has ${MAX_ATTEMPTS}/${MAX_ATTEMPTS} attempt data stored. Delete attempt data to retry.`}">↻ Retry all (${room})</button></span>`;
+        })() : ''}
       </div>
       <div class="list">${shown.length ? shown.map(t => `
         <button class="item ${t.id === S.picked ? 'active' : ''}" data-pick="${esc(t.id)}">
@@ -684,6 +745,7 @@ function renderRun() {
   if (oldDetail && detailHtml === S.lastDetailHtml) slot.replaceWith(oldDetail);
   else { slot.outerHTML = detailHtml; const db = body.querySelector('.detail-body'); if (db) db.scrollTop = detailScroll; }
   S.lastDetailHtml = detailHtml;
+  if (S.detailTab === 'code' && S.codeTarget) mountCode(S.codeTarget.test, S.codeTarget.view);
 }
 
 function detailTabs(t) {
@@ -691,9 +753,9 @@ function detailTabs(t) {
   const videos = (t.attachments || []).filter(a => a.file && a.contentType?.startsWith('video/'));
   const files = (t.attachments || []).filter(a => !videos.includes(a));
   const tabs = [];
-  if (t.errors?.length) tabs.push(['error', 'Error']);
+  if (t.errors?.length) tabs.push(['error', 'Logs']);
   if (videos.length) tabs.push(['video', 'Video']);
-  if (t.steps?.length) tabs.push(['steps', 'Steps', t.steps.length]);
+  if (t.file && !['queued'].includes(t.state)) tabs.push(['code', 'Code']);
   if (files.length) tabs.push(['artifacts', 'Artifacts', files.length]);
   if (isFail(t)) tabs.push(['ai', 'AI analysis']);
   return { tabs, shots, videos };
@@ -722,13 +784,11 @@ function renderDetail(test) {
         ${e.location ? `<div class="section-label mono">${esc(e.location.file.split(/[\\/]/).slice(-2).join('/'))}:${e.location.line}:${e.location.column}</div>` : ''}
         <pre class="error mono">${esc(e.message || e.value)}</pre>
         ${e.snippet ? `<pre class="mono snippet" style="margin-top:8px">${esc(e.snippet)}</pre>` : ''}
-      </div>`).join('')}
-      ${shots[0] ? `<div><div class="section-label">Screenshot at failure</div><a class="shot" style="max-width:420px" href="${fileUrl(shots[0].file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(shots[0].file)}" alt="Screenshot at failure"></a></div>` : ''}`;
-  } else if (S.detailTab === 'steps') {
-    content = `<div class="steps">${t.steps.map(s => `<div class="step">
-      <span class="dot ${esc(s.state)} ic"></span><span class="t">${esc(s.title)}</span><span class="d">${fmtDur(s.duration)}</span>
-      ${s.error ? `<div class="msg">${esc((s.error.message || '').split('\n')[0])}</div>` : ''}
-    </div>`).join('')}</div>`;
+      </div>`).join('')}`;
+  } else if (S.detailTab === 'code') {
+    // The editor itself is a persistent element moved into this slot after rendering (see mountCode).
+    content = '<div id="codeSlot"></div>';
+    S.codeTarget = { test, view: t };
   } else if (S.detailTab === 'artifacts') {
     const others = (t.attachments || []).filter(a => !shots.includes(a) && !videos.includes(a));
     content = `${shots.length ? `<div class="shots">${shots.map(a => `<a class="shot" href="${fileUrl(a.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(a.file)}" alt="${esc(a.name)}"></a>`).join('')}</div>` : ''}
@@ -747,7 +807,7 @@ function renderDetail(test) {
   // Triage actions are offered once the run (or its retry) has finished.
   const tri = triage(test);
   const actions = S.viewedId === S.liveId ? ''
-    : tri === 'investigate' ? `<div class="actions"><button class="btn small primary" data-retry title="Run this test again inside this run">↻ Retry</button><button class="btn small" data-bug title="Link this failure to a new or existing bug report">Mark as bugged…</button></div>`
+    : tri === 'investigate' ? `<div class="actions">${canRetry(test) ? '<button class="btn small primary" data-retry title="Run this test again inside this run">↻ Retry</button>' : `<span class="tip" title="Attempt data full (${MAX_ATTEMPTS}/${MAX_ATTEMPTS}). Please delete data from an attempt to retry."><button class="btn small primary" data-retry disabled>↻ Retry</button></span>`}<button class="btn small" data-bug title="Link this failure to a new or existing bug report">Mark as bugged…</button>${canRetry(test) ? '' : `<span class="warn">${MAX_ATTEMPTS}/${MAX_ATTEMPTS} attempt data stored. Delete attempt data to retry.</span>`}</div>`
     : tri === 'bugged' ? `<div class="actions"><a class="buglink" href="#bugs=${esc(test.bug.id)}">${bugLabel(test.bug.number)} · ${esc(test.bug.title)}</a><button class="btn small" data-unbug title="Remove from the report; the test needs triage again">Unmark</button></div>` : '';
   return `<section class="panel detail">
     <div class="detail-head">
@@ -756,12 +816,18 @@ function renderDetail(test) {
         <span class="pill ${esc(tri)}"><span class="dot ${esc(tri)}"></span>${esc(LABEL[tri] || tri)}</span>
         <span class="mono">${esc(t.file)}:${t.line}</span>
         ${t.duration != null ? `<span>${fmtDur(t.duration)}</span>` : ''}
+        ${attemptCount(test) ? `<span title="Attempt data stored for this test in this run (max ${MAX_ATTEMPTS})" style="${canRetry(test) ? '' : 'color:var(--warn)'}">${attemptCount(test)}/${MAX_ATTEMPTS} attempt data stored</span>` : ''}
       </div>
-      ${attempts.length > 1 ? `<div class="seg attempts">${attempts.map(a => `<button data-attempt="${a.retry}" class="${a.retry === shown?.retry ? 'active' : ''}"><span class="dot ${esc(a.state)}"></span> Attempt ${a.retry + 1}${a.duration != null ? ` · ${fmtDur(a.duration)}` : ''}</button>`).join('')}</div>` : ''}
+      ${attempts.length > 1 ? `<div class="attempt-row"><div class="seg attempts">${attempts.map(a => `<button data-attempt="${a.retry}" class="${a.retry === shown?.retry ? 'active' : ''}"><span class="dot ${esc(a.state)}"></span> Attempt ${a.retry + 1}${a.duration != null ? ` · ${fmtDur(a.duration)}` : ''}</button>`).join('')}</div></div>` : ''}
       ${actions}
       ${notes}
     </div>
-    ${tabs.length ? `<div class="tabs">${tabs.map(([k, label, n]) => `<button data-dtab="${k}" class="${S.detailTab === k ? 'active' : ''}">${label}${n ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}</div>
+    ${tabs.length ? `<div class="tabs">${tabs.map(([k, label, n]) => `<button data-dtab="${k}" class="${S.detailTab === k ? 'active' : ''}">${label}${n ? ` <span class="n">${n}</span>` : ''}</button>`).join('')}${
+      // Delete the shown attempt's data; sits at the end of the tab row. Needs a second click to confirm.
+      attempts.length > 1 && S.viewedId !== S.liveId && shown && shown.state !== 'running' ? (() => {
+        const confirming = S.confirmDelete === test.id + ':' + shown.retry;
+        return `<button class="tab-action" data-del-attempt="${shown.retry}" title="Delete this attempt's result, logs, video and screenshots"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>${confirming ? `Click again to delete attempt ${shown.retry + 1} data` : `Delete attempt ${shown.retry + 1} data`}</button>`;
+      })() : ''}</div>
     <div class="detail-body">${content}</div>` : `<div class="detail-body"><div class="empty">${t.state === 'running' ? 'Running…' : t.state === 'queued' ? 'Waiting to run.' : 'No details recorded.'}</div></div>`}
   </section>`;
 }
@@ -918,6 +984,229 @@ function renderBug() {
       </div>`).join('') : '<div class="empty">No tests are linked to this report.</div>'}
     </section>`;
 }
+
+// ---------- Code tab (Monaco, the editor VS Code is built on) ----------
+// One editor is kept for the page and moved into each Code tab, so edits, undo history and scroll survive re-renders.
+const CODE = { loading: null, editor: null, host: null, files: new Map(), context: null, frames: [], current: null, decorations: null, zones: [] };
+const normPath = p => String(p || '').replace(/\\/g, '/').toLowerCase();
+const sameFile = (a, entry) => normPath(a).endsWith(normPath(entry.path));
+// Locations mix absolute paths (errors, steps) and repo-relative ones (the test), so compare by suffix.
+const samePath = (a, b) => { const x = normPath(a), y = normPath(b); return x === y || x.endsWith('/' + y) || y.endsWith('/' + x); };
+const baseName = p => String(p).split(/[\\/]/).pop();
+
+function ensureMonaco() {
+  if (window.monaco) return Promise.resolve(window.monaco);
+  CODE.loading ||= new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = '/vendor/monaco/vs/loader.js';
+    script.onerror = () => reject(new Error('Could not load the code editor. Run npm install (it needs the monaco-editor dev dependency).'));
+    script.onload = () => {
+      window.require.config({ paths: { vs: '/vendor/monaco/vs' } });
+      window.require(['vs/editor/editor.main'], () => {
+        const m = window.monaco;
+        const colors = { dark: { 'editor.background': '#0b0d10', 'editorGutter.background': '#0b0d10', 'editor.lineHighlightBackground': '#ffffff08', 'editorLineNumber.foreground': '#4b5563' }, light: { 'editor.background': '#f6f7f9', 'editorGutter.background': '#f6f7f9' } };
+        m.editor.defineTheme('dash-dark', { base: 'vs-dark', inherit: true, rules: [], colors: colors.dark });
+        m.editor.defineTheme('dash-light', { base: 'vs', inherit: true, rules: [], colors: colors.light });
+        // Imports like @playwright/test can't be resolved here, so skip type errors; syntax errors still show.
+        const ts = m.languages.typescript || m.typescript;
+        ts?.typescriptDefaults?.setDiagnosticsOptions({ noSemanticValidation: true, noSuggestionDiagnostics: true });
+        resolve(m);
+      }, reject);
+    };
+    document.head.append(script);
+  });
+  return CODE.loading;
+}
+
+// Where to look: the error location, then every call-stack frame inside tests/, then the test's own line.
+function codeFrames(t) {
+  const frames = [];
+  const add = (file, line, column, kind) => {
+    if (!file || !line || !/(^|[\\/])tests[\\/]/.test(file)) return;
+    if (frames.some(f => samePath(f.file, file) && f.line === line)) return;
+    frames.push({ file, line, column: column || 1, kind });
+  };
+  const err = t.errors?.[0];
+  if (err) {
+    add(err.location?.file, err.location?.line, err.location?.column, 'error');
+    for (const m of String(err.stack || '').matchAll(/([A-Za-z]:[\\/][^():\n]+|\/[^():\n]+):(\d+):(\d+)/g)) add(m[1], Number(m[2]), Number(m[3]), 'call');
+  }
+  add('tests/e2e/' + t.file, t.line, 1, 'test');
+  return frames;
+}
+
+function ideHost() {
+  if (CODE.host) return CODE.host;
+  const host = document.createElement('div');
+  host.className = 'ide';
+  host.innerHTML = `<div class="ide-bar"><div class="ide-files"></div><div class="ide-actions">
+      <button class="btn small" data-ide="revert" title="Discard unsaved changes">Revert</button>
+      <button class="btn small primary" data-ide="save" title="Save to disk (Ctrl+S)">Save</button>
+      <a class="btn small" data-ide="vscode" title="Open this file at this line in VS Code">Open in VS Code</a></div></div>
+    <div class="ide-stack"></div><div class="ide-note" hidden></div>
+    <div class="ide-editor"><div class="ide-loading">Loading editor…</div></div><div class="ide-status"></div>`;
+  host.addEventListener('click', e => {
+    const fr = e.target.closest('[data-frame]'); if (fr) openFrame(CODE.frames[Number(fr.dataset.frame)]);
+    const file = e.target.closest('[data-file-tab]'); if (file) openFrame(CODE.frames.find(f => samePath(f.file, file.dataset.fileTab)) || CODE.frames[0]);
+    const act = e.target.closest('[data-ide]')?.dataset.ide;
+    if (act === 'save') saveCode();
+    if (act === 'revert' && CODE.current) { CODE.current.model.setValue(CODE.current.content); }
+    if (act === 'reload') reloadCode();
+  });
+  return CODE.host = host;
+}
+
+async function mountCode(test, view) {
+  const slot = document.getElementById('codeSlot'); if (!slot) return;
+  const host = ideHost();
+  if (host.parentNode !== slot) slot.append(host);
+  const key = [S.viewedId, test.id, view.retry].join(':');
+  if (CODE.context === key && CODE.editor) return;
+  CODE.context = key;
+  CODE.frames = codeFrames(view);
+  CODE.steps = view.steps || [];
+  CODE.error = view.errors?.[0] || null;
+  CODE.runStartedAt = viewed()?.startedAt || 0;
+  renderIde();
+  let m;
+  try { m = await ensureMonaco(); }
+  catch (e) { host.querySelector('.ide-editor').innerHTML = `<div class="ide-loading">${esc(e.message)}</div>`; return; }
+  if (!CODE.editor) {
+    const el = host.querySelector('.ide-editor'); el.innerHTML = '';
+    CODE.editor = m.editor.create(el, {
+      theme: isDark() ? 'dash-dark' : 'dash-light', automaticLayout: true, fontSize: 13, lineHeight: 20,
+      fontFamily: 'ui-monospace, "Cascadia Code", Consolas, monospace', fontLigatures: true, glyphMargin: true,
+      minimap: { enabled: true, renderCharacters: false }, scrollBeyondLastLine: false, renderLineHighlight: 'all',
+      smoothScrolling: true, cursorBlinking: 'smooth', tabSize: 2, bracketPairColorization: { enabled: true }, stickyScroll: { enabled: true },
+    });
+    CODE.decorations = CODE.editor.createDecorationsCollection();
+    CODE.editor.addCommand(m.KeyMod.CtrlCmd | m.KeyCode.KeyS, saveCode);
+    CODE.editor.onDidChangeCursorPosition(renderIdeStatus);
+    CODE.editor.onDidChangeModelContent(() => { renderIde(); });
+  }
+  if (CODE.context === key) await openFrame(CODE.frames[0]);
+}
+
+async function loadFile(file) {
+  const known = [...CODE.files.values()].find(entry => sameFile(file, entry));
+  if (known) return known;
+  const src = await api('/api/source?path=' + encodeURIComponent(file));
+  const m = window.monaco, uri = m.Uri.file(src.abs);
+  const model = m.editor.getModel(uri) || m.editor.createModel(src.content, 'typescript', uri);
+  const entry = { ...src, model, savedVersion: model.getAlternativeVersionId() };
+  CODE.files.set(src.path, entry);
+  return entry;
+}
+const isDirty = entry => entry.model.getAlternativeVersionId() !== entry.savedVersion;
+
+async function openFrame(frame) {
+  if (!frame || !CODE.editor) return;
+  const key = CODE.context;
+  let entry;
+  try { entry = await loadFile(frame.file); }
+  catch (e) { notice('Could not open ' + baseName(frame.file) + ': ' + e.message); return; }
+  if (key !== CODE.context) return;
+  CODE.current = entry; CODE.frame = frame;
+  if (CODE.editor.getModel() !== entry.model) CODE.editor.setModel(entry.model);
+  decorate(entry);
+  CODE.editor.revealLineInCenter(frame.line);
+  CODE.editor.setPosition({ lineNumber: frame.line, column: frame.column || 1 });
+  renderIde();
+}
+
+// Mark the failure, the call stack and every test.step() line in the open file.
+function decorate(entry) {
+  const m = window.monaco, decs = [];
+  const line = n => new m.Range(n, 1, n, 1);
+  for (const f of CODE.frames.filter(f => sameFile(f.file, entry))) {
+    if (f.kind === 'error') decs.push({ range: line(f.line), options: { isWholeLine: true, className: 'ide-line-error', glyphMarginClassName: 'ide-glyph-error', glyphMarginHoverMessage: { value: '**Failed here**' }, overviewRuler: { color: '#f07373', position: m.editor.OverviewRulerLane.Full }, minimap: { color: '#f07373', position: m.editor.MinimapPosition.Inline } } });
+    else if (f.kind === 'call') decs.push({ range: line(f.line), options: { isWholeLine: true, className: 'ide-line-call', glyphMarginClassName: 'ide-glyph-call', glyphMarginHoverMessage: { value: 'Called from here (on the way to the failure)' } } });
+    else decs.push({ range: line(f.line), options: { glyphMarginClassName: 'ide-glyph-test', glyphMarginHoverMessage: { value: 'The test starts here' } } });
+  }
+  for (const st of CODE.steps.filter(st => st.location && sameFile(st.location.file, entry))) {
+    const state = st.state === 'failed' ? 'failed' : st.state === 'running' ? 'running' : 'passed';
+    // The step label is injected after the line's last character (Monaco skips injected text on empty ranges).
+    const end = entry.model.getLineMaxColumn(Math.min(st.location.line, entry.model.getLineCount()));
+    decs.push({ range: new m.Range(st.location.line, Math.max(1, end - 1), st.location.line, end), options: {
+      glyphMarginClassName: 'ide-glyph-step-' + state, glyphMarginHoverMessage: { value: `Step **${st.title}** ${state}${st.duration != null ? ' in ' + fmtDur(st.duration) : ''}` },
+      after: { content: `   ${state === 'passed' ? '✓' : state === 'failed' ? '✕' : '●'} ${st.title}${st.duration != null ? ' · ' + fmtDur(st.duration) : ''}`, inlineClassName: 'ide-after-' + state },
+    } });
+  }
+  CODE.decorations.set(decs);
+  // The error message sits under the failing line, like an inline IDE error.
+  CODE.editor.changeViewZones(acc => {
+    for (const id of CODE.zones) acc.removeZone(id);
+    CODE.zones = [];
+    const errFrame = CODE.frames.find(f => f.kind === 'error' && sameFile(f.file, entry));
+    if (errFrame && CODE.error) {
+      const lines = String(CODE.error.message || '').split('\n').filter(l => l.trim()).slice(0, 6);
+      const node = document.createElement('div');
+      node.className = 'ide-zone';
+      node.textContent = lines.join('\n');
+      CODE.zones.push(acc.addZone({ afterLineNumber: errFrame.line, heightInLines: lines.length + 0.4, domNode: node }));
+    }
+  });
+}
+
+function renderIde() {
+  const host = CODE.host; if (!host) return;
+  const files = [];
+  for (const f of CODE.frames) if (!files.some(x => samePath(x.file, f.file))) files.push(f);
+  host.querySelector('.ide-files').innerHTML = files.map(f => {
+    const entry = [...CODE.files.values()].find(e => sameFile(f.file, e));
+    const active = CODE.current && sameFile(f.file, CODE.current);
+    return `<button class="ide-file ${active ? 'active' : ''}" data-file-tab="${esc(normPath(f.file))}" title="${esc(entry?.path || f.file)}"><span class="ts">TS</span>${esc(baseName(f.file))}${entry && isDirty(entry) ? '<span class="dirty" title="Unsaved changes"></span>' : ''}</button>`;
+  }).join('');
+  const label = { error: 'Failed here', call: 'Called from', test: 'Test starts' };
+  host.querySelector('.ide-stack').innerHTML = CODE.frames.length
+    ? '<span>Call stack</span>' + CODE.frames.map((f, i) => `<button class="ide-frame ${f.kind === 'error' ? 'error' : ''} ${CODE.frame === f ? 'current' : ''}" data-frame="${i}" title="${label[f.kind]}">${f.kind === 'error' ? '✕ ' : f.kind === 'call' ? '↳ ' : '▶ '}${esc(baseName(f.file))}:${f.line}</button>`).join('<span>›</span>')
+    : '<span>No location recorded for this test.</span>';
+  const cur = CODE.current, dirty = cur && isDirty(cur);
+  host.querySelector('[data-ide=save]').disabled = !dirty;
+  host.querySelector('[data-ide=revert]').disabled = !dirty;
+  const vs = host.querySelector('[data-ide=vscode]');
+  if (cur) vs.href = 'vscode://file/' + cur.abs.replace(/\\/g, '/') + ':' + (CODE.editor?.getPosition()?.lineNumber || CODE.frame?.line || 1);
+  const note = host.querySelector('.ide-note');
+  const changed = cur && cur.mtime > CODE.runStartedAt;
+  note.hidden = !changed && !CODE.conflict;
+  note.innerHTML = CODE.conflict
+    ? `${esc(CODE.conflict)} <button class="btn small" data-ide="reload">Reload from disk</button>`
+    : changed ? 'This file has changed since this run, so the highlighted lines may have moved.' : '';
+  renderIdeStatus();
+}
+
+function renderIdeStatus() {
+  const host = CODE.host, cur = CODE.current; if (!host) return;
+  const pos = CODE.editor?.getPosition();
+  host.querySelector('.ide-status').innerHTML = cur
+    ? `<span>${esc(cur.path)}</span><span>${isDirty(cur) ? '● Unsaved changes' : 'Saved'}</span><span class="push">Ln ${pos?.lineNumber || 1}, Col ${pos?.column || 1}</span><span>Spaces: 2</span><span>UTF-8</span><span>TypeScript</span>`
+    : '<span>Loading…</span>';
+}
+
+async function saveCode() {
+  const cur = CODE.current; if (!cur || !isDirty(cur)) return;
+  const version = cur.model.getAlternativeVersionId(), content = cur.model.getValue();
+  try {
+    const saved = await api('/api/source', { path: cur.path, content, hash: cur.hash });
+    Object.assign(cur, { hash: saved.hash, mtime: saved.mtime, content, savedVersion: version });
+    CODE.conflict = null;
+    notice('Saved ' + cur.path + '.', true);
+  } catch (e) { CODE.conflict = e.message; notice(e.message); }
+  renderIde();
+}
+
+async function reloadCode() {
+  const cur = CODE.current; if (!cur) return;
+  const src = await api('/api/source?path=' + encodeURIComponent(cur.path));
+  Object.assign(cur, { hash: src.hash, mtime: src.mtime, content: src.content });
+  cur.model.setValue(src.content);
+  cur.savedVersion = cur.model.getAlternativeVersionId();
+  CODE.conflict = null;
+  decorate(cur); renderIde();
+}
+
+// Warn before leaving the page with unsaved edits.
+window.addEventListener('beforeunload', e => { if ([...CODE.files.values()].some(isDirty)) e.preventDefault(); });
 
 // ---------- Live updates ----------
 function connect() {
