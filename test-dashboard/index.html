@@ -748,10 +748,14 @@ function renderRun() {
   if (S.detailTab === 'code' && S.codeTarget) mountCode(S.codeTarget.test, S.codeTarget.view);
 }
 
+// Playwright's error-context (a text snapshot of the page at the failure) is kept with the run as
+// input for AI analysis, but isn't shown in the UI.
+const aiOnly = a => a.name === 'error-context';
+
 function detailTabs(t) {
   const shots = (t.attachments || []).filter(a => a.file && a.contentType?.startsWith('image/'));
   const videos = (t.attachments || []).filter(a => a.file && a.contentType?.startsWith('video/'));
-  const files = (t.attachments || []).filter(a => !videos.includes(a));
+  const files = (t.attachments || []).filter(a => !videos.includes(a) && !aiOnly(a));
   const tabs = [];
   if (t.errors?.length) tabs.push(['error', 'Logs']);
   if (videos.length) tabs.push(['video', 'Video']);
@@ -790,7 +794,7 @@ function renderDetail(test) {
     content = '<div id="codeSlot"></div>';
     S.codeTarget = { test, view: t };
   } else if (S.detailTab === 'artifacts') {
-    const others = (t.attachments || []).filter(a => !shots.includes(a) && !videos.includes(a));
+    const others = (t.attachments || []).filter(a => !shots.includes(a) && !videos.includes(a) && !aiOnly(a));
     content = `${shots.length ? `<div class="shots">${shots.map(a => `<a class="shot" href="${fileUrl(a.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(a.file)}" alt="${esc(a.name)}"></a>`).join('')}</div>` : ''}
       ${others.length ? `<div class="links">${others.map(a => a.name === 'trace' && a.file ? `<button class="btn small" data-trace="${esc(a.file)}">Open trace viewer</button>` : a.file ? `<a class="btn small" href="${fileUrl(a.file)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : '').join('')}</div>` : ''}`;
   } else if (S.detailTab === 'video') {
@@ -839,7 +843,8 @@ function renderAnalysis(t) {
   if (a) return `<div class="ai"><div class="ai-head">AI analysis <span class="badge">${esc(a.category || '')}</span></div>
     <p><b>Likely cause:</b> ${esc(a.cause)}</p><p><b>Suggested fix:</b> ${esc(a.fix)}</p></div>`;
   return `<div class="ai"><div class="ai-head">AI analysis <span class="badge">Not configured</span></div>
-    <p>The suggested cause and fix for this failure will appear here, for example an expected UI change to accept, or an app bug with a drafted report.</p></div>`;
+    <p>The likely cause and a suggested fix for this failure will appear here, for example an expected UI change where the test should be updated.</p>
+    <p>If it suspects a bug in the app, it can draft a bug report for you to review before it's saved.</p></div>`;
 }
 
 // ---------- History ----------
@@ -1050,7 +1055,7 @@ function ideHost() {
     const file = e.target.closest('[data-file-tab]'); if (file) openFrame(CODE.frames.find(f => samePath(f.file, file.dataset.fileTab)) || CODE.frames[0]);
     const act = e.target.closest('[data-ide]')?.dataset.ide;
     if (act === 'save') saveCode();
-    if (act === 'revert' && CODE.current) { CODE.current.model.setValue(CODE.current.content); }
+    if (act === 'revert' && CODE.current) revertCode();
     if (act === 'reload') reloadCode();
   });
   return CODE.host = host;
@@ -1097,7 +1102,18 @@ async function loadFile(file) {
   CODE.files.set(src.path, entry);
   return entry;
 }
-const isDirty = entry => entry.model.getAlternativeVersionId() !== entry.savedVersion;
+// Unsaved only if the text differs from what's on disk; the version check skips the text comparison when nothing changed.
+const isDirty = entry => entry.model.getAlternativeVersionId() !== entry.savedVersion && entry.model.getValue() !== entry.content;
+
+// Discard unsaved edits: restore the saved text and mark that as the saved state.
+function revertCode() {
+  const cur = CODE.current;
+  cur.model.setValue(cur.content);
+  cur.savedVersion = cur.model.getAlternativeVersionId();
+  // setValue replaces the text, so put the failure and step markers back.
+  decorate(cur);
+  renderIde();
+}
 
 async function openFrame(frame) {
   if (!frame || !CODE.editor) return;
