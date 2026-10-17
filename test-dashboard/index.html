@@ -165,6 +165,7 @@
   .run-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
   .run-title .when { font-weight: 650; font-size: 15px; }
   .run-title .cmd { color: var(--faint); }
+  .run-title .live-now { color: var(--run); font-weight: 550; }
   .stats { display: flex; flex-wrap: wrap; gap: 8px 28px; }
   .stat .label { font-size: 12px; color: var(--muted); }
   .stat .value { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; line-height: 1.2; }
@@ -295,7 +296,7 @@
   .dot.investigate { background: var(--warn); } .dot.bugged { background: var(--fail); }
   .pill.investigate { background: var(--warn-bg); color: var(--warn); } .pill.bugged { background: var(--fail-bg); color: var(--fail); }
   .bar .investigate { background: var(--warn); } .bar .bugged { background: var(--fail); }
-  .stat.investigate .value { color: var(--warn); } .stat.bugged .value { color: var(--fail); }
+  .stat.running .value { color: var(--run); } .stat.investigate .value { color: var(--warn); } .stat.bugged .value { color: var(--fail); }
   .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
   .buglink { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 10px; border-radius: 8px; background: var(--fail-bg); color: var(--fail); text-decoration: none; font-weight: 550; }
   .actions .buglink { max-width: min(480px, 100%); }
@@ -467,7 +468,23 @@ let noticeTimer;
 // Errors show red; pass ok=true for confirmations.
 function notice(msg, ok = false) { $('#notice').textContent = msg; $('#notice').classList.toggle('ok', ok); $('#notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => $('#notice').hidden = true, 7000); }
 $('#runSelected').addEventListener('click', () => run([...S.selected]));
-$('#stop').addEventListener('click', () => api('/api/stop', {}).catch(e => notice(e.message)));
+// Stop lives in the top strip and, for the run you're viewing, in its summary.
+document.addEventListener('click', e => { if (e.target.closest('#stop, [data-stop]')) api('/api/stop', {}).catch(err => notice(err.message)); });
+
+// What the run in progress is doing right now, e.g. "3/6 done · 1 failed · 42.1 s" or "Retrying 1 test · 6.6 s".
+// In the run summary (inSummary), the elapsed time is left out because the Duration stat shows it,
+// except for a retry, whose own time differs from the run's.
+function liveStatus(l, inSummary = false) {
+  const c = counts(l), total = Object.keys(l.tests).length, done = total - c.running - c.queued;
+  // A retry inside an existing run is timed from when the retry started.
+  const time = fmtDur(Date.now() - (l.retrying ? l.retryStartedAt : l.startedAt));
+  const since = inSummary && !l.retrying ? '' : time;
+  const retryTest = l.retrying && l.tests[l.retrying[0]];
+  if (l.keepOpen) return retryTest?.state === 'queued' ? `Headed retry: starting the browser… ${since}` : `Headed retry of “${retryTest?.title || 'test'}” · ${since} · when it ends the browser stays open. Press Resume in Playwright Inspector, or close the browser, to finish.`;
+  if (l.retrying) return `Retrying ${l.retrying.length} test${l.retrying.length > 1 ? 's' : ''} · ${since}`;
+  if (!done && !c.running) return `Starting Playwright and the app server…${since ? ' ' + since : ''}`;
+  return [`${done}/${total} done`, c.investigate + c.bugged ? `${c.investigate + c.bugged} failed` : '', since].filter(Boolean).join(' · ');
+}
 
 function counts(r) {
   const c = { passed: 0, investigate: 0, bugged: 0, skipped: 0, running: 0, queued: 0, stopped: 0 };
@@ -486,20 +503,19 @@ function renderChrome() {
   $('#back').href = S.view === 'bug' ? '#bugs' : '#results';
   $('#back').lastChild.textContent = S.view === 'bug' ? 'All bugs' : 'All results';
   const l = live();
-  $('#liveStrip').hidden = !l;
+  // On the live run's own page its status and Stop sit in the run summary, so the top strip is only shown elsewhere.
+  const onLiveRun = l && S.view === 'run' && S.viewedId === S.liveId;
+  $('#liveStrip').hidden = !l || onLiveRun;
   if (l) {
-    const c = counts(l), total = Object.keys(l.tests).length, done = total - c.running - c.queued;
-    const starting = !done && !c.running;
-    // A retry inside an existing run is timed from when the retry started.
-    const since = fmtDur(Date.now() - (l.retrying ? l.retryStartedAt : l.startedAt));
-    const retryTest = l.retrying && l.tests[l.retrying[0]];
-    $('#liveText').textContent = l.keepOpen
-      ? (retryTest?.state === 'queued' ? `Headed retry: starting the browser… ${since}` : `Headed retry of “${retryTest?.title || 'test'}” · ${since} · when it ends the browser stays open. Press Resume in Playwright Inspector, or close the browser, to finish.`)
-      : l.retrying ? `Retrying ${l.retrying.length} test${l.retrying.length > 1 ? 's' : ''} · ${since}`
-      : starting ? `Starting Playwright and the app server… ${since}` : `${done}/${total} done${c.investigate + c.bugged ? ` · ${c.investigate + c.bugged} failed` : ''} · ${since}`;
+    const c = counts(l), total = Object.keys(l.tests).length;
+    $('#liveText').textContent = liveStatus(l);
     $('#liveBar').innerHTML = barHtml(c, total);
-    $('#liveLink').hidden = S.view === 'run' && S.viewedId === S.liveId;
     $('#liveLink').href = '#results=' + l.id;
+  }
+  // Keep the run summary's live status and Duration ticking (it's only re-rendered when results change).
+  if (onLiveRun && $('#runLiveText')) {
+    $('#runLiveText').textContent = liveStatus(l, true);
+    $('#runElapsed').textContent = fmtDur(Date.now() - l.startedAt);
   }
   // Sidebar: Results stays highlighted while viewing a single run.
   document.querySelectorAll('[data-nav]').forEach(a => a.classList.toggle('active', a.dataset.nav === ({ run: 'results', bug: 'bugs' }[S.view] || S.view)));
@@ -696,17 +712,19 @@ function renderRun() {
   head.innerHTML = `<div class="run-head">
     <div class="run-title">
       <span class="pill ${esc(runState(r.status, c))}"><span class="dot ${esc(runState(r.status, c))}"></span>${esc(LABEL[runState(r.status, c)])}</span>
+      ${r.id === S.liveId ? `<span class="live-now" id="runLiveText">${esc(liveStatus(r, true))}</span>` : ''}
       <span class="when">${esc(fmtTime(r.startedAt))}</span>
       <span class="cmd mono">${esc(r.command || '')}</span>
+      ${r.id === S.liveId ? `<span class="spacer"></span><button class="btn small danger" data-stop title="Stop this run"><svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>Stop</button>` : ''}
     </div>
     <div class="stats">
       <div class="stat"><div class="label">Tests</div><div class="value">${total}</div></div>
+      <div class="stat running" title="Running now or waiting to run (same as the Running tab)"><div class="label">Running</div><div class="value">${c.running + c.queued}</div></div>
       <div class="stat passed"><div class="label">Passed</div><div class="value">${c.passed}</div></div>
       <div class="stat investigate"><div class="label">Triage needed</div><div class="value">${c.investigate}</div></div>
       <div class="stat bugged"><div class="label">Bugged</div><div class="value">${c.bugged}</div></div>
-      <div class="stat" title="Total attempts: one per test, plus one per retry"><div class="label">Attempts</div><div class="value">${list.reduce((n, t) => n + attemptCount(t), 0)}</div></div>
       ${c.skipped + c.stopped ? `<div class="stat"><div class="label">Skipped</div><div class="value">${c.skipped + c.stopped}</div></div>` : ''}
-      <div class="stat"><div class="label">Duration</div><div class="value">${fmtDur(elapsed)}</div></div>
+      <div class="stat"><div class="label">Duration</div><div class="value" id="runElapsed">${fmtDur(elapsed)}</div></div>
     </div>
     <div class="bar">${barHtml(c, total)}</div>
   </div>`;
@@ -963,14 +981,13 @@ async function loadRuns() { S.runs = await api('/api/runs').catch(() => []); upd
 function renderResultsList() {
   const el = $('#resRows'); if (!el) return;
   if (!S.runs.length) { el.innerHTML = `<div class="empty">${S.loading ? 'Loading…' : 'No runs yet. Pick tests on the <a href="#tests">Tests</a> page and run them.'}</div>`; return; }
-  el.innerHTML = `<table><thead><tr><th>Status</th><th>Started</th><th>Results</th><th></th><th class="num" title="Total attempts: one per test, plus one per retry">Attempts</th><th class="num">Workers</th><th class="num">Duration</th></tr></thead><tbody>${S.runs.map(r => {
+  el.innerHTML = `<table><thead><tr><th>Status</th><th>Started</th><th>Results</th><th></th><th class="num">Workers</th><th class="num">Duration</th></tr></thead><tbody>${S.runs.map(r => {
     const c = r.counts, parts = [c.passed && `${c.passed} passed`, c.investigate && `<span style="color:var(--warn)">${c.investigate} triage needed</span>`, c.bugged && `<span style="color:var(--fail)">${c.bugged} bugged</span>`, (c.skipped || c.stopped) && `${(c.skipped || 0) + (c.stopped || 0)} skipped`].filter(Boolean).join(' · ') || `${r.total} tests`;
     return `<tr data-run="${esc(r.id)}" class="${r.id === S.liveId ? 'live' : ''}">
       <td><span class="pill ${esc(runState(r.status, c))}"><span class="dot ${esc(runState(r.status, c))}"></span>${esc(LABEL[runState(r.status, c)])}</span></td>
       <td><div>${esc(fmtAgo(r.startedAt))}</div><div class="loc">${esc(fmtTime(r.startedAt))}</div></td>
       <td>${parts}</td>
       <td><div class="bar hist-bar">${barHtml(c, r.total)}</div></td>
-      <td class="num">${r.attempts ?? '—'}${r.attempts > r.total ? ` <span class="loc">(${r.attempts - r.total} ${r.attempts - r.total === 1 ? 'retry' : 'retries'})</span>` : ''}</td>
       <td class="num">${r.workers}</td>
       <td class="num">${r.endedAt ? fmtDur(r.endedAt - r.startedAt) : '…'}</td>
     </tr>`;
