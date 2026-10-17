@@ -6,6 +6,34 @@ const MARKER = '@@PWDASH@@';
 const emit = (type, data = {}) => process.stdout.write(MARKER + JSON.stringify({ type, ...data }) + '\n');
 const serializeError = e => e && ({ message: e.message, stack: e.stack, snippet: e.snippet, location: e.location, value: e.value });
 
+// Typed values appear in action titles (Fill "..."), so hide the E2E password and generated test-account passwords.
+const secrets = [process.env.E2E_PASSWORD].filter(s => s && s.length >= 4);
+const mask = text => secrets.reduce((t, s) => t.split(s).join('••••••'), String(text)).replace(/pw-[0-9a-f]{8}-[0-9a-f-]{27}/gi, '••••••');
+
+// Browser actions and assertions with their time in the video. Recording starts when the page is created,
+// so times are measured from the "Create page" step. Each top-level test.step() is included as a section.
+function actionTimeline(result) {
+  const all = [];
+  const walk = (steps, section) => { for (const s of steps) { all.push({ s, section }); walk(s.steps, s.category === 'test.step' && !s.parent ? s.title : section); } };
+  walk(result.steps, null);
+  const createPage = all.find(({ s }) => s.category === 'pw:api' && /^Create page/i.test(s.title));
+  const start = (createPage?.s.startTime ?? result.startTime).getTime();
+  const out = [];
+  for (const { s, section } of all) {
+    const inHook = (st => { while (st.parent) st = st.parent; return st.category === 'hook'; })(s);
+    if (inHook) continue;
+    const isAction = (s.category === 'pw:api' || s.category === 'expect') && !(s.parent && ['pw:api', 'expect'].includes(s.parent.category));
+    const isStep = s.category === 'test.step' && !s.parent;
+    if (!isAction && !isStep) continue;
+    out.push({
+      kind: isStep ? 'step' : s.category === 'expect' ? 'expect' : 'api', title: mask(s.title), section,
+      t: Math.max(0, s.startTime.getTime() - start), duration: s.duration, failed: !!s.error,
+      location: s.location ? { file: s.location.file, line: s.location.line, column: s.location.column } : null,
+    });
+  }
+  return out.slice(0, 500);
+}
+
 export default class StreamReporter {
   onBegin(config, suite) {
     this.rootDir = config.rootDir;
@@ -41,6 +69,7 @@ export default class StreamReporter {
 
   onTestEnd(test, result) {
     emit('testEnd', {
+      actions: actionTimeline(result),
       id: test.id,
       status: result.status,
       expectedStatus: test.expectedStatus,

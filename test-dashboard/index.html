@@ -196,6 +196,37 @@
   .tip { display: inline-flex; }
   .tip > button:disabled { pointer-events: none; }
 
+  /* ---------- Video action list ---------- */
+  .acts { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .acts-head { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--panel-2); border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--muted); }
+  .acts-head b { color: var(--text); font-weight: 600; }
+  .acts-list { max-height: 340px; overflow-y: auto; scroll-behavior: smooth; }
+  /* Video tab: on a wide panel the action list sits beside the video at the same height, so both are visible
+     together; on a narrow panel it stacks under a smaller video. */
+  .detail-body.video-tab { container-type: inline-size; }
+  .video-layout { display: grid; gap: 12px; align-items: stretch; }
+  .video-layout .video { max-height: 38vh; }
+  .video-layout .acts-list { max-height: 300px; }
+  @container (min-width: 700px) {
+    .video-layout { grid-template-columns: minmax(0, 1.55fr) minmax(270px, 1fr); }
+    .video-layout .video { max-height: min(60vh, 560px); }
+    /* contain: size lets the video alone set the row height; the list then fills it and scrolls. */
+    .video-layout .acts { contain: size; display: flex; flex-direction: column; min-height: 220px; }
+    .video-layout .acts-list { flex: 1 1 auto; min-height: 0; max-height: none; }
+  }
+  .act-section { padding: 7px 12px 5px; font-size: 11.5px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; border-top: 1px solid var(--border); display: flex; gap: 8px; align-items: center; }
+  .act-section:first-child { border-top: 0; }
+  .act { display: grid; grid-template-columns: 58px 22px minmax(0, 1fr) auto; gap: 2px 8px; align-items: center; width: 100%; padding: 6px 12px; border: 0; border-left: 3px solid transparent; background: none; color: var(--text); text-align: left; cursor: pointer; transition: background-color .15s, border-color .15s; }
+  .act:hover { background: var(--hover); }
+  .act.current { background: var(--accent-soft); border-left-color: var(--accent); }
+  .act-time { font: 12px ui-monospace, "Cascadia Code", Consolas, monospace; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .act-icon { color: var(--muted); display: grid; place-items: center; }
+  .act-title { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act-dur { font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .act-code { grid-column: 3 / 5; font: 11.5px ui-monospace, "Cascadia Code", Consolas, monospace; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .act.failed .act-title, .act.failed .act-icon { color: var(--fail); }
+  .act.failed { border-left-color: color-mix(in srgb, var(--fail) 60%, transparent); }
+
   /* ---------- Code tab (IDE) ---------- */
   .ide { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--code-bg); display: flex; flex-direction: column; min-width: 0; }
   .ide-bar { display: flex; align-items: stretch; background: var(--panel-2); border-bottom: 1px solid var(--border); min-height: 36px; }
@@ -572,6 +603,8 @@ function bindView() {
       const tr = e.target.closest('[data-trace]'); if (tr) api('/api/trace', { runId: S.viewedId, file: tr.dataset.trace }).catch(err => notice(err.message));
       if (e.target.closest('[data-retry]')) retry([S.picked]);
       if (e.target.closest('[data-retry-all]')) retry(Object.values(viewed().tests).filter(t => triage(t) === 'investigate' && canRetry(t)).map(t => t.id));
+      const seek = e.target.closest('[data-seek]');
+      if (seek) { const v = seek.closest('.detail')?.querySelector('video'); if (v) smoothSeek(v, Number(seek.dataset.seek) / 1000); return; }
       const del = e.target.closest('[data-del-attempt]');
       if (del) {
         // Two clicks: the first turns the button into a confirmation for 4 seconds.
@@ -746,6 +779,7 @@ function renderRun() {
   else { slot.outerHTML = detailHtml; const db = body.querySelector('.detail-body'); if (db) db.scrollTop = detailScroll; }
   S.lastDetailHtml = detailHtml;
   if (S.detailTab === 'code' && S.codeTarget) mountCode(S.codeTarget.test, S.codeTarget.view);
+  if (S.detailTab === 'video') wireVideoActions();
 }
 
 // Playwright's error-context (a text snapshot of the page at the failure) is kept with the run as
@@ -798,12 +832,11 @@ function renderDetail(test) {
     content = `${shots.length ? `<div class="shots">${shots.map(a => `<a class="shot" href="${fileUrl(a.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(a.file)}" alt="${esc(a.name)}"></a>`).join('')}</div>` : ''}
       ${others.length ? `<div class="links">${others.map(a => a.name === 'trace' && a.file ? `<button class="btn small" data-trace="${esc(a.file)}">Open trace viewer</button>` : a.file ? `<a class="btn small" href="${fileUrl(a.file)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : '').join('')}</div>` : ''}`;
   } else if (S.detailTab === 'video') {
-    content = videos.map(a => `<div>
+    content = '<div class="video-layout">' + videos.slice(0, 1).map(a => `<div class="video-box">
         <video class="video" controls preload="metadata" src="${fileUrl(a.file)}" onerror="this.hidden=true;this.nextElementSibling.hidden=false"></video>
         <div class="banner" hidden>This browser can't play the recording (WebM). VS Code's built-in browser is a known case. Open this run in your normal browser instead.
           <div class="links" style="margin-top:8px"><button class="btn small" data-open-external>Open in your browser</button></div></div>
-      </div>`).join('') +
-      '<div class="loc">Each action is marked on the video: an outline on the element it used and the action name top right. The current step is shown top left.</div>';
+      </div>`).join('') + renderActionList(t) + '</div>';
   } else if (S.detailTab === 'ai') {
     content = renderAnalysis(t);
   }
@@ -832,8 +865,80 @@ function renderDetail(test) {
         const confirming = S.confirmDelete === test.id + ':' + shown.retry;
         return `<button class="tab-action" data-del-attempt="${shown.retry}" title="Delete this attempt's result, logs, video and screenshots"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>${confirming ? `Click again to delete attempt ${shown.retry + 1} data` : `Delete attempt ${shown.retry + 1} data`}</button>`;
       })() : ''}</div>
-    <div class="detail-body">${content}</div>` : `<div class="detail-body"><div class="empty">${t.state === 'running' ? 'Running…' : t.state === 'queued' ? 'Waiting to run.' : 'No details recorded.'}</div></div>`}
+    <div class="detail-body${S.detailTab === 'video' ? ' video-tab' : ''}">${content}</div>` : `<div class="detail-body"><div class="empty">${t.state === 'running' ? 'Running…' : t.state === 'queued' ? 'Waiting to run.' : 'No details recorded.'}</div></div>`}
   </section>`;
+}
+
+// ---------- Video action list ----------
+// Every browser action and assertion with its time in the video; clicking one glides the video to that moment.
+const fmtClock = ms => { const s = ms / 1000; return `${Math.floor(s / 60)}:${(s % 60).toFixed(1).padStart(4, '0')}`; };
+const ACT_ICONS = {
+  click: '<path d="M9 3v8M5.5 6.5 9 3l3.5 3.5"/><path d="M9 11l6 10 2-5 5-2z"/>',
+  fill: '<rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 12h1M11 12h6"/>',
+  nav: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>',
+  expect: '<path d="M4 12l5 5L20 6"/>',
+  other: '<circle cx="12" cy="12" r="3"/>',
+};
+function actIcon(a) {
+  const k = a.kind === 'expect' ? 'expect' : /^click|^dblclick|^tap|^check|^uncheck|^hover/i.test(a.title) ? 'click' : /^fill|^type|^press|^select|^set input/i.test(a.title) ? 'fill' : /^navigate|^go to|^reload|^go back|^wait for (url|load|navigation)/i.test(a.title) ? 'nav' : 'other';
+  return `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ACT_ICONS[k]}</svg>`;
+}
+function renderActionList(t) {
+  const acts = t.actions || [];
+  if (!acts.length) return '<div class="loc">No action list for this recording. Runs recorded before the list was added don’t have one; new runs do.</div>';
+  const count = acts.filter(a => a.kind !== 'step').length;
+  let section = null;
+  const rows = acts.map((a, i) => {
+    if (a.kind === 'step') { section = a.title; return `<div class="act-section"><span class="dot ${a.failed ? 'failed' : 'passed'}"></span>${esc(a.title)}<span style="margin-left:auto;font-weight:500;text-transform:none;letter-spacing:0">${fmtClock(a.t)}</span></div>`; }
+    return `<button class="act ${a.failed ? 'failed' : ''}" data-seek="${a.t}" data-act="${i}" title="Jump to ${fmtClock(a.t)} in the video">
+      <span class="act-time">${fmtClock(a.t)}</span><span class="act-icon">${actIcon(a)}</span>
+      <span class="act-title">${esc(a.title)}</span><span class="act-dur">${fmtDur(a.duration)}</span>
+      ${a.code ? `<span class="act-code">${esc(a.code)}</span>` : ''}
+    </button>`;
+  }).join('');
+  return `<div class="acts"><div class="acts-head"><b>Actions</b><span>${count} action${count === 1 ? '' : 's'} · click one to jump the video there</span></div><div class="acts-list">${rows}</div></div>`;
+}
+
+// Glide the playhead to the target instead of jumping, so you can see where you're moving from.
+function smoothSeek(video, seconds) {
+  cancelAnimationFrame(video._seekRaf);
+  const target = Math.max(0, Math.min(seconds, isFinite(video.duration) ? video.duration - 0.05 : seconds));
+  const from = video.currentTime || 0, dist = target - from;
+  if (Math.abs(dist) < 0.05) { video.currentTime = target; return; }
+  const wasPlaying = !video.paused && !video.ended;
+  video.pause();
+  const ms = Math.min(700, 250 + Math.abs(dist) * 60), t0 = performance.now();
+  const tick = now => {
+    const k = Math.min(1, (now - t0) / ms), eased = 1 - Math.pow(1 - k, 3);
+    // Skip intermediate frames while the browser is still decoding the last seek.
+    if (k === 1 || !video.seeking) video.currentTime = from + dist * eased;
+    if (k < 1) video._seekRaf = requestAnimationFrame(tick);
+    else if (wasPlaying) video.play();
+  };
+  video._seekRaf = requestAnimationFrame(tick);
+}
+
+// Highlight the action at the playhead and keep it in view while the video plays or seeks.
+function wireVideoActions() {
+  const video = document.querySelector('.detail video'), list = document.querySelector('.detail .acts-list');
+  if (!video || !list || video._wired) return;
+  video._wired = true;
+  const buttons = [...list.querySelectorAll('[data-seek]')];
+  let last = null;
+  const sync = () => {
+    const now = video.currentTime * 1000 + 30;
+    const cur = buttons.filter(b => Number(b.dataset.seek) <= now).at(-1) || null;
+    if (cur === last) return;
+    last?.classList.remove('current'); cur?.classList.add('current'); last = cur;
+    if (cur) {
+      const top = cur.offsetTop - list.offsetTop, bottom = top + cur.offsetHeight;
+      if (top < list.scrollTop || bottom > list.scrollTop + list.clientHeight) list.scrollTo({ top: top - list.clientHeight / 2 + cur.offsetHeight / 2, behavior: 'smooth' });
+    }
+  };
+  const loop = () => { sync(); if (!video.paused) video._syncRaf = requestAnimationFrame(loop); };
+  video.addEventListener('play', loop);
+  video.addEventListener('seeked', sync);
+  video.addEventListener('timeupdate', sync);
 }
 
 // Placeholder for AI failure analysis. Each test result carries an `analysis` field

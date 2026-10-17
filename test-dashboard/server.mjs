@@ -253,10 +253,11 @@ async function handleEvent(run, dir, e) {
       const errors = e.errors.map(cleanError);
       for (const s of t.steps) if (s.state === 'running') s.state = 'failed';
       // Keep every attempt so a retried test still shows the failed attempt's error, steps and video.
-      const attempt = { retry: n, state: e.status === 'passed' ? 'passed' : e.status === 'skipped' ? 'skipped' : 'failed', status: e.status, duration: e.duration, errors, steps: t.steps, attachments };
+      const actions = await withSourceLines(e.actions || []);
+      const attempt = { retry: n, state: e.status === 'passed' ? 'passed' : e.status === 'skipped' ? 'skipped' : 'failed', status: e.status, duration: e.duration, errors, steps: t.steps, attachments, actions };
       t.attempts = [...(t.attempts || []).filter(a => a.retry !== n), attempt];
       t.nextAttempt = Math.max(t.nextAttempt || 0, n + 1);
-      Object.assign(t, { state, status: e.status, duration: e.duration, retry: n, errors, annotations: e.annotations, attachments });
+      Object.assign(t, { state, status: e.status, duration: e.duration, retry: n, errors, annotations: e.annotations, attachments, actions });
       break;
     }
     case 'error':
@@ -396,6 +397,22 @@ async function saveSource({ path: p, content, hash }) {
   await writeFile(file, content);
   testCache = null; // Test titles or lines may have changed; re-list on next request.
   return readSource(file);
+}
+
+// Add the line of test code behind each action (e.g. "await page.getByRole('button').click()"), so the
+// action list says what was clicked. Only files under tests/ are read.
+async function withSourceLines(actions) {
+  const files = new Map();
+  for (const a of actions) {
+    const file = a.location?.file && path.resolve(a.location.file);
+    if (!file || !within(file, sourceRoot)) continue;
+    if (!files.has(file)) files.set(file, readFile(file, 'utf8').then(text => text.split(/\r?\n/), () => null));
+    const lines = await files.get(file);
+    const code = lines?.[a.location.line - 1]?.trim();
+    if (code) a.code = code.length > 160 ? code.slice(0, 157) + '…' : code;
+    a.location.file = path.relative(root, file).split(path.sep).join('/');
+  }
+  return actions;
 }
 
 function stopRun() {
