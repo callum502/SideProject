@@ -352,8 +352,7 @@
         <div class="controls" id="controls">
           <span class="hint" id="workerHint" hidden title="Every guide save is checked against one shared revision. Tests that save while another test saves get 409 &quot;This guide changed&quot;, even when they edit different records.">⚠ Parallel guide saves can fail with 409</span>
           <label class="field" title="Number of Playwright workers (--workers)">Workers <input id="workers" type="number" min="1" max="16" value="1"></label>
-          <label class="field"><input id="headed" type="checkbox"> Headed</label>
-          <label class="field" title="Pause before every browser action so runs are easier to follow, live (headed) or in the video. The test timeout is raised to match.">Slow-mo
+          <label class="field" title="Pause before every browser action so the run is easier to follow in its video. The test timeout is raised to match.">Slow-mo
             <select id="slowMo">
               <option value="0">Off</option>
               <option value="250">250 ms</option>
@@ -361,9 +360,8 @@
               <option value="1000">1 s</option>
               <option value="2000">2 s</option>
             </select></label>
-          <label class="field" title="Re-attempt a failed test within the same run. A test that passes on a retry counts as passed; every attempt keeps its own error, steps and video.">Retries
-            <select id="retries">
-              <option value="0">0</option>
+          <label class="field" title="How many times each test is tried automatically in this run. With 2 or 3, a failed test is tried again straight away; it counts as passed if any attempt passes, and every attempt keeps its own logs and video.">Auto attempts
+            <select id="autoAttempts">
               <option value="1">1</option>
               <option value="2">2</option>
               <option value="3">3</option>
@@ -443,18 +441,17 @@ $('#theme').addEventListener('click', () => { theme = THEMES[(THEMES.indexOf(the
 
 // ---------- Run controls ----------
 $('#workers').value = store.get('workers', 1);
-$('#headed').checked = store.get('headed', false);
 const syncHint = () => $('#workerHint').hidden = Number($('#workers').value) <= 1;
 syncHint();
 $('#workers').addEventListener('input', () => { store.set('workers', Number($('#workers').value)); syncHint(); });
 // Slow-mo defaults to 500 ms. (New storage key, so earlier saved "Off" values don't carry over.)
 $('#slowMo').value = String(store.get('slowMoMs', 500));
 if (!$('#slowMo').value) $('#slowMo').value = '500';
-$('#headed').addEventListener('change', () => store.set('headed', $('#headed').checked));
 $('#slowMo').addEventListener('change', () => store.set('slowMoMs', Number($('#slowMo').value)));
-$('#retries').value = String(store.get('retries', 0));
-if (!$('#retries').value) $('#retries').value = '0';
-$('#retries').addEventListener('change', () => store.set('retries', Number($('#retries').value)));
+// Auto attempts = total tries per test (1–3); Playwright's retries is one less. Carries over an earlier Retries choice.
+$('#autoAttempts').value = String(store.get('autoAttempts', Math.min(3, store.get('retries', 0) + 1)));
+if (!$('#autoAttempts').value) $('#autoAttempts').value = '1';
+$('#autoAttempts').addEventListener('change', () => store.set('autoAttempts', Number($('#autoAttempts').value)));
 
 // Latest recorded result for a test: the live run first, then the most recent run that included it.
 function lastResult(id) {
@@ -465,7 +462,7 @@ function lastResult(id) {
 }
 const failedIds = () => S.tests.filter(t => { const r = lastResult(t.id); return r && isFail(r); }).map(t => t.id);
 async function run(ids) {
-  try { await api('/api/run', { ids, workers: Number($('#workers').value) || 1, headed: $('#headed').checked, slowMo: Number($('#slowMo').value) || 0, retries: Number($('#retries').value) || 0 }); }
+  try { await api('/api/run', { ids, workers: Number($('#workers').value) || 1, headed: false, slowMo: Number($('#slowMo').value) || 0, retries: (Number($('#autoAttempts').value) || 1) - 1 }); }
   catch (e) { notice(e.message); }
 }
 let noticeTimer;
