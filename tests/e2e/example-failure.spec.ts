@@ -7,7 +7,6 @@ test('example failure: logs in then expects true to be false', { tag: '@example'
   await test.step('Log in', async () => {
     // Sign in using the configured local test account.
     await login(page);
-    await page.pause();
   });
 
   await test.step('Fail on purpose', async () => {

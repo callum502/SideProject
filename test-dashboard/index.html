@@ -124,7 +124,8 @@
   .panel-head .seg { flex-wrap: wrap; }
   .seg button.active { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: var(--shadow); }
   :root[data-theme="dark"] .seg button.active { background: var(--hover); }
-  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--border); padding: 0 14px; overflow-x: auto; }
+  /* Tab rows never scroll (the active tab's underline overlaps the border by 1px); on narrow panels they wrap. */
+  .tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--border); padding: 0 14px; overflow: visible; }
   .tabs button { border: 0; background: none; padding: 10px 10px 9px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
   .tabs button:hover { color: var(--text); }
   .tabs button.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
@@ -368,8 +369,6 @@
             </select></label>
           <span class="sep"></span>
           <button id="runSelected" class="btn primary"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M7 4v16l13-8z"/></svg><span>Run selected</span></button>
-          <button id="runAll" class="btn">Run all</button>
-          <button id="runFailed" class="btn" title="Re-run tests whose latest result was a failure">Re-run failed</button>
         </div>
       </div>
       <div class="live-strip" id="liveStrip" hidden>
@@ -460,7 +459,6 @@ function lastResult(id) {
   for (const r of S.runs) { const t = r.results?.[id]; if (t && t.state !== 'queued' && t.state !== 'stopped') return { ...t, runId: r.id }; }
   return null;
 }
-const failedIds = () => S.tests.filter(t => { const r = lastResult(t.id); return r && isFail(r); }).map(t => t.id);
 async function run(ids) {
   try { await api('/api/run', { ids, workers: Number($('#workers').value) || 1, headed: false, slowMo: Number($('#slowMo').value) || 0, retries: (Number($('#autoAttempts').value) || 1) - 1 }); }
   catch (e) { notice(e.message); }
@@ -469,8 +467,6 @@ let noticeTimer;
 // Errors show red; pass ok=true for confirmations.
 function notice(msg, ok = false) { $('#notice').textContent = msg; $('#notice').classList.toggle('ok', ok); $('#notice').hidden = false; clearTimeout(noticeTimer); noticeTimer = setTimeout(() => $('#notice').hidden = true, 7000); }
 $('#runSelected').addEventListener('click', () => run([...S.selected]));
-$('#runAll').addEventListener('click', () => run([]));
-$('#runFailed').addEventListener('click', () => run(failedIds()));
 $('#stop').addEventListener('click', () => api('/api/stop', {}).catch(e => notice(e.message)));
 
 function counts(r) {
@@ -484,8 +480,6 @@ function renderChrome() {
   const busy = !!S.liveId;
   $('#runSelected').disabled = busy || !S.selected.size;
   $('#runSelected span').textContent = S.selected.size && S.selected.size !== S.tests.length ? `Run ${S.selected.size} selected` : 'Run selected';
-  $('#runAll').disabled = busy || !S.tests.length;
-  $('#runFailed').disabled = busy || !failedIds().length;
   // Run controls belong to the Tests view; the live strip (with Stop) shows on every view.
   $('#controls').hidden = S.view !== 'tests';
   $('#back').hidden = !['run', 'bug'].includes(S.view);
@@ -554,7 +548,6 @@ function mount() {
       <div class="panel-head">
         <input id="filter" class="search" type="search" placeholder="Filter tests…" value="${esc(S.filter)}">
         <span class="spacer"></span>
-        <button id="selFailed" class="btn small" title="Select tests whose latest result was a failure">Select failed</button>
         <button id="selNone" class="btn small">Clear</button>
         <button id="refresh" class="btn small" title="Re-scan test files">Refresh</button>
       </div>
@@ -585,7 +578,6 @@ function bindView() {
     $('#filter').addEventListener('input', e => { S.filter = e.target.value; renderTests(); });
     $('#refresh').addEventListener('click', () => loadTests(true));
     $('#selNone').addEventListener('click', () => { S.selected.clear(); saveSel(); update(); });
-    $('#selFailed').addEventListener('click', () => { S.selected = new Set(failedIds()); saveSel(); update(); });
     $('#testRows').addEventListener('click', e => {
       if (e.target.closest('a')) return;
       const row = e.target.closest('tr[data-id], tr[data-file], th.check');
