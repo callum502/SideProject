@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { createAccount, openProfile, editProfile, deleteAccount } from './testHelpers';
 import { deleteAccountsWithPrefix, savedProfile, assertAccountExistsDB, assertAccountOldDetailsRemovedFromDB, assertAccountRemovedFromDB } from './apiTestHelpers';
 

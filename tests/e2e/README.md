@@ -32,6 +32,10 @@ This test needs `SUPABASE_SECRET_KEY` in `.env.local` to be the local **Secret k
 
 In a run, every failed test is **Triage needed**. Open the test and either **Retry** it (or **Retry all**), which re-runs it inside the same run with the run's settings and adds the new attempts to its history, so a pass moves it to **Passed**, or choose **Mark as bugged**. Marking requires a new bug report with a written description, or adding it to an existing open report with an optional note. The error, failed step, screenshot and video are attached automatically. **Unmark** undoes it. Reports are listed on the Bugs page, can be closed or reopened, and are stored in `test-dashboard/bugs/` (git-ignored, because screenshots and videos can show credentials). They are kept separately from the 5-run history, so they outlive the runs they came from.
 
+### Retry headed
+
+On a test that needs triage, **Retry headed** retries it with a visible browser. When the test ends, the browser stays open with the Playwright Inspector so you can look around the app; press **Resume** or close the browser to finish and keep the attempt (Stop ends it without keeping it). It runs one test, with no test timeout. Test data cleanup is skipped for that retry so the app still shows the data; the next normal run removes it by prefix. This relies on specs importing `test`/`expect` from `tests/e2e/fixtures.ts`, whose fixture calls `page.pause()` when `PW_KEEP_OPEN=1` (no effect in headless runs).
+
 ### Code tab
 
 Each test result has a **Code** tab: an editor (Monaco, the editor VS Code is built on, from the `monaco-editor` dev dependency) showing the test source. The failing line is highlighted with the error underneath, the call stack links every frame inside `tests/`, and each `test.step` line shows its result and time. Files under `tests/` can be edited and saved (Ctrl+S); saving is refused if the file changed on disk since it was opened. The tab shows the current file, so if it has changed since the run, highlighted lines may have moved (the tab says so).

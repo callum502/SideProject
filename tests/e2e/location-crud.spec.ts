@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { login, createLocation, editItem, deleteItem } from './testHelpers';
 import { deleteLocationsWithPrefix, assertLocationExistsDB, assertLocationOldDetailsRemovedFromDB, assertLocationRemovedFromDB } from './apiTestHelpers';
 

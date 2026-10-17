@@ -126,6 +126,9 @@ async function startRun({ ids, workers, headed, slowMo, retries }) {
 
 // Each test keeps at most MAX_ATTEMPTS attempts per run; retrying is blocked until one is deleted.
 const MAX_ATTEMPTS = 5;
+// A page.pause() longer than this inside a test means its time measures the pause, so it's left blank.
+// (In headless runs page.pause() returns in a few ms, so those times stay.)
+const PAUSE_BLANKS_TIME_MS = 1000;
 const storedAttempts = t => t.attempts?.length || (['queued', 'stopped'].includes(t.state) ? 0 : 1);
 // Attempt numbers only go up, so a deleted attempt's number is never reused (delete 3 of 5 → next is 6).
 const nextAttempt = t => Math.max(t.nextAttempt || 0, ...(t.attempts || []).map(a => a.retry + 1), t.attempts?.length ? 0 : 1);
@@ -150,10 +153,13 @@ async function deleteAttempt(runId, testId, retry) {
 
 // Retry tests that need triage inside their original run, with the run's own settings.
 // New attempts are added after the existing ones; a pass moves the test to Passed.
-async function retryInRun(runId, ids) {
+// A headed retry (one test) shows the browser and keeps it open at the end with the Playwright Inspector
+// (PW_KEEP_OPEN, see tests/e2e/fixtures.ts) until you press Resume or close it, so it has no test timeout.
+async function retryInRun(runId, ids, { headed = false } = {}) {
   if (current) throw Object.assign(new Error('A run is already in progress.'), { status: 409 });
   const run = await loadRun(runId);
   if (!run) throw Object.assign(new Error('Run not found.'), { status: 404 });
+  if (headed && (!Array.isArray(ids) || ids.length !== 1)) throw Object.assign(new Error('A headed retry runs one test at a time.'), { status: 400 });
   const needTriage = (Array.isArray(ids) ? ids : []).map(id => run.tests[id]).filter(t => t && triage(t) === 'investigate');
   if (!needTriage.length) throw Object.assign(new Error('No tests need triage in this run.'), { status: 400 });
   // Tests already holding MAX_ATTEMPTS attempts are skipped until one is deleted.
@@ -163,19 +169,19 @@ async function retryInRun(runId, ids) {
   const listFile = path.join(dir, `retry-${Date.now()}.txt`);
   await writeFile(listFile, targets.map(t => [t.file, ...t.titlePath].join(' › ')).join('\n'));
   const slowMo = run.slowMo || 0;
-  const args = ['test', `--workers=${run.workers || 1}`, `--add-reporter=${path.join(here, 'stream-reporter.mjs')}`, `--timeout=${120000 + slowMo * 200}`, '--retries=0', `--test-list=${listFile}`];
-  if (run.headed) args.push('--headed');
+  const args = ['test', `--workers=${headed ? 1 : run.workers || 1}`, `--add-reporter=${path.join(here, 'stream-reporter.mjs')}`, `--timeout=${headed ? 0 : 120000 + slowMo * 200}`, '--retries=0', `--test-list=${listFile}`];
+  if (headed || run.headed) args.push('--headed');
   for (const t of targets) Object.assign(t, { state: 'queued', attemptBase: nextAttempt(t), steps: [], errors: [], attachments: [] });
-  Object.assign(run, { status: 'running', endedAt: null, retrying: targets.map(t => t.id), retryStartedAt: Date.now() });
-  run.log = (run.log + `\n──── Retrying ${targets.length} test${targets.length > 1 ? 's' : ''} (${new Date().toLocaleString()}) ────\n`).slice(-200_000);
-  launch(run, dir, args, { slowMo, video: true, append: true });
+  Object.assign(run, { status: 'running', endedAt: null, retrying: targets.map(t => t.id), retryStartedAt: Date.now(), keepOpen: headed });
+  run.log = (run.log + `\n──── ${headed ? 'Headed retry, browser stays open at the end' : 'Retrying'}: ${targets.length} test${targets.length > 1 ? 's' : ''} (${new Date().toLocaleString()}) ────\n`).slice(-200_000);
+  launch(run, dir, args, { slowMo, video: true, append: true, env: headed ? { PW_KEEP_OPEN: '1' } : {} });
   return run;
 }
 
-function launch(run, dir, args, { slowMo, video, append = false }) {
+function launch(run, dir, args, { slowMo, video, append = false, env = {} }) {
   const id = run.id;
   const [cmd, cmdArgs] = playwright(...args);
-  const child = spawn(cmd, cmdArgs, { cwd: root, env: { ...process.env, PLAYWRIGHT_HTML_OPEN: 'never', FORCE_COLOR: '0', PW_SLOW_MO: String(slowMo), PW_VIDEO: video ? '1' : '0' } });
+  const child = spawn(cmd, cmdArgs, { cwd: root, env: { ...process.env, PLAYWRIGHT_HTML_OPEN: 'never', FORCE_COLOR: '0', PW_SLOW_MO: String(slowMo), PW_VIDEO: video ? '1' : '0', ...env } });
   current = { run, child, dir, pending: [], append };
   broadcast({ type: 'runStart', run });
 
@@ -205,7 +211,7 @@ function launch(run, dir, args, { slowMo, video, append = false }) {
     for (const t of Object.values(run.tests)) if (t.state === 'running' || t.state === 'queued') t.state = append ? 'failed' : current.stopped ? 'stopped' : 'skipped';
     const anyFailed = Object.values(run.tests).some(t => t.state === 'failed');
     run.status = current.stopped && !append ? 'stopped' : anyFailed || (!append && code !== 0) ? 'failed' : 'passed';
-    delete run.retrying;
+    delete run.retrying; delete run.keepOpen;
     await saveRun(run).catch(() => {});
     current = null;
     broadcast({ type: 'runEnd', run });
@@ -233,7 +239,9 @@ async function handleEvent(run, dir, e) {
     case 'stepEnd': {
       if (!t) return;
       const step = t.steps.findLast(s => s.title === e.title && s.state === 'running') || (t.steps.push({ title: e.title }), t.steps.at(-1));
-      Object.assign(step, { state: e.error ? 'failed' : 'passed', duration: e.duration, error: cleanError(e.error), location: e.location || step.location });
+      // A step that sat in page.pause() has no meaningful time, so it's left blank.
+      const paused = (e.pausedMs || 0) > PAUSE_BLANKS_TIME_MS;
+      Object.assign(step, { state: e.error ? 'failed' : 'passed', duration: paused ? null : e.duration, paused, error: cleanError(e.error), location: e.location || step.location });
       break;
     }
     case 'testEnd': {
@@ -254,10 +262,14 @@ async function handleEvent(run, dir, e) {
       for (const s of t.steps) if (s.state === 'running') s.state = 'failed';
       // Keep every attempt so a retried test still shows the failed attempt's error, steps and video.
       const actions = await withSourceLines(e.actions || []);
-      const attempt = { retry: n, state: e.status === 'passed' ? 'passed' : e.status === 'skipped' ? 'skipped' : 'failed', status: e.status, duration: e.duration, errors, steps: t.steps, attachments, actions };
+      // Time spent paused isn't test time: the "Retry headed" pause after the test is taken off, and a pause
+      // inside the test leaves the time blank (it would only measure how long the browser was left paused).
+      const pausedInTest = (e.pause?.body || 0) > PAUSE_BLANKS_TIME_MS;
+      const duration = pausedInTest ? null : Math.max(0, e.duration - (e.pause?.end || 0));
+      const attempt = { retry: n, state: e.status === 'passed' ? 'passed' : e.status === 'skipped' ? 'skipped' : 'failed', status: e.status, duration, pausedInTest, errors, steps: t.steps, attachments, actions };
       t.attempts = [...(t.attempts || []).filter(a => a.retry !== n), attempt];
       t.nextAttempt = Math.max(t.nextAttempt || 0, n + 1);
-      Object.assign(t, { state, status: e.status, duration: e.duration, retry: n, errors, annotations: e.annotations, attachments, actions });
+      Object.assign(t, { state, status: e.status, duration, pausedInTest, retry: n, errors, annotations: e.annotations, attachments, actions });
       break;
     }
     case 'error':
@@ -486,7 +498,7 @@ const server = http.createServer(async (req, res) => {
       if (p === '/api/run') return send(res, 200, summarize(await startRun(body)));
       if (p === '/api/stop') return send(res, 200, { stopped: stopRun() });
       let pm;
-      if ((pm = p.match(/^\/api\/runs\/([\w-]+)\/retry$/))) return send(res, 200, summarize(await retryInRun(pm[1], body.ids)));
+      if ((pm = p.match(/^\/api\/runs\/([\w-]+)\/retry$/))) return send(res, 200, summarize(await retryInRun(pm[1], body.ids, { headed: !!body.headed })));
       if ((pm = p.match(/^\/api\/runs\/([\w-]+)\/unbug$/))) { await unmarkBug(pm[1], body.testId); return send(res, 200, { ok: true }); }
       if ((pm = p.match(/^\/api\/runs\/([\w-]+)\/delete-attempt$/))) { await deleteAttempt(pm[1], body.testId, body.retry); return send(res, 200, { ok: true }); }
       if (p === '/api/bugs') return send(res, 200, await createBug(body));

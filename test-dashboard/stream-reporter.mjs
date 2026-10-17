@@ -34,6 +34,22 @@ function actionTimeline(result) {
   return out.slice(0, 500);
 }
 
+// Time spent in page.pause(): inside the test body, or in the after-hooks (the "Retry headed" keep-open pause).
+// The server takes the end pause off the test's time, and leaves the time blank if the body was paused.
+function pauseTime(steps) {
+  const total = { body: 0, end: 0 };
+  const walk = (list, inHook) => {
+    for (const s of list) {
+      const hook = inHook || s.category === 'hook';
+      // Closing the browser ends a pause without finishing its step (duration -1), so measure from its start.
+      if (s.category === 'pw:api' && /^pause\b/i.test(s.title)) total[hook ? 'end' : 'body'] += s.duration >= 0 ? s.duration : Math.max(0, Date.now() - s.startTime.getTime());
+      walk(s.steps, hook);
+    }
+  };
+  walk(steps, false);
+  return total;
+}
+
 export default class StreamReporter {
   onBegin(config, suite) {
     this.rootDir = config.rootDir;
@@ -61,7 +77,7 @@ export default class StreamReporter {
   onStepEnd(test, result, step) {
     // Only top-level test.step() calls (e.g. Create / Edit / Delete) are reported.
     if (step.category !== 'test.step' || step.parent) return;
-    emit('stepEnd', { id: test.id, title: step.title, duration: step.duration, error: serializeError(step.error), location: step.location });
+    emit('stepEnd', { id: test.id, title: step.title, duration: step.duration, error: serializeError(step.error), location: step.location, pausedMs: pauseTime(step.steps).body });
   }
 
   onStdOut(chunk, test) { emit('log', { stream: 'stdout', id: test?.id, text: chunk.toString() }); }
@@ -70,6 +86,7 @@ export default class StreamReporter {
   onTestEnd(test, result) {
     emit('testEnd', {
       actions: actionTimeline(result),
+      pause: pauseTime(result.steps),
       id: test.id,
       status: result.status,
       expectedStatus: test.expectedStatus,

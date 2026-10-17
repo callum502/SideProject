@@ -75,6 +75,19 @@ export async function cleanup(page: Page, prefix: string) {
 }
 
 /**
+ * Skip cleanup during the dashboard's "Retry headed" (PW_KEEP_OPEN=1), so the browser left open at the end
+ * still shows the test's data. Cleanup matches by prefix, so the next normal run removes it.
+ * @param prefix - Stable test-specific prefix whose cleanup is being skipped.
+ * @param info - Playwright test information receiving a note that cleanup was skipped.
+ * @returns True when cleanup should be skipped.
+ */
+function skipCleanupForHeadedRetry(prefix: string, info: TestInfo) {
+  if (process.env.PW_KEEP_OPEN !== '1') return false;
+  info.annotations.push({ type: 'cleanup skipped', description: `Headed retry: ${prefix} data was kept so the open browser still shows it. The next normal run removes it.` });
+  return true;
+}
+
+/**
  * Run cleanup without replacing the test result if cleanup fails.
  * Failures are logged and added to the test report as cleanup warning annotations.
  * @param page - Signed-in browser page used for cleanup requests.
@@ -82,6 +95,7 @@ export async function cleanup(page: Page, prefix: string) {
  * @param info - Playwright test information receiving any cleanup warning.
  */
 export async function deleteLocationsWithPrefix(page: Page, prefix: string, info: TestInfo) {
+  if (skipCleanupForHeadedRetry(prefix, info)) return;
   // Catch cleanup failures so they do not replace the actual test result.
   try { await cleanup(page, prefix); }
   catch (error) {
@@ -355,6 +369,7 @@ export async function cleanupAccounts(prefix: string) {
  * @param info - Playwright test information receiving any cleanup warning.
  */
 export async function deleteAccountsWithPrefix(prefix: string, info: TestInfo) {
+  if (skipCleanupForHeadedRetry(prefix, info)) return;
   // Catch cleanup failures so they do not replace the actual test result.
   try { await cleanupAccounts(prefix); }
   catch (error) {

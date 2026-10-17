@@ -496,7 +496,13 @@ function renderChrome() {
   if (l) {
     const c = counts(l), total = Object.keys(l.tests).length, done = total - c.running - c.queued;
     const starting = !done && !c.running;
-    $('#liveText').textContent = starting ? `Starting Playwright and the app server… ${fmtDur(Date.now() - l.startedAt)}` : `${done}/${total} done${c.investigate + c.bugged ? ` · ${c.investigate + c.bugged} failed` : ''} · ${fmtDur(Date.now() - l.startedAt)}`;
+    // A retry inside an existing run is timed from when the retry started.
+    const since = fmtDur(Date.now() - (l.retrying ? l.retryStartedAt : l.startedAt));
+    const retryTest = l.retrying && l.tests[l.retrying[0]];
+    $('#liveText').textContent = l.keepOpen
+      ? (retryTest?.state === 'queued' ? `Headed retry: starting the browser… ${since}` : `Headed retry of “${retryTest?.title || 'test'}” · ${since} · when it ends the browser stays open. Press Resume in Playwright Inspector, or close the browser, to finish.`)
+      : l.retrying ? `Retrying ${l.retrying.length} test${l.retrying.length > 1 ? 's' : ''} · ${since}`
+      : starting ? `Starting Playwright and the app server… ${since}` : `${done}/${total} done${c.investigate + c.bugged ? ` · ${c.investigate + c.bugged} failed` : ''} · ${since}`;
     $('#liveBar').innerHTML = barHtml(c, total);
     $('#liveLink').hidden = S.view === 'run' && S.viewedId === S.liveId;
     $('#liveLink').href = '#results=' + l.id;
@@ -599,6 +605,7 @@ function bindView() {
       const at = e.target.closest('[data-attempt]'); if (at) { S.attemptFor = S.picked; S.attempt = Number(at.dataset.attempt); S.detailTab = null; renderRun(); return; }
       const tr = e.target.closest('[data-trace]'); if (tr) api('/api/trace', { runId: S.viewedId, file: tr.dataset.trace }).catch(err => notice(err.message));
       if (e.target.closest('[data-retry]')) retry([S.picked]);
+      if (e.target.closest('[data-retry-headed]')) retry([S.picked], { headed: true });
       if (e.target.closest('[data-retry-all]')) retry(Object.values(viewed().tests).filter(t => triage(t) === 'investigate' && canRetry(t)).map(t => t.id));
       const seek = e.target.closest('[data-seek]');
       if (seek) { const v = seek.closest('.detail')?.querySelector('video'); if (v) smoothSeek(v, Number(seek.dataset.seek) / 1000); return; }
@@ -841,7 +848,7 @@ function renderDetail(test) {
   // Triage actions are offered once the run (or its retry) has finished.
   const tri = triage(test);
   const actions = S.viewedId === S.liveId ? ''
-    : tri === 'investigate' ? `<div class="actions">${canRetry(test) ? '<button class="btn small primary" data-retry title="Run this test again inside this run">↻ Retry</button>' : `<span class="tip" title="Attempt data full (${MAX_ATTEMPTS}/${MAX_ATTEMPTS}). Please delete data from an attempt to retry."><button class="btn small primary" data-retry disabled>↻ Retry</button></span>`}<button class="btn small" data-bug title="Link this failure to a new or existing bug report">Mark as bugged…</button>${canRetry(test) ? '' : `<span class="warn">${MAX_ATTEMPTS}/${MAX_ATTEMPTS} attempt data stored. Delete attempt data to retry.</span>`}</div>`
+    : tri === 'investigate' ? `<div class="actions">${canRetry(test) ? '<button class="btn small primary" data-retry title="Run this test again inside this run">↻ Retry</button><button class="btn small" data-retry-headed title="Retry with a visible browser that stays open when the test ends, with the Playwright Inspector, so you can look around the app. Press Resume or close the browser to finish. Test data cleanup is skipped so the app still shows it; the next normal run removes it.">↻ Retry headed</button>' : `<span class="tip" title="Attempt data full (${MAX_ATTEMPTS}/${MAX_ATTEMPTS}). Please delete data from an attempt to retry."><button class="btn small primary" data-retry disabled>↻ Retry</button> <button class="btn small" data-retry-headed disabled>↻ Retry headed</button></span>`}<button class="btn small" data-bug title="Link this failure to a new or existing bug report">Mark as bugged…</button>${canRetry(test) ? '' : `<span class="warn">${MAX_ATTEMPTS}/${MAX_ATTEMPTS} attempt data stored. Delete attempt data to retry.</span>`}</div>`
     : tri === 'bugged' ? `<div class="actions"><a class="buglink" href="#bugs=${esc(test.bug.id)}">${bugLabel(test.bug.number)} · ${esc(test.bug.title)}</a><button class="btn small" data-unbug title="Remove from the report; the test needs triage again">Unmark</button></div>` : '';
   return `<section class="panel detail">
     <div class="detail-head">
@@ -970,8 +977,8 @@ function renderResultsList() {
 
 // ---------- Triage actions ----------
 // Retry tests that need triage inside the viewed run (same settings as the run).
-async function retry(ids) {
-  try { await api(`/api/runs/${S.viewedId}/retry`, { ids }); }
+async function retry(ids, { headed = false } = {}) {
+  try { await api(`/api/runs/${S.viewedId}/retry`, { ids, headed }); }
   catch (e) { notice(e.message); }
 }
 

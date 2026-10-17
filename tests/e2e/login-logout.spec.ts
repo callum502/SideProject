@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures';
 
 test('logs in through the form, keeps the session on reload, and logs out', async ({ page, context }) => {
   // Read the configured local account credentials.
