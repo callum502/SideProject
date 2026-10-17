@@ -90,7 +90,6 @@
   .field select { padding: 5px 6px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
   .field:has(input:disabled) { opacity: .6; }
   .sep { width: 1px; align-self: stretch; background: var(--border); margin: 2px 2px; }
-  .hint { font-size: 12px; color: var(--warn); display: inline-flex; align-items: center; gap: 4px; }
   /* Checkboxes are drawn here rather than by the browser, so they look the same in every browser
      (native ones vary, and some browsers ignore accent-color). High-contrast mode keeps the native control. */
   input[type=checkbox] {
@@ -312,12 +311,18 @@
   dialog.modal textarea { resize: vertical; min-height: 110px; }
   .evidence { font-size: 12.5px; color: var(--muted); background: var(--panel-2); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; }
   .evidence b { color: var(--text); font-weight: 600; }
+  .att-list { display: grid; gap: 4px; margin-top: 6px; }
+  dialog.modal label.att-pick { display: grid; grid-template-columns: auto auto auto 1fr auto; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); font-weight: 400; cursor: pointer; }
+  dialog.modal label.att-pick:has(input:checked) { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: var(--accent-soft); }
+  .att-pick .att-has { color: var(--muted); font-size: 12px; justify-self: end; }
   .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
   .bug-head { padding: 16px; display: grid; gap: 10px; }
   .bug-head h2 { margin: 0; font-size: 18px; }
   .bug-head .row { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
   .bug-desc { padding: 0 16px 16px; white-space: pre-wrap; line-height: 1.55; }
   .occ { padding: 14px 16px; border-top: 1px solid var(--border); display: grid; gap: 10px; }
+  .bug-attempt { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel-2); min-width: 0; }
+  .bug-attempt-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .occ .media { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
   .occ .media img, .occ .media video { width: 100%; border-radius: 8px; border: 1px solid var(--border); background: #000; display: block; }
   .pill.open { background: var(--fail-bg); color: var(--fail); } .pill.closed { background: var(--skip-bg); color: var(--skip); }
@@ -352,7 +357,6 @@
         <a class="btn small" id="back" href="#results" hidden title="Back to all results (Esc)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>All results</a>
         <div><h1 id="viewTitle">Tests</h1><div class="sub" id="viewSub"></div></div>
         <div class="controls" id="controls">
-          <span class="hint" id="workerHint" hidden title="Every guide save is checked against one shared revision. Tests that save while another test saves get 409 &quot;This guide changed&quot;, even when they edit different records.">⚠ Parallel guide saves can fail with 409</span>
           <label class="field" title="Number of Playwright workers (--workers)">Workers <input id="workers" type="number" min="1" max="16" value="1"></label>
           <label class="field" title="Pause before every browser action so the run is easier to follow in its video. The test timeout is raised to match.">Slow-mo
             <select id="slowMo">
@@ -441,9 +445,7 @@ $('#theme').addEventListener('click', () => { theme = THEMES[(THEMES.indexOf(the
 
 // ---------- Run controls ----------
 $('#workers').value = store.get('workers', 1);
-const syncHint = () => $('#workerHint').hidden = Number($('#workers').value) <= 1;
-syncHint();
-$('#workers').addEventListener('input', () => { store.set('workers', Number($('#workers').value)); syncHint(); });
+$('#workers').addEventListener('input', () => store.set('workers', Number($('#workers').value)));
 // Slow-mo defaults to 500 ms. (New storage key, so earlier saved "Off" values don't carry over.)
 $('#slowMo').value = String(store.get('slowMoMs', 500));
 if (!$('#slowMo').value) $('#slowMo').value = '500';
@@ -643,6 +645,8 @@ function bindView() {
   if (S.view === 'results') $('#resRows').addEventListener('click', e => { const tr = e.target.closest('tr[data-run]'); if (tr) location.hash = 'results=' + tr.dataset.run; });
   if (S.view === 'bugs') $('#bugRows').addEventListener('click', e => { const tr = e.target.closest('tr[data-bug-id]'); if (tr) location.hash = 'bugs=' + tr.dataset.bugId; });
   if (S.view === 'bug') $('#bugBody').addEventListener('click', e => {
+    const tr = e.target.closest('[data-bug-trace]');
+    if (tr) api('/api/trace', { bugId: S.bugId, file: tr.dataset.bugTrace }).catch(err => notice(err.message));
     const st = e.target.closest('[data-bug-status]');
     if (st) api(`/api/bugs/${S.bugId}/status`, { status: st.dataset.bugStatus }).then(bug => { S.bugCache.set(bug.id, bug); loadBugs(); }).catch(err => notice(err.message));
   });
@@ -1002,12 +1006,19 @@ async function retry(ids, { headed = false } = {}) {
 }
 
 // "Mark as bugged": a new report needs a written description; adding to an existing report takes an optional note.
-// The error, failed step, screenshot and video are attached automatically.
+// You choose which attempts to attach; each one brings its logs, video, trace and screenshot.
 function openBugDialog(test) {
   const failed = [...(test.attempts || [])].reverse().find(a => a.state === 'failed') || test;
   const firstLine = (String(failed.errors?.[0]?.message || '').split('\n').find(l => l.trim()) || '').replace(/^\s*Error:\s*/, '');
-  const step = failed.steps?.find(s => s.state === 'failed')?.title;
-  const media = (failed.attachments || []).filter(a => /^(image|video)\//.test(a.contentType || '')).map(a => a.contentType.startsWith('video/') ? 'video' : 'screenshot');
+  // Runs from before attempts were stored have just the one result.
+  const attempts = (test.attempts?.length ? [...test.attempts].sort((a, b) => a.retry - b.retry) : [{ ...test, retry: test.retry ?? 0 }]).filter(a => a.state !== 'running');
+  const bundle = a => [a.errors?.length && 'logs', ...['video', 'trace', 'screenshot'].filter(k => (a.attachments || []).some(f => f.file && (k === 'trace' ? f.name === 'trace' : k === 'video' ? f.contentType?.startsWith('video/') : f.contentType?.startsWith('image/'))))].filter(Boolean);
+  const preselected = failed.retry ?? attempts.at(-1)?.retry;
+  const attemptRows = attempts.map(a => `<label class="att-pick">
+      <input type="checkbox" name="att" value="${a.retry}" ${a.retry === preselected ? 'checked' : ''}>
+      <span class="dot ${esc(a.state)}"></span><b>Attempt ${a.retry + 1}</b><span>${esc(LABEL[a.state] || a.state)}${a.duration != null ? ' · ' + fmtDur(a.duration) : ''}</span>
+      <span class="att-has">${bundle(a).join(' · ') || 'no data recorded'}</span>
+    </label>`).join('');
   // Reports that already include this test come first.
   const open = S.bugs.filter(b => b.status === 'open').sort((a, b) => (b.tests.includes(test.id) - a.tests.includes(test.id)) || b.number - a.number);
   const dlg = document.createElement('dialog');
@@ -1024,10 +1035,9 @@ function openBugDialog(test) {
       <label>Report<select name="bug">${open.map(b => `<option value="${esc(b.id)}">${bugLabel(b.number)} · ${esc(b.title)}${b.tests.includes(test.id) ? ' (already has this test)' : ''}</option>`).join('')}</select></label>
       <label>Note (optional)<textarea name="note" maxlength="5000" placeholder="Anything different about this occurrence?"></textarea></label>
     </div>
-    <div class="evidence"><b>Attached automatically</b>
-      <span>Error: ${esc(firstLine || 'none recorded')}</span>
-      ${step ? `<span>Failed step: ${esc(step)}</span>` : ''}
-      <span>Attempt ${(failed.retry ?? 0) + 1} of ${(test.attempts || []).length || 1}${media.length ? ' · ' + media.join(' and ') : ''}</span>
+    <div class="evidence"><b>Attach attempt data</b>
+      <span>Each attempt you tick is attached with its logs, video, trace and screenshot.</span>
+      <div class="att-list">${attemptRows}</div>
     </div>
     <div class="banner" data-error hidden></div>
     <div class="modal-actions"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary" data-submit>Create report</button></div>
@@ -1053,12 +1063,14 @@ function openBugDialog(test) {
     const v = Object.fromEntries(new FormData(form));
     const showError = msg => { errEl.textContent = msg; errEl.hidden = false; };
     if (mode === 'new' && !v.title.trim()) return showError('Give the report a title.');
+    const chosen = [...form.querySelectorAll('input[name=att]:checked')].map(i => Number(i.value));
+    if (!chosen.length) return showError('Tick at least one attempt to attach.');
     if (mode === 'new' && v.description.trim().length < 10) return showError('Describe the bug (at least 10 characters) before creating the report.');
     dlg.querySelector('[data-submit]').disabled = true;
     try {
       const bug = mode === 'new'
-        ? await api('/api/bugs', { runId: S.viewedId, testId: test.id, title: v.title, description: v.description })
-        : await api(`/api/bugs/${v.bug}/link`, { runId: S.viewedId, testId: test.id, note: v.note });
+        ? await api('/api/bugs', { runId: S.viewedId, testId: test.id, title: v.title, description: v.description, attempts: chosen })
+        : await api(`/api/bugs/${v.bug}/link`, { runId: S.viewedId, testId: test.id, note: v.note, attempts: chosen });
       close();
       notice(`Marked as bugged: ${bugLabel(bug.number)}.`, true);
     } catch (err) { showError(err.message); dlg.querySelector('[data-submit]').disabled = false; }
@@ -1089,6 +1101,25 @@ function renderBugsList() {
     </tr>`).join('')}</tbody></table>`;
 }
 
+// One attached attempt on a bug report: its logs (failed step, errors, code snippet), screenshot, video and trace.
+// Reports made before attempts could be chosen have a single unlabelled group.
+function renderBugAttempt(a, fileUrl, labelled) {
+  const files = (a.files || []).filter(f => !aiOnly(f));
+  const shots = files.filter(f => f.contentType?.startsWith('image/')), videos = files.filter(f => f.contentType?.startsWith('video/'));
+  const trace = files.find(f => f.name === 'trace');
+  return `<div class="bug-attempt">
+    ${labelled ? `<div class="bug-attempt-head"><span class="dot ${esc(a.state)}"></span><b>Attempt ${a.attempt}</b><span class="loc">${esc(LABEL[a.state] || a.state || '')}${a.duration != null ? ' · ' + fmtDur(a.duration) : ''}</span>
+      ${trace ? `<span class="spacer"></span><button class="btn small" data-bug-trace="${esc(trace.file)}">Open trace viewer</button>` : ''}</div>` : ''}
+    ${a.step ? `<div class="callout"><span class="dot failed"></span>Failed in step “${esc(a.step)}”</div>` : ''}
+    ${(a.errors || []).map(e => `<div>
+      ${e.location ? `<div class="section-label mono">${esc(String(e.location.file).split(/[\\/]/).slice(-2).join('/'))}:${e.location.line}:${e.location.column}</div>` : ''}
+      <pre class="error mono">${esc(e.message)}</pre>
+      ${e.snippet ? `<pre class="mono snippet" style="margin-top:8px">${esc(e.snippet)}</pre>` : ''}
+    </div>`).join('')}
+    ${shots.length || videos.length ? `<div class="media">${videos.map(x => videoTag(fileUrl(x.file))).join('')}${shots.map(x => `<a href="${fileUrl(x.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(x.file)}" alt="${esc(x.name)}"></a>`).join('')}</div>` : ''}
+  </div>`;
+}
+
 function renderBug() {
   const el = $('#bugBody'); if (!el) return;
   const b = S.bugCache.get(S.bugId);
@@ -1108,12 +1139,10 @@ function renderBug() {
       ${b.occurrences.length ? b.occurrences.slice().reverse().map(o => `<div class="occ">
         <div class="row" style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center">
           <b>${esc(o.title)}</b><span class="mono loc">${esc(o.file)}:${o.line}</span>
-          <span class="loc">${kept.has(o.runId) ? `<a href="#results=${esc(o.runId)}">Run ${esc(fmtTime(o.runStartedAt))}</a>` : `Run ${esc(fmtTime(o.runStartedAt))} (no longer kept)`} · attempt ${o.attempt} of ${o.attempts}</span>
+          <span class="loc">${kept.has(o.runId) ? `<a href="#results=${esc(o.runId)}">Run ${esc(fmtTime(o.runStartedAt))}</a>` : `Run ${esc(fmtTime(o.runStartedAt))} (no longer kept)`} · ${o.attemptData ? `attempt${o.attemptData.length > 1 ? 's' : ''} ${o.attemptData.map(a => a.attempt).join(', ')} of ${o.attempts} attached` : `attempt ${o.attempt} of ${o.attempts}`}</span>
         </div>
-        ${o.step ? `<div class="callout"><span class="dot failed"></span>Failed in step “${esc(o.step)}”</div>` : ''}
-        ${o.error ? `<pre class="error mono">${esc(o.error)}</pre>` : ''}
         ${o.note ? `<div><div class="section-label">Note</div><div style="white-space:pre-wrap">${esc(o.note)}</div></div>` : ''}
-        ${o.files.length ? `<div class="media">${o.files.map(x => x.contentType.startsWith('video/') ? videoTag(fileUrl(x.file)) : `<a href="${fileUrl(x.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(x.file)}" alt="${esc(x.name)}"></a>`).join('')}</div>` : ''}
+        ${(o.attemptData || [{ step: o.step, errors: o.error ? [{ message: o.error }] : [], files: o.files }]).map(a => renderBugAttempt(a, fileUrl, !!o.attemptData)).join('')}
       </div>`).join('') : '<div class="empty">No tests are linked to this report.</div>'}
     </section>`;
 }

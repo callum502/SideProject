@@ -345,35 +345,50 @@ async function investigatable(runId, testId) {
   return { run, t };
 }
 
-// Snapshot the latest failed attempt into the bug's folder.
-async function occurrence(run, t, bug, note) {
-  const failed = [...(t.attempts || [])].reverse().find(a => a.state === 'failed') || t;
-  const files = [];
-  for (const a of failed.attachments || []) {
-    if (!a.file || !/^(image|video)\//.test(a.contentType || '')) continue;
-    const name = `${run.id}-${a.file}`;
-    await copyFile(path.join(runsDir, run.id, mp4Of(a.file)), path.join(bugsDir, bug.id, mp4Of(name))).catch(() => {});
-    try { await copyFile(path.join(runsDir, run.id, a.file), path.join(bugsDir, bug.id, name)); files.push({ name: a.name, contentType: a.contentType, file: name }); } catch {}
+// Snapshot the chosen attempts into the bug's folder. Each attempt is attached as a bundle: its logs (errors and
+// code snippet), screenshot, video and trace, plus error-context, which is kept for AI analysis but not shown.
+// With no attempts chosen, the latest failed attempt is used.
+async function occurrence(run, t, bug, note, chosen) {
+  const all = t.attempts?.length ? [...t.attempts].sort((a, b) => a.retry - b.retry) : [{ ...t, retry: t.retry ?? 0 }];
+  let picked = Array.isArray(chosen) ? all.filter(a => chosen.map(Number).includes(a.retry)) : [];
+  if (Array.isArray(chosen) && chosen.length && !picked.length) throw fail('Choose at least one attempt to attach.');
+  if (!picked.length) picked = [[...all].reverse().find(a => a.state === 'failed') || all.at(-1)];
+  const attemptData = [];
+  for (const a of picked) {
+    const files = [];
+    for (const f of a.attachments || []) {
+      if (!f.file || !(/^(image|video)\//.test(f.contentType || '') || ['trace', 'error-context'].includes(f.name))) continue;
+      const name = `${run.id}-${f.file}`;
+      if (/^video\//.test(f.contentType || '')) await copyFile(path.join(runsDir, run.id, mp4Of(f.file)), path.join(bugsDir, bug.id, mp4Of(name))).catch(() => {});
+      try { await copyFile(path.join(runsDir, run.id, f.file), path.join(bugsDir, bug.id, name)); files.push({ name: f.name, contentType: f.contentType, file: name }); } catch {}
+    }
+    attemptData.push({
+      attempt: a.retry + 1, state: a.state, duration: a.duration ?? null,
+      step: a.steps?.find(s => s.state === 'failed')?.title || null,
+      errors: (a.errors || []).map(e => ({ message: String(e.message || e.value || '').slice(0, 8000), snippet: e.snippet ? String(e.snippet).slice(0, 4000) : null, location: e.location || null })),
+      files,
+    });
   }
+  // Top-level fields summarise the first failed attempt chosen (older reports only have these).
+  const lead = attemptData.find(a => a.state === 'failed') || attemptData[0];
   return {
     runId: run.id, runStartedAt: run.startedAt, testId: t.id, title: t.titlePath.join(' › '), file: t.file, line: t.line,
-    attempt: (failed.retry ?? 0) + 1, attempts: (t.attempts || []).length || 1,
-    step: failed.steps?.find(s => s.state === 'failed')?.title || null,
-    error: String(failed.errors?.[0]?.message || '').slice(0, 8000), location: failed.errors?.[0]?.location || null,
-    note: note || '', files, addedAt: Date.now(),
+    attempt: lead.attempt, attempts: all.length, attemptData,
+    step: lead.step, error: lead.errors[0]?.message || '', location: lead.errors[0]?.location || null,
+    note: note || '', files: attemptData.flatMap(a => a.files), addedAt: Date.now(),
   };
 }
 
-async function linkBug(bug, run, t, note) {
+async function linkBug(bug, run, t, note, attempts) {
   await mkdir(path.join(bugsDir, bug.id), { recursive: true });
-  bug.occurrences.push(await occurrence(run, t, bug, note));
+  bug.occurrences.push(await occurrence(run, t, bug, note, attempts));
   await saveBug(bug);
   t.bug = bugRef(bug);
   await saveRun(run);
   broadcast({ type: 'testChanged', runId: run.id, test: t, status: run.status });
 }
 
-async function createBug({ runId, testId, title, description }) {
+async function createBug({ runId, testId, title, description, attempts }) {
   title = String(title || '').trim(); description = String(description || '').trim();
   if (!title || title.length > 200) throw fail('Give the report a title (up to 200 characters).');
   if (description.length < 10 || description.length > 20000) throw fail('Write a description of the bug (at least 10 characters).');
@@ -381,18 +396,18 @@ async function createBug({ runId, testId, title, description }) {
   if (triage(t) !== 'investigate') throw fail('Only tests that need triage can be marked as bugged.');
   const number = (await listBugs()).reduce((n, b) => Math.max(n, b.number), 0) + 1;
   const bug = { id: 'bug-' + String(number).padStart(3, '0'), number, title, description, status: 'open', createdAt: Date.now(), occurrences: [] };
-  await linkBug(bug, run, t, '');
+  await linkBug(bug, run, t, '', attempts);
   return bug;
 }
 
-async function addToBug(id, { runId, testId, note }) {
+async function addToBug(id, { runId, testId, note, attempts }) {
   const bug = await loadBug(id);
   if (!bug) throw fail('Bug report not found.', 404);
   note = String(note || '').trim();
   if (note.length > 5000) throw fail('Keep the note under 5000 characters.');
   const { run, t } = await investigatable(runId, testId);
   if (triage(t) !== 'investigate') throw fail('Only tests that need triage can be marked as bugged.');
-  await linkBug(bug, run, t, note);
+  await linkBug(bug, run, t, note, attempts);
   return bug;
 }
 
@@ -555,8 +570,10 @@ const server = http.createServer(async (req, res) => {
         return send(res, 200, { opened: true });
       }
       if (p === '/api/trace') {
-        const run = await loadRun(String(body.runId));
-        const file = run && inside(path.join(runsDir, run.id), String(body.file));
+        // Traces live with a run, or as a copy in a bug report.
+        let file = null;
+        if (body.bugId) { const bug = await loadBug(String(body.bugId)); file = bug && inside(path.join(bugsDir, bug.id), String(body.file)); }
+        else { const run = await loadRun(String(body.runId)); file = run && inside(path.join(runsDir, run.id), String(body.file)); }
         if (!file) return send(res, 404, { error: 'Trace not found' });
         const [cmd, args] = playwright('show-trace', file);
         spawn(cmd, args, { cwd: root, detached: true, stdio: 'ignore' }).unref();
