@@ -7,6 +7,7 @@ import { createReadStream } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes, createHash } from 'node:crypto';
+import { findClaude, buildPrompt, analyse } from './analysis.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, '..');
@@ -474,6 +475,55 @@ async function withSourceLines(actions) {
   return actions;
 }
 
+// ---------- AI analysis ----------
+// Started from a test's "Analyse" button; runs Claude Code headless (see analysis.mjs) on the latest failed
+// attempt. The result is stored on the test (t.analysis) and pushed to the page when it's ready.
+const analysing = new Map(); // "runId:testId" -> cancel function
+
+async function setAnalysis(runId, testId, analysis) {
+  // Re-read the run so a retry or bug mark made meanwhile isn't overwritten (a live run is the in-memory copy).
+  const latest = await loadRun(runId);
+  const t = latest?.tests[testId];
+  if (!t) return;
+  t.analysis = analysis;
+  await saveRun(latest).catch(() => {});
+  broadcast({ type: 'testChanged', runId, test: t, status: latest.status });
+}
+
+async function startAnalysis(runId, testId) {
+  runId = String(runId); testId = String(testId);
+  if (current?.run.id === runId) throw fail('Wait for this run to finish first.', 409);
+  const key = runId + ':' + testId;
+  if (analysing.has(key)) throw fail('This test is already being analysed.', 409);
+  const run = await loadRun(runId);
+  const t = run?.tests[testId];
+  if (!t) throw fail('Test not found in this run.', 404);
+  const all = t.attempts?.length ? [...t.attempts].sort((a, b) => a.retry - b.retry) : [{ ...t, retry: t.retry ?? 0 }];
+  const attempt = [...all].reverse().find(a => a.state === 'failed');
+  if (!attempt) throw fail('This test has no failed attempt to analyse.');
+  const claudePath = await findClaude();
+  if (!claudePath) throw fail('Claude Code was not found. Install it, or set CLAUDE_CODE_PATH to the claude executable.', 503);
+  const prompt = await buildPrompt({ root, runsDir, run, test: t, attempt });
+  const base = { attempt: attempt.retry + 1, startedAt: Date.now() };
+  analysing.set(key, null);
+  await setAnalysis(runId, testId, { ...base, status: 'running' });
+  analyse({ claudePath, cwd: root, prompt, onStart: cancel => analysing.set(key, cancel) })
+    .then(r => setAnalysis(runId, testId, { ...base, status: 'done', finishedAt: Date.now(), ...r }))
+    .catch(e => setAnalysis(runId, testId, { ...base, status: e.message === 'Cancelled.' ? 'cancelled' : 'error', finishedAt: Date.now(), error: e.message }))
+    .finally(() => analysing.delete(key));
+}
+
+// An analysis can't survive a dashboard restart, so one left "running" in a saved run is marked interrupted.
+async function clearInterruptedAnalyses() {
+  for (const id of await readdir(runsDir).catch(() => [])) {
+    const run = await loadRun(id);
+    const stuck = Object.values(run?.tests || {}).filter(t => t.analysis?.status === 'running');
+    if (!stuck.length) continue;
+    for (const t of stuck) Object.assign(t.analysis, { status: 'error', error: 'Interrupted: the dashboard restarted during the analysis.' });
+    await saveRun(run).catch(() => {});
+  }
+}
+
 function stopRun() {
   if (!current) return false;
   current.stopped = true;
@@ -550,6 +600,17 @@ const server = http.createServer(async (req, res) => {
       if ((pm = p.match(/^\/api\/runs\/([\w-]+)\/delete-attempt$/))) { await deleteAttempt(pm[1], body.testId, body.retry); return send(res, 200, { ok: true }); }
       if (p === '/api/bugs') return send(res, 200, await createBug(body));
       if (p === '/api/source') return send(res, 200, await saveSource(body));
+      if (p === '/api/analyse') { await startAnalysis(body.runId, body.testId); return send(res, 200, { started: true }); }
+      if (p === '/api/analyse/cancel') { const cancel = analysing.get(String(body.runId) + ':' + String(body.testId)); cancel?.(); return send(res, 200, { cancelled: !!cancel }); }
+      if (p === '/api/analyse/applied') {
+        // Record that the suggested fix was applied, so the page can say so.
+        const run = await loadRun(String(body.runId)), t = run?.tests[String(body.testId)];
+        if (!t?.analysis) return send(res, 404, { error: 'No analysis for this test.' });
+        t.analysis.appliedAt = Date.now();
+        await saveRun(run);
+        broadcast({ type: 'testChanged', runId: run.id, test: t, status: run.status });
+        return send(res, 200, { ok: true });
+      }
       if ((pm = p.match(/^\/api\/bugs\/(bug-\d+)\/link$/))) return send(res, 200, await addToBug(pm[1], body));
       if ((pm = p.match(/^\/api\/bugs\/(bug-\d+)\/status$/))) {
         const bug = await loadBug(pm[1]);
@@ -625,6 +686,7 @@ const server = http.createServer(async (req, res) => {
 await mkdir(runsDir, { recursive: true });
 await pruneRuns();
 convertExistingVideos();
+await clearInterruptedAnalyses();
 server.listen(PORT, HOST, () => console.log(`Test dashboard: http://${HOST}:${PORT}`));
 const shutdown = () => { stopRun(); setTimeout(() => process.exit(0), 300); };
 process.on('SIGINT', shutdown);

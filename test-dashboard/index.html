@@ -284,10 +284,19 @@
   .shot img { display: block; width: 100%; }
   .video { display: block; width: 100%; max-height: 62vh; border-radius: 8px; border: 1px solid var(--border); background: #000; }
   .links { display: flex; flex-wrap: wrap; gap: 8px; }
-  .ai { border: 1px dashed var(--border); border-radius: 10px; padding: 14px 16px; background: var(--panel-2); display: grid; gap: 6px; }
+  .ai { border: 1px dashed var(--border); border-radius: 10px; padding: 14px 16px; background: var(--panel-2); display: grid; gap: 14px; }
   .ai-head { display: flex; align-items: center; gap: 8px; font-weight: 600; }
   .ai .badge { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; background: var(--border); color: var(--muted); }
   .ai p { margin: 0; color: var(--muted); }
+  .ai .ai-summary { color: var(--text); font-size: 14.5px; }
+  .ai-section { display: grid; gap: 6px; }
+  .ai-section ul { margin: 0; padding-left: 18px; color: var(--muted); display: grid; gap: 3px; }
+  .ai-diff { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .ai-diff-file { padding: 5px 10px; font-size: 12px; background: var(--panel); border-bottom: 1px solid var(--border); color: var(--muted); }
+  .ai-diff pre { border: 0; border-radius: 0; margin: 0; white-space: pre; overflow-x: auto; }
+  .ai-diff .del { color: var(--fail); background: var(--fail-bg); display: inline-block; min-width: 100%; }
+  .ai-diff .add { color: var(--pass); background: var(--pass-bg); display: inline-block; min-width: 100%; }
+  .ai-draft { white-space: pre-wrap; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
   .console pre { border: 0; border-radius: 0 0 12px 12px; max-height: calc(100vh - 290px); min-height: 200px; }
   .warn { font-size: 12.5px; color: var(--warn); }
 
@@ -617,6 +626,7 @@ function bindView() {
       if (e.target.closest('[data-retry]')) retry([S.picked]);
       if (e.target.closest('[data-retry-headed]')) retry([S.picked], { headed: true });
       if (e.target.closest('[data-retry-all]')) retry(Object.values(viewed().tests).filter(t => triage(t) === 'investigate' && canRetry(t)).map(t => t.id));
+      const ai = e.target.closest('[data-ai]'); if (ai) { aiAction(ai.dataset.ai); return; }
       const seek = e.target.closest('[data-seek]');
       if (seek) { const v = seek.closest('.detail')?.querySelector('video'); if (v) smoothSeek(v, Number(seek.dataset.seek) / 1000); return; }
       const del = e.target.closest('[data-del-attempt]');
@@ -813,7 +823,7 @@ function detailTabs(t) {
   if (videos.length) tabs.push(['video', 'Video']);
   if (t.file && !['queued'].includes(t.state)) tabs.push(['code', 'Code']);
   if (files.length) tabs.push(['artifacts', 'Artifacts', files.length]);
-  if (isFail(t)) tabs.push(['ai', 'AI analysis']);
+  if (isFail(t) || (t.attempts || []).some(a => a.state === 'failed')) tabs.push(['ai', 'AI analysis']);
   return { tabs, shots, videos };
 }
 
@@ -969,15 +979,82 @@ function wireVideoActions() {
   video.addEventListener('timeupdate', sync);
 }
 
-// Placeholder for AI failure analysis. Each test result carries an `analysis` field
-// (null for now) which will hold the suggested cause and fix.
+// ---------- AI analysis ----------
+// "Analyse" runs Claude Code on the latest failed attempt (using your Claude subscription). The verdict is one of
+// UI change / timing / app bug / unclear. A proposed test fix or bug report is only applied when you approve it.
+const AI_LABEL = { ui_change: 'UI change', timing: 'Timing issue', app_bug: 'App bug', unclear: 'Unclear' };
+const AI_CLASS = { ui_change: 'running', timing: 'investigate', app_bug: 'bugged', unclear: '' };
 function renderAnalysis(t) {
-  const a = t.analysis;
-  if (a) return `<div class="ai"><div class="ai-head">AI analysis <span class="badge">${esc(a.category || '')}</span></div>
-    <p><b>Likely cause:</b> ${esc(a.cause)}</p><p><b>Suggested fix:</b> ${esc(a.fix)}</p></div>`;
-  return `<div class="ai"><div class="ai-head">AI analysis <span class="badge">Not configured</span></div>
-    <p>The likely cause and a suggested fix for this failure will appear here, for example an expected UI change where the test should be updated.</p>
-    <p>If it suspects a bug in the app, it can draft a bug report for you to review before it's saved.</p></div>`;
+  const a = t.analysis, live = S.viewedId === S.liveId;
+  const intro = '<p>Claude reads this failure (logs, steps, actions, page snapshot, screenshot, the test and app code, and recent app changes) and says whether it looks like a UI change, a timing issue or an app bug. Any fix or bug report it suggests is only applied when you approve it.</p><p class="loc">Runs Claude Code with your Claude subscription, so it uses your plan’s usage. It can only read files: no commands, no edits, and .env files are blocked. Usually takes about a minute.</p>';
+  const analyseBtn = (label = 'Analyse') => live ? '<span class="loc">Available when the run finishes.</span>' : `<button class="btn small primary" data-ai="start">${label}</button>`;
+  if (!a) return `<div class="ai"><div class="ai-head">AI analysis</div>${intro}<div class="actions">${analyseBtn()}</div></div>`;
+  if (a.status === 'running') return `<div class="ai"><div class="ai-head"><span class="dot running"></span>Analysing attempt ${a.attempt}… <span class="loc" id="aiElapsed" data-since="${a.startedAt}">${fmtDur(Date.now() - a.startedAt)}</span></div>
+    <p>Claude is reading the failure and the code. You can keep using the dashboard; the result appears here when it’s ready.</p>
+    <div class="actions"><button class="btn small" data-ai="cancel">Cancel</button></div></div>`;
+  if (a.status !== 'done') return `<div class="ai"><div class="ai-head">AI analysis <span class="badge">${a.status === 'cancelled' ? 'Cancelled' : 'Failed'}</span></div>
+    ${a.error && a.status !== 'cancelled' ? `<pre class="error mono">${esc(a.error)}</pre>` : ''}<div class="actions">${analyseBtn('Analyse again')}</div></div>`;
+
+  const r = a.result, cat = r.category;
+  const edits = (cat === 'ui_change' || cat === 'timing') ? r.edits || [] : [];
+  const action = edits.length ? `<div class="ai-section"><div class="section-label">Proposed test change</div>
+        <p>${esc(r.fix_description)}</p>
+        ${edits.map(e => `<div class="ai-diff"><div class="ai-diff-file mono">${esc(e.file)}</div><pre class="mono">${e.find.split('\n').map(l => `<span class="del">- ${esc(l)}</span>`).join('\n')}\n${e.replace.split('\n').map(l => `<span class="add">+ ${esc(l)}</span>`).join('\n')}</pre></div>`).join('')}
+        <div class="actions">${a.appliedAt ? `<span class="pill passed">Applied ${esc(fmtAgo(a.appliedAt))}</span>${live ? '' : '<button class="btn small" data-ai="retry">↻ Retry the test</button>'}`
+          : `<button class="btn small primary" data-ai="apply">Apply fix</button><button class="btn small" data-ai="apply-retry">Apply and retry</button>`}</div></div>`
+    : cat === 'app_bug' ? `<div class="ai-section"><div class="section-label">Draft bug report</div>
+        <p><b>${esc(r.bug_title)}</b></p><div class="ai-draft">${esc(r.bug_description)}</div>
+        <div class="actions">${t.bug ? `<span class="pill bugged">Bugged: ${esc(bugLabel(t.bug.number))}</span>` : live ? '' : '<button class="btn small primary" data-ai="bug">Create bug report…</button>'}</div></div>`
+    : '';
+  return `<div class="ai">
+    <div class="ai-head"><span class="pill ${AI_CLASS[cat]}">${AI_LABEL[cat] || cat}</span><span class="loc">${esc(r.confidence)} confidence · attempt ${a.attempt} · ${fmtDur(a.durationMs)}${a.model ? ' · ' + esc(a.model) : ''}</span>
+      <span class="spacer"></span>${live ? '' : '<button class="btn small" data-ai="start">Analyse again</button>'}</div>
+    <p class="ai-summary">${esc(r.summary)}</p>
+    <div class="ai-section"><div class="section-label">Likely cause</div><p>${esc(r.cause)}</p></div>
+    ${r.evidence?.length ? `<div class="ai-section"><div class="section-label">Evidence</div><ul>${r.evidence.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
+    ${action}
+  </div>`;
+}
+
+// Apply the proposed find/replace edits through the same save path as the Code tab: files under tests/ only,
+// refused if a file changed on disk in between. Every edit is checked before anything is written.
+async function applyAiFix(test) {
+  const edits = test.analysis?.result?.edits || [];
+  const byFile = new Map();
+  for (const e of edits) (byFile.get(e.file) || byFile.set(e.file, []).get(e.file)).push(e);
+  const updates = [];
+  for (const [file, list] of byFile) {
+    const src = await api('/api/source?path=' + encodeURIComponent(file));
+    let text = src.content;
+    for (const e of list) {
+      const count = text.split(e.find).length - 1;
+      if (count !== 1) throw new Error(`Couldn't apply the fix to ${file}: the text to replace was found ${count} times (expected once). The file may have changed since the analysis; analyse again.`);
+      text = text.replace(e.find, () => e.replace);
+    }
+    updates.push({ src, text });
+  }
+  for (const { src, text } of updates) {
+    const saved = await api('/api/source', { path: src.path, content: text, hash: src.hash });
+    // Keep an open Code tab in step, unless it has unsaved edits of its own.
+    const entry = CODE.files.get(saved.path);
+    if (entry && !isDirty(entry)) { entry.model.setValue(text); Object.assign(entry, { content: text, hash: saved.hash, mtime: saved.mtime, savedVersion: entry.model.getAlternativeVersionId() }); }
+  }
+  await api('/api/analyse/applied', { runId: S.viewedId, testId: test.id });
+  notice(`Applied the fix to ${[...byFile.keys()].join(', ')}.`, true);
+}
+
+async function aiAction(action) {
+  const test = viewed()?.tests[S.picked]; if (!test) return;
+  try {
+    if (action === 'start') await api('/api/analyse', { runId: S.viewedId, testId: test.id });
+    if (action === 'cancel') await api('/api/analyse/cancel', { runId: S.viewedId, testId: test.id });
+    if (action === 'apply' || action === 'apply-retry') { await applyAiFix(test); if (action === 'apply-retry') await retry([test.id]); }
+    if (action === 'retry') await retry([test.id]);
+    if (action === 'bug') {
+      const r = test.analysis.result;
+      openBugDialog(test, { title: r.bug_title, description: r.bug_description, attempt: test.analysis.attempt - 1 });
+    }
+  } catch (e) { notice(e.message); }
 }
 
 // ---------- History ----------
@@ -1007,13 +1084,14 @@ async function retry(ids, { headed = false } = {}) {
 
 // "Mark as bugged": a new report needs a written description; adding to an existing report takes an optional note.
 // You choose which attempts to attach; each one brings its logs, video, trace and screenshot.
-function openBugDialog(test) {
+// prefill (from AI analysis): { title, description, attempt } - the attempt to tick.
+function openBugDialog(test, prefill = {}) {
   const failed = [...(test.attempts || [])].reverse().find(a => a.state === 'failed') || test;
   const firstLine = (String(failed.errors?.[0]?.message || '').split('\n').find(l => l.trim()) || '').replace(/^\s*Error:\s*/, '');
   // Runs from before attempts were stored have just the one result.
   const attempts = (test.attempts?.length ? [...test.attempts].sort((a, b) => a.retry - b.retry) : [{ ...test, retry: test.retry ?? 0 }]).filter(a => a.state !== 'running');
   const bundle = a => [a.errors?.length && 'logs', ...['video', 'trace', 'screenshot'].filter(k => (a.attachments || []).some(f => f.file && (k === 'trace' ? f.name === 'trace' : k === 'video' ? f.contentType?.startsWith('video/') : f.contentType?.startsWith('image/'))))].filter(Boolean);
-  const preselected = failed.retry ?? attempts.at(-1)?.retry;
+  const preselected = prefill.attempt ?? failed.retry ?? attempts.at(-1)?.retry;
   const attemptRows = attempts.map(a => `<label class="att-pick">
       <input type="checkbox" name="att" value="${a.retry}" ${a.retry === preselected ? 'checked' : ''}>
       <span class="dot ${esc(a.state)}"></span><b>Attempt ${a.retry + 1}</b><span>${esc(LABEL[a.state] || a.state)}${a.duration != null ? ' · ' + fmtDur(a.duration) : ''}</span>
@@ -1028,8 +1106,8 @@ function openBugDialog(test) {
     <div class="loc">${esc(test.titlePath.join(' › '))} · <span class="mono">${esc(test.file)}:${test.line}</span></div>
     <div class="seg"><button type="button" data-mode="new" class="active">New report</button><button type="button" data-mode="existing" ${open.length ? '' : 'disabled title="No open reports yet"'}>Add to existing${open.length ? ` (${open.length})` : ''}</button></div>
     <div data-pane="new" style="display:grid;gap:12px">
-      <label>Title<input name="title" maxlength="200" value="${esc((test.title + ': ' + firstLine).slice(0, 160))}"></label>
-      <label>What's wrong?<textarea name="description" maxlength="20000" placeholder="Describe the bug: what you expected to happen and what happened instead."></textarea></label>
+      <label>Title<input name="title" maxlength="200" value="${esc(prefill.title || (test.title + ': ' + firstLine).slice(0, 160))}"></label>
+      <label>What's wrong?<textarea name="description" maxlength="20000" placeholder="Describe the bug: what you expected to happen and what happened instead.">${esc(prefill.description || '')}</textarea></label>
     </div>
     <div data-pane="existing" hidden style="display:grid;gap:12px">
       <label>Report<select name="bug">${open.map(b => `<option value="${esc(b.id)}">${bugLabel(b.number)} · ${esc(b.title)}${b.tests.includes(test.id) ? ' (already has this test)' : ''}</option>`).join('')}</select></label>
@@ -1414,7 +1492,10 @@ function connect() {
     }
   };
 }
-setInterval(() => { if (S.liveId) renderChrome(); }, 1000);
+setInterval(() => {
+  if (S.liveId) renderChrome();
+  const el = document.getElementById('aiElapsed'); if (el) el.textContent = fmtDur(Date.now() - Number(el.dataset.since));
+}, 1000);
 
 (async () => {
   connect();
