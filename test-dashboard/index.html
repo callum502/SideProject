@@ -837,8 +837,8 @@ function renderDetail(test) {
       ${others.length ? `<div class="links">${others.map(a => a.name === 'trace' && a.file ? `<button class="btn small" data-trace="${esc(a.file)}">Open trace viewer</button>` : a.file ? `<a class="btn small" href="${fileUrl(a.file)}" target="_blank" rel="noopener">${esc(a.name)}</a>` : '').join('')}</div>` : ''}`;
   } else if (S.detailTab === 'video') {
     content = '<div class="video-layout">' + videos.slice(0, 1).map(a => `<div class="video-box">
-        <video class="video" controls preload="metadata" src="${fileUrl(a.file)}" onerror="this.hidden=true;this.nextElementSibling.hidden=false"></video>
-        <div class="banner" hidden>This browser can't play the recording (WebM). VS Code's built-in browser is a known case. Open this run in your normal browser instead.
+        ${videoTag(fileUrl(a.file), 'video')}
+        <div class="banner" hidden>This browser can't play the recording. Open this run in your normal browser instead.
           <div class="links" style="margin-top:8px"><button class="btn small" data-open-external>Open in your browser</button></div></div>
       </div>`).join('') + renderActionList(t) + '</div>';
   } else if (S.detailTab === 'ai') {
@@ -871,6 +871,16 @@ function renderDetail(test) {
       })() : ''}</div>
     <div class="detail-body${S.detailTab === 'video' ? ' video-tab' : ''}">${content}</div>` : `<div class="detail-body"><div class="empty">${t.state === 'running' ? 'Running…' : t.state === 'queued' ? 'Waiting to run.' : 'No details recorded.'}</div></div>`}
   </section>`;
+}
+
+// Recordings are offered as MP4 (H.264) first, which VS Code's built-in browser can play, then the original
+// WebM. If neither plays, the "can't play" message after the video is shown.
+function videoTag(webmUrl, cls = '') {
+  const mp4Url = webmUrl.replace(/\.webm$/i, '.mp4');
+  return `<video ${cls ? `class="${cls}"` : ''} controls preload="metadata">
+    <source src="${mp4Url}" type="video/mp4">
+    <source src="${webmUrl}" type="video/webm" onerror="const v=this.parentNode;v.hidden=true;if(v.nextElementSibling)v.nextElementSibling.hidden=false">
+  </video>`;
 }
 
 // ---------- Video action list ----------
@@ -1094,7 +1104,7 @@ function renderBug() {
         ${o.step ? `<div class="callout"><span class="dot failed"></span>Failed in step “${esc(o.step)}”</div>` : ''}
         ${o.error ? `<pre class="error mono">${esc(o.error)}</pre>` : ''}
         ${o.note ? `<div><div class="section-label">Note</div><div style="white-space:pre-wrap">${esc(o.note)}</div></div>` : ''}
-        ${o.files.length ? `<div class="media">${o.files.map(x => x.contentType.startsWith('video/') ? `<video controls preload="metadata" src="${fileUrl(x.file)}"></video>` : `<a href="${fileUrl(x.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(x.file)}" alt="${esc(x.name)}"></a>`).join('')}</div>` : ''}
+        ${o.files.length ? `<div class="media">${o.files.map(x => x.contentType.startsWith('video/') ? videoTag(fileUrl(x.file)) : `<a href="${fileUrl(x.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${fileUrl(x.file)}" alt="${esc(x.name)}"></a>`).join('')}</div>` : ''}
       </div>`).join('') : '<div class="empty">No tests are linked to this report.</div>'}
     </section>`;
 }

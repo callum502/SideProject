@@ -20,9 +20,39 @@ const playwright = (...args) => [process.execPath, ['--preserve-symlinks', '--pr
 
 const stripAnsi = s => typeof s === 'string' ? s.replace(/\u001b\[[0-9;]*[A-Za-z]/g, '') : s;
 const cleanError = e => e && { ...e, message: stripAnsi(e.message), stack: stripAnsi(e.stack), snippet: stripAnsi(e.snippet) };
-const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webm': 'video/webm', '.zip': 'application/zip', '.md': 'text/markdown; charset=utf-8', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8', '.ttf': 'font/ttf', '.map': 'application/json' };
+const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.png': 'image/png', '.jpg': 'image/jpeg', '.webm': 'video/webm', '.mp4': 'video/mp4', '.zip': 'application/zip', '.md': 'text/markdown; charset=utf-8', '.svg': 'image/svg+xml', '.txt': 'text/plain; charset=utf-8', '.ttf': 'font/ttf', '.map': 'application/json' };
 // Monaco (the editor VS Code is built on) powers the Code tab; served from node_modules so it works offline.
 const monacoDir = path.join(root, 'node_modules', 'monaco-editor', 'min');
+
+// Playwright records WebM, which VS Code's built-in browser can't open (its media library has no WebM support)
+// but it can play H.264 MP4. Each recording also gets an MP4 copy next to it (about 8x smaller), which the
+// pages offer first. Uses the ffmpeg-static dev dependency; without it, only WebM is available.
+let ffmpegPath = null;
+try { ffmpegPath = (await import('ffmpeg-static')).default; } catch {}
+const mp4Of = file => file.replace(/\.webm$/i, '.mp4');
+let conversions = Promise.resolve();
+function toMp4(webm) {
+  if (!ffmpegPath || !/\.webm$/i.test(webm)) return Promise.resolve(false);
+  // One conversion at a time, so a run with many tests doesn't compete with the tests for CPU.
+  conversions = conversions.then(() => new Promise(resolve => {
+    const p = spawn(ffmpegPath, ['-hide_banner', '-loglevel', 'error', '-y', '-i', webm, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '26', '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-an', mp4Of(webm)], { stdio: 'ignore' });
+    p.on('close', code => resolve(code === 0));
+    p.on('error', () => resolve(false));
+  }));
+  return conversions;
+}
+// Convert recordings kept from before this existed (runs and bug reports), in the background.
+async function convertExistingVideos() {
+  for (const base of [runsDir, path.join(here, 'bugs')]) {
+    for (const dir of await readdir(base).catch(() => [])) {
+      for (const file of await readdir(path.join(base, dir)).catch(() => [])) {
+        if (!/\.webm$/i.test(file)) continue;
+        const webm = path.join(base, dir, file);
+        if (!(await stat(mp4Of(webm)).catch(() => null))) await toMp4(webm);
+      }
+    }
+  }
+}
 
 let testCache = null;
 let current = null; // the run in progress, if any
@@ -144,7 +174,7 @@ async function deleteAttempt(runId, testId, retry) {
   if (t.attempts.length < 2) throw fail("A test's only attempt can't be deleted.");
   t.nextAttempt = nextAttempt(t);
   t.attempts = t.attempts.filter(a => a !== attempt);
-  for (const a of attempt.attachments || []) if (a.file) await rm(path.join(runsDir, run.id, a.file), { force: true });
+  for (const a of attempt.attachments || []) if (a.file) for (const f of [a.file, mp4Of(a.file)]) await rm(path.join(runsDir, run.id, f), { force: true });
   const last = [...t.attempts].sort((a, b) => a.retry - b.retry).at(-1);
   Object.assign(t, { state: last.state === 'passed' ? 'passed' : last.state === 'skipped' ? 'skipped' : 'failed', status: last.status, duration: last.duration, retry: last.retry, errors: last.errors, steps: last.steps, attachments: last.attachments });
   await saveRun(run);
@@ -253,6 +283,7 @@ async function handleEvent(run, dir, e) {
         if (a.path) {
           const file = `${e.id}-r${n}-${i}${path.extname(a.path)}`.replace(/[^\w.-]/g, '_');
           try { await copyFile(a.path, path.join(dir, file)); entry.file = file; } catch { continue; }
+          if (/\.webm$/i.test(file)) await toMp4(path.join(dir, file));
         } else if (a.body) entry.body = a.body;
         attachments.push(entry);
       }
@@ -321,6 +352,7 @@ async function occurrence(run, t, bug, note) {
   for (const a of failed.attachments || []) {
     if (!a.file || !/^(image|video)\//.test(a.contentType || '')) continue;
     const name = `${run.id}-${a.file}`;
+    await copyFile(path.join(runsDir, run.id, mp4Of(a.file)), path.join(bugsDir, bug.id, mp4Of(name))).catch(() => {});
     try { await copyFile(path.join(runsDir, run.id, a.file), path.join(bugsDir, bug.id, name)); files.push({ name: a.name, contentType: a.contentType, file: name }); } catch {}
   }
   return {
@@ -372,7 +404,7 @@ async function unmarkBug(runId, testId) {
   if (bug) {
     const gone = bug.occurrences.filter(o => o.runId === run.id && o.testId === t.id);
     bug.occurrences = bug.occurrences.filter(o => !gone.includes(o));
-    for (const f of gone.flatMap(o => o.files)) await rm(path.join(bugsDir, bug.id, f.file), { force: true });
+    for (const f of gone.flatMap(o => o.files)) for (const name of [f.file, mp4Of(f.file)]) await rm(path.join(bugsDir, bug.id, name), { force: true });
     await saveBug(bug);
   }
   delete t.bug;
@@ -575,6 +607,7 @@ const server = http.createServer(async (req, res) => {
 
 await mkdir(runsDir, { recursive: true });
 await pruneRuns();
+convertExistingVideos();
 server.listen(PORT, HOST, () => console.log(`Test dashboard: http://${HOST}:${PORT}`));
 const shutdown = () => { stopRun(); setTimeout(() => process.exit(0), 300); };
 process.on('SIGINT', shutdown);
