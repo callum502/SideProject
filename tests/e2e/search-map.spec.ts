@@ -71,18 +71,29 @@ test('search results can be browsed with the keyboard', async () => {
   await expect(page).toHaveURL(new RegExp('#location=' + alpha.id + '$'));
 });
 
-// Fails until a known bug in src/LocationSearch.jsx is fixed: Escape never closes the results. On a focused result,
-// Escape moves focus back to the search box, whose onFocus handler reopens them; in the search box, Chrome clears
-// the field on Escape, whose onChange reopens them with every location.
-test('Escape on a focused result closes the results', async () => {
+// Regression: returning focus to the search box used to reopen the results through onFocus, and Chrome's
+// native Escape cleared the query, whose onChange reopened them with every location.
+test('Escape closes the results, from a focused result or the search box, keeping the search', async () => {
   const { page, search } = await explore();
   const results = page.locator('.location-result');
   await search.fill(token);
+  // From a focused result: the results close and focus returns to the search box.
   await search.press('ArrowDown');
   await expect(results.nth(0)).toBeFocused();
   await page.keyboard.press('Escape');
   await expect(search).toBeFocused();
   await expect(results).toHaveCount(0, { timeout: 3000 });
+  await expect(search).toHaveValue(token);
+  // From the search box: the results close and the search text stays.
+  await search.press('ArrowDown');
+  await expect(results).toHaveCount(2);
+  await search.press('Escape');
+  await expect(results).toHaveCount(0, { timeout: 3000 });
+  await expect(search).toHaveValue(token);
+  // Clicking back into the search box reopens them.
+  await search.blur();
+  await search.click();
+  await expect(results).toHaveCount(2);
 });
 
 test('Create location is offered only to signed-in users', async ({ browser }) => {
