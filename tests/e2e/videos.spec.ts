@@ -21,9 +21,9 @@ test('uploads MP4, WebM and MOV videos to a boulder with download links', async 
     await expect(card.getByRole('link', { name: 'Download' })).toHaveAttribute('href', new RegExp('\\?download=' + encodeURIComponent(name) + '$'));
   }
   await expect(page.locator('.detail-banner .banner-bottom span').first()).toHaveText('1 problem · 0 photos · 3 videos');
-  // API/DB check: each video kept its type and name. Videos saved together have no fixed order.
+  // API/DB check: each video kept its type and name, in the chosen order.
   const videos = find(await guide(page), boulder.id).videos;
-  expect(Object.fromEntries(videos.map((v: any) => [v.name, v.url.split('.').pop()])), 'API/DB: names and file types saved').toEqual({ 'Sit start beta': 'mp4', 'Video 2': 'webm', 'Video 3': 'mov' });
+  expect(videos.map((v: any) => v.name + '.' + v.url.split('.').pop()), 'API/DB: names and file types saved in order').toEqual(['Sit start beta.mp4', 'Video 2.webm', 'Video 3.mov']);
 });
 
 test('rejects files that are not supported videos, without saving anything', async () => {

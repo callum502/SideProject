@@ -24,7 +24,7 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
       CREATE TABLE storage.objects(id uuid DEFAULT gen_random_uuid(),bucket_id text,name text,owner_id text,metadata jsonb,UNIQUE(bucket_id,name));
       ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
       GRANT USAGE ON SCHEMA storage TO authenticated;GRANT SELECT,INSERT ON storage.objects TO authenticated;`);
-    for (const name of ['20260909000100_initial_schema.sql','20260909000200_account_access.sql','20260910000100_content_api.sql','20260912000100_media_storage.sql','20260912000200_retire_local_storage.sql','20260912000300_problem_annotations.sql','20260912000400_boulder_notes.sql','20260913000100_location_photos.sql','20260913000200_remove_region.sql','20260913000300_location_links.sql','20260913000400_profile_details.sql','20261018000100_record_level_saves.sql']) await db.exec(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
+    for (const name of ['20260909000100_initial_schema.sql','20260909000200_account_access.sql','20260910000100_content_api.sql','20260912000100_media_storage.sql','20260912000200_retire_local_storage.sql','20260912000300_problem_annotations.sql','20260912000400_boulder_notes.sql','20260913000100_location_photos.sql','20260913000200_remove_region.sql','20260913000300_location_links.sql','20260913000400_profile_details.sql','20261018000100_record_level_saves.sql','20261019000100_stable_content_order.sql']) await db.exec(await readFile(new URL('../migrations/'+name,import.meta.url),'utf8'));
     await db.exec(`INSERT INTO auth.users(id) VALUES ('${a}'),('${b}'),('${admin}'); UPDATE private.user_roles SET role='admin' WHERE user_id='${admin}';`);
     await db.exec('BEGIN; SET LOCAL ROLE authenticated');
     await db.query("SELECT set_config('request.jwt.claim.sub',$1,true)",[a]);
@@ -110,6 +110,11 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
     await db.query("INSERT INTO storage.objects(bucket_id,name,owner_id,metadata) VALUES ('sideproj-media',$1,$2,'{\"size\":8,\"mimetype\":\"image/png\"}')",[b+'/'+parkingFile,b]);
     guide=await edit(guide,userB,b,g=>g.locations[0].photos.push({id:'40000000-0000-4000-8000-000000000009',name:'Parking',caption:'Park beside the gate',url:'/media/'+b+'/'+parkingFile,annotations:[]}));
     assert.equal(guide.locations[0].photos[0].caption,'Park beside the gate');
+    // Photos saved together keep the order they were sent in; descending IDs would reverse if ties were broken by ID.
+    const batch=['4','3','2','1'].map(n=>({id:'40000000-0000-4000-8000-00000000001'+n,name:'Batch '+n,caption:'',url:'/media/'+b+'/50000000-0000-4000-8000-00000000001'+n+'.png',annotations:[]}));
+    for(const photo of batch) await db.query("INSERT INTO storage.objects(bucket_id,name,owner_id,metadata) VALUES ('sideproj-media',$1,$2,'{\"size\":8,\"mimetype\":\"image/png\"}')",[photo.url.slice(7),b]);
+    guide=await edit(guide,userB,b,g=>g.locations[0].photos.push(...batch));
+    assert.deepEqual(guide.locations[0].photos.map(p=>p.name),['Parking','Batch 4','Batch 3','Batch 2','Batch 1']);
     await assert.rejects(edit(guide,userA,a,g=>{g.locations[0].photos[0].caption='Changed';}),error=>error.status===403);
     const parkingSnapshot=await rpc('read_content',{},a);
     const parkingRow=parkingSnapshot.media.find(m=>m.location_id===locationId);

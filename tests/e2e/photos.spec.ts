@@ -20,9 +20,9 @@ test('uploads JPEG, PNG and WebP photos to a boulder with chosen names', async (
   // All three are shown and counted.
   for (const name of ['Crimp face', 'Photo 2', 'Photo 3']) await expect(page.locator('.photo-grid').getByRole('img', { name, exact: true })).toBeVisible();
   await expect(page.locator('.detail-banner .banner-bottom span').first()).toHaveText('1 problem · 3 photos · 0 videos');
-  // API/DB check: each was saved with its name, type and creator. Photos saved together have no fixed order.
+  // API/DB check: each was saved, in the chosen order, with its name, type and creator.
   const images = find(await guide(page), boulder.id).images;
-  expect(Object.fromEntries(images.map((i: any) => [i.name, i.url.split('.').pop()])), 'API/DB: names and file types saved').toEqual({ 'Crimp face': 'jpg', 'Photo 2': 'png', 'Photo 3': 'webp' });
+  expect(images.map((i: any) => i.name + '.' + i.url.split('.').pop()), 'API/DB: names and file types saved in order').toEqual(['Crimp face.jpg', 'Photo 2.png', 'Photo 3.webp']);
   for (const image of images) expect(image.createdBy, 'API/DB: credited to the uploader').toBe(user.current.account.id);
   // Names are unique per boulder: the next upload's default skips the names in use.
   await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
@@ -87,8 +87,8 @@ test('removing a boulder photo also removes it from its problems', async () => {
   expect(find(current, problem.id).photoAnnotations, "API/DB: the problem's annotations for the photo removed").not.toHaveProperty(image.id);
 });
 
-// Fails until fixed: photos saved together share a created_at, and read_content (supabase/migrations) orders ties
-// by random ID, so they come back shuffled (also on screen after saving). Four photos make a lucky pass 1 in 24.
+// Regression: photos saved together share a created_at and read_content used to break the tie by random ID,
+// so they came back shuffled. Four photos make a lucky pass 1 in 24 if it regresses.
 test('photos uploaded together keep the order they were chosen in', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
