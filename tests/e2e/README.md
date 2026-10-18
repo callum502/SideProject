@@ -9,6 +9,8 @@ Install Chromium once with `npm run test:e2e:install`.
 - `npm run test:e2e:headed`: watch the live browser.
 - `npm run test:e2e:debug`: pause and step through the test.
 - `npm run test:e2e:report`: view the latest HTML results.
+- `npm run test:e2e -- --grep CRUD`: run only the CRUD tests.
+- `npm run test:e2e -- location-crud.spec.ts`: run one file.
 
 Playwright starts and stops its own app server on http://127.0.0.1:5174 using the same environment as the tests. No manual npm run dev is needed. An existing server on that port is rejected instead of reused. The configuration rejects non-local Supabase URLs.
 
@@ -43,13 +45,6 @@ A failed test has an **AI analysis** tab. **Analyse** runs Claude Code in headle
 ### Code tab
 
 Each test result has a **Code** tab: an editor (Monaco, the editor VS Code is built on, from the `monaco-editor` dev dependency) showing the test source. The failing line is highlighted with the error underneath, the call stack links every frame inside `tests/`, and each `test.step` line shows its result and time. Files under `tests/` can be edited and saved (Ctrl+S); saving is refused if the file changed on disk since it was opened. The tab shows the current file, so if it has changed since the run, highlighted lines may have moved (the tab says so).
-
-### Example failure
-
-`example-failure.spec.ts` logs in, then fails on purpose (`expect(true).toBe(false)`). It is a known failure for trying out the dashboard's failure views, retries and AI analysis. It is tagged `@example`; leave it out of a normal run with `npm run test:e2e -- --grep-invert @example`.
-
-Run only CRUD tests: `npm run test:e2e -- --grep CRUD`.
-Run one file: `npm run test:e2e -- location-crud.spec.ts`.
 
 Failed runs retain a screenshot and trace. These can include test credentials or tokens, so use disposable local accounts and keep artifacts private. Generated artifacts are ignored by Git. Legacy Cypress artifact ignore rules remain to protect existing local files.
 
