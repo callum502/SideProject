@@ -28,8 +28,7 @@ test('login explains a wrong password and an unconfirmed email', async ({ page }
   await submitCredentials(page, account.email, account.password + 'x', 'Log in');
   await expect(page.getByRole('alert')).toHaveText('Invalid login credentials');
   // An account that never confirmed its email is told to do so.
-  // Fails until fixed: Supabase refuses the login first with its own "Email not confirmed", so the app's
-  // friendlier message in auth.mjs (identity) is never reached.
+  // Regression: Supabase refuses this login itself, and its raw "Email not confirmed" used to be shown.
   const unconfirmed = await createApiAccount(prefix, { confirmed: false });
   await submitCredentials(page, unconfirmed.email, unconfirmed.password, 'Log in');
   await expect(page.getByRole('alert')).toHaveText('Confirm your email before logging in.');

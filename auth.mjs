@@ -49,6 +49,8 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
         const action = rpc === 'current_account' ? 'Could not load your account profile' : rpc === 'display_name_available' ? 'Could not check display-name availability' : rpc === 'complete_profile' ? 'Could not save your profile' : 'Database request failed';
         throw fail(action + ' (' + rpc + ': ' + code + ').' + (code === 'PGRST202' ? ' The database function is missing or its schema cache needs refreshing.' : code === '42501' ? ' The database denied access.' : ' Please share this error so the database issue can be identified.'),503);
       }
+      // Supabase refuses password logins for unconfirmed emails before issuing a token, so identity() never sees them.
+      if (data.error_code === 'email_not_confirmed') throw fail('Confirm your email before logging in.', 401);
       throw fail(response.status === 429 ? 'Too many attempts. Please wait before trying again.' : data.msg || data.message || data.error_description || 'Account request failed.', response.status === 429 ? 429 : 401);
     }
     return data;

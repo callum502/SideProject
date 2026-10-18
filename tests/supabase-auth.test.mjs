@@ -32,6 +32,12 @@ test('verified database roles override editable metadata and role changes apply 
   assert.ok(!unconfirmed.calls.some(call => call.url.includes('/rpc/')));
 });
 
+test('an unconfirmed email refused by Supabase at login gets the app message, not Supabase\'s', async () => {
+  // Supabase refuses the password grant itself for unconfirmed emails, before identity() can check.
+  const auth = createAuth({ env, fetchImpl: async () => new Response(JSON.stringify({ code: 400, error_code: 'email_not_confirmed', msg: 'Email not confirmed' }), { status: 400 }) });
+  await assert.rejects(auth.login({ email: 'climber@example.com', password: 'test-password' }), error => error.status === 401 && error.message === 'Confirm your email before logging in.');
+});
+
 test('concurrent requests refresh a session only once', async () => {
   const f = fixture();
   const session = await f.auth.login({ email: 'climber@example.com', password: 'test-password' });
