@@ -68,8 +68,7 @@ test('rejects blank names and names already used on the boulder', async () => {
   expect(find(await guide(page), boulder.id).images.map((i: any) => i.name), 'API/DB: no photos saved').toEqual(['Seed photo']);
 });
 
-// The last check fails until fixed: updateBoulder in src/main.jsx removes the photo from each problem's imageIds
-// but leaves its entry in photoAnnotations, so annotations for a deleted photo stay in the database.
+// The last check is a regression test: removing a photo used to leave its annotations in problems' photoAnnotations.
 test('removing a boulder photo also removes it from its problems', async () => {
   const { location, boulder, problem, image } = await seedLocation(user.current.request, prefix);
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');

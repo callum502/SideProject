@@ -87,7 +87,10 @@ function App() {
   const updatePlace = async patch => save({ ...db, locations: db.locations.map(l => l.id === place.id ? { ...l, ...patch } : l) });
   const updateBoulder = async patch => {
     const next = { ...boulder, ...patch };
-    next.problems = (next.problems || []).map(p => ({ ...p, imageIds: p.imageIds.filter(id => next.images.some(i => i.id === id)), videoIds: p.videoIds.filter(id => (next.videos || []).some(v => v.id === id)) }));
+    const onBoulder = id => next.images.some(i => i.id === id);
+    // A removed photo also loses its links and its annotations on every problem.
+    next.problems = (next.problems || []).map(p => ({ ...p, imageIds: p.imageIds.filter(onBoulder), videoIds: p.videoIds.filter(id => (next.videos || []).some(v => v.id === id)),
+      ...(p.photoAnnotations ? { photoAnnotations: Object.fromEntries(Object.entries(p.photoAnnotations).filter(([id]) => onBoulder(id))) } : {}) }));
     return updatePlace({ boulders: place.boulders.map(b => b.id === boulder.id ? next : b) });
   };
   async function submit(e) {
