@@ -27,6 +27,17 @@ export function clientAddress(req, renderProxy = false) {
  return address;
 }
 
+// Browser tests send every worker's traffic from 127.0.0.1, so E2E_RELAX_LIMITS=1 raises the limits 100-fold
+// for Playwright's own server. Allowed only outside production and against local Supabase; any other setup refuses to start.
+export function testLimitOptions(env) {
+ if (env.E2E_RELAX_LIMITS !== '1') return {};
+ if (env.NODE_ENV === 'production' || env.RENDER === 'true') throw new Error('E2E_RELAX_LIMITS must not be set in production.');
+ let host;
+ try { host = new URL(env.SUPABASE_URL).hostname; } catch {}
+ if (!['localhost', '127.0.0.1', '[::1]'].includes(host)) throw new Error('E2E_RELAX_LIMITS requires SUPABASE_URL to point to local Supabase.');
+ return { rules: Object.fromEntries(Object.entries(REQUEST_LIMITS).map(([kind, rule]) => [kind, { ...rule, count: rule.count * 100 }])), maxUploads: 8 };
+}
+
 export function createRequestLimits({ now = Date.now, rules = REQUEST_LIMITS, maxKeys = 10000, maxActive = 32, maxUploads = 2 } = {}) {
  const buckets = new Map(), uploads = new Set();
  let active = 0, swept = 0;

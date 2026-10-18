@@ -1,4 +1,4 @@
-import { createRequestLimits, clientAddress, isUpload, readRequestBody } from './request-limits.mjs';
+import { createRequestLimits, clientAddress, isUpload, readRequestBody, testLimitOptions } from './request-limits.mjs';
 import { validLocationLinks } from './location-links.mjs';
 import { duplicateMediaName } from './media-names.mjs';
 import { createStorage } from './storage.mjs';
@@ -312,7 +312,8 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const live = !process.argv.includes('--preview');
   const deployment = deploymentConfig();
-  const app = await createGuideServer({ live, deployment });
+  const env = { ...(await import('vite')).loadEnv('development', process.cwd(), ''), ...process.env };
+  const app = await createGuideServer({ live, deployment, requestLimits: createRequestLimits(testLimitOptions(env)) });
   if (live) {
     const { build } = await import('vite');
     const watcher = await build({ root, resolve: { preserveSymlinks: true }, build: { watch: {}, minify: false } });

@@ -4,6 +4,8 @@
  * independently of the page UI. UI helpers are in testHelpers.ts.
  *
  * guide                     Read persisted guide data from the app API.
+ * findRecord                Find any record in a guide by ID.
+ * emailCode                 Read the latest 6-digit code emailed to an address, from local Supabase's Mailpit.
  * sessionUser               Read the signed-in user from the app session API.
  * savedProfile              Convert profile form values to the values the API returns.
  * cleanup                   Delete locations matching a prefix; throws on failure.
@@ -35,7 +37,6 @@
  *
  * assertAccountRemovedFromDB - Verify the account can no longer log in and its profile is gone.
  *
- * Internal helpers
  * adminRequest              Send a request to the local Supabase admin API.
  */
 
@@ -53,6 +54,20 @@ export async function guide(page: Page) {
   const response = await page.request.get('/api/guide', { timeout: 10000 });
   if (!response.ok()) throw new Error('Reading test guide failed: HTTP ' + response.status());
   return response.json();
+}
+
+/**
+ * Find a location, parking photo, boulder, photo, video or problem in a guide by ID, at any depth.
+ * @param saved - Guide returned by the API.
+ * @param id - Record ID.
+ * @returns The record, or undefined if it is not in the guide.
+ */
+export function findRecord(saved: any, id: string): any {
+  for (const location of saved.locations) {
+    if (location.id === id) return location;
+    for (const item of [...(location.photos || []), ...location.boulders]) if (item.id === id) return item;
+    for (const boulder of location.boulders) for (const item of [...boulder.images, ...(boulder.videos || []), ...(boulder.problems || [])]) if (item.id === id) return item;
+  }
 }
 
 /**
@@ -335,7 +350,7 @@ export async function sessionUser(page: Page) {
  * @returns The successful response.
  * @throws If the admin key is missing, Supabase is not local or the request fails.
  */
-async function adminRequest(route: string, init: RequestInit = {}) {
+export async function adminRequest(route: string, init: RequestInit = {}) {
   const base = process.env.E2E_SUPABASE_URL, key = process.env.E2E_ADMIN_KEY;
   if (!base || !key) throw new Error('Account cleanup requires SUPABASE_URL and SUPABASE_SECRET_KEY in .env.local.');
   // Cleanup deletes accounts, so never send it anywhere but local Supabase.
@@ -437,4 +452,26 @@ export async function assertAccountRemovedFromDB(page: Page, account: { id: stri
   // Verify the credentials are rejected.
   const login = await page.request.post('/api/login', { data: { email: account.email, password: account.password }, timeout: 10000 });
   expect(login.status(), 'API/DB: deleted account can no longer log in').toBe(401);
+}
+
+/**
+ * Read the 6-digit code from the newest email sent to the address. Local Supabase delivers all email to
+ * Mailpit (port 54324 by default; set E2E_MAILPIT_URL to override) instead of sending it.
+ * @param email - Recipient address.
+ * @param after - Only consider emails sent at or after this time, so an older code isn't returned.
+ * @returns The code.
+ * @throws If no matching email arrives within 15 seconds.
+ */
+export async function emailCode(email: string, after: Date) {
+  const base = process.env.E2E_MAILPIT_URL || 'http://127.0.0.1:54324';
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname)) throw new Error('Reading email requires local Mailpit.');
+  let code: string | undefined;
+  await expect.poll(async () => {
+    const search = await (await fetch(base + '/api/v1/search?query=' + encodeURIComponent('to:"' + email + '"'))).json();
+    const message = search.messages?.find((m: { Created: string }) => new Date(m.Created) >= new Date(after.getTime() - 1000));
+    if (!message) return undefined;
+    const body = await (await fetch(base + '/api/v1/message/' + message.ID)).json();
+    return code = (body.Text || body.HTML || '').match(/\b\d{6}\b/)?.[0];
+  }, { message: 'Email with a code arrives for ' + email, timeout: 15000 }).toBeTruthy();
+  return code!;
 }

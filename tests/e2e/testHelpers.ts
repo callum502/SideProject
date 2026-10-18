@@ -15,6 +15,9 @@
  * openProfile               Open the signed-in user's profile page from the account menu.
  * editProfile               Edit display name, height and ape index from the profile page.
  * deleteAccount             Delete the signed-in account through its confirmation dialog.
+ * chooseFiles               Choose files in an upload control identified by its visible label.
+ * completeUpload            Name the chosen files in the upload dialog, upload them and verify the save.
+ * dialogError               Submit the active dialog and verify it shows an error without saving.
  *
  * Internal helpers
  * submit                    Submit a dialog and verify the save response.
@@ -350,4 +353,50 @@ export async function deleteAccount(page: Page) {
   // Verify deletion signs out to the login page.
   await expect(page).toHaveURL(/#login$/);
   await expect(page.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();
+}
+
+/** A file for setInputFiles: a path, or a name, type and contents. */
+type FileInput = string | { name: string, mimeType: string, buffer: Buffer };
+
+/**
+ * Choose files in an upload control, which opens the naming dialog.
+ * @param page - Page showing the upload control.
+ * @param label - Visible text of the control's label, such as `+ Upload images`.
+ * @param files - Files to choose.
+ */
+export async function chooseFiles(page: Page, label: string, files: FileInput[]) {
+  await page.locator('label', { hasText: label }).locator('input[type="file"]').setInputFiles(files);
+}
+
+/**
+ * Complete the naming dialog that opens after choosing files, upload, and verify the guide saved.
+ * @param page - Page showing the naming dialog.
+ * @param options - Replacement names and captions by file position; omitted positions keep their defaults.
+ *   Captions are only offered for parking photos.
+ */
+export async function completeUpload(page: Page, { names = [], captions = [] }: { names?: string[], captions?: string[] } = {}) {
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByRole('heading', { name: /^Name your (photo|video)$/ })).toBeVisible();
+  // Rename and caption the files that need it.
+  for (const [index, name] of names.entries()) if (name !== undefined) await dialog.getByLabel(new RegExp('^(Photo|Video) ' + (index + 1) + ' name$')).fill(name);
+  for (const [index, caption] of captions.entries()) if (caption !== undefined) await dialog.locator('textarea[name="caption"]').nth(index).fill(caption);
+  // Upload, then verify the guide save and dialog closure.
+  await submit(page, 'Upload');
+}
+
+/**
+ * Submit the active dialog and verify it shows the error, stays open and saves nothing.
+ * @param page - Page showing the dialog.
+ * @param label - Exact name of the dialog's submit button.
+ * @param message - Expected error text, or a pattern.
+ */
+export async function dialogError(page: Page, label: string, message: string | RegExp) {
+  let saves = 0;
+  const count = (request: { url(): string, method(): string }) => { if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++; };
+  page.on('request', count);
+  await page.getByRole('dialog').getByRole('button', { name: label, exact: true }).click();
+  await expect(page.getByRole('dialog').getByRole('alert')).toHaveText(message);
+  page.off('request', count);
+  expect(saves, 'No guide save was sent').toBe(0);
+  await expect(page.getByRole('dialog')).toBeVisible();
 }

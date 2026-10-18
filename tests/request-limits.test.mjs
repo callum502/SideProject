@@ -1,7 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {PassThrough} from 'node:stream';
-import {createRequestLimits,clientAddress,readRequestBody,REQUEST_LIMITS} from '../request-limits.mjs';
+import {createRequestLimits,clientAddress,readRequestBody,REQUEST_LIMITS,testLimitOptions} from '../request-limits.mjs';
 import {createGuideServer} from '../server.mjs';
 import {fakeAuth} from './fake-auth.mjs';
 
@@ -21,6 +21,16 @@ test('rate windows, account limits, bounded memory, and upload slots',()=>{
  assert.throws(()=>bounded.before('b','/api/guide','GET'),e=>e.status===503);
  const single=createRequestLimits({maxActive:1}),release=single.enter();
  assert.throws(()=>single.enter(),e=>e.status===503);release();release();single.enter()();
+});
+
+test('relaxed browser-test limits are refused outside local development',()=>{
+ const local={E2E_RELAX_LIMITS:'1',SUPABASE_URL:'http://127.0.0.1:54321'};
+ assert.deepEqual(testLimitOptions({SUPABASE_URL:local.SUPABASE_URL}),{},'unset keeps the real limits');
+ assert.equal(testLimitOptions(local).rules.auth.count,REQUEST_LIMITS.auth.count*100);
+ assert.throws(()=>testLimitOptions({...local,NODE_ENV:'production'}),/production/);
+ assert.throws(()=>testLimitOptions({...local,RENDER:'true'}),/production/);
+ assert.throws(()=>testLimitOptions({...local,SUPABASE_URL:'https://project.supabase.co'}),/local Supabase/);
+ assert.throws(()=>testLimitOptions({E2E_RELAX_LIMITS:'1'}),/local Supabase/);
 });
 
 test('untrusted forwarded headers are ignored and IPv6 addresses share a /64',()=>{

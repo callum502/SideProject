@@ -22,7 +22,7 @@ process.env.E2E_ADMIN_KEY = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE
 export default defineConfig({
   testDir: './tests/e2e',
   fullyParallel: false,
-  workers: 1,
+  workers: 3,
   retries: 0,
   forbidOnly: !!process.env.CI,
   timeout: 60000,
@@ -58,6 +58,7 @@ export default defineConfig({
     url: `${baseURL}/healthz`,
     reuseExistingServer: false,
     timeout: 60000,
-    env: { ...env, PORT: '5174', HOST: '127.0.0.1', NODE_ENV: 'development', E2E_CONFIRM_CODE: process.env.E2E_CONFIRM_CODE },
+    // All workers share 127.0.0.1, so raise the per-IP rate limits for this local test server only (see request-limits.mjs).
+    env: { ...env, PORT: '5174', HOST: '127.0.0.1', NODE_ENV: 'development', E2E_CONFIRM_CODE: process.env.E2E_CONFIRM_CODE, E2E_RELAX_LIMITS: '1' },
   },
 });

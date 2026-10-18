@@ -19,6 +19,8 @@ IP and capacity checks happen before authentication/database work. Account limit
 
 Upload bodies have a 5-minute total deadline and a 30-second no-data deadline. Other request bodies have a 30-second total deadline. Header receipt has a 15-second server timeout; the server's overall request-receipt timeout is 330 seconds. Supabase Storage calls retain their existing 180-second timeout, separate from receiving the file. Timeout/size rejections close incomplete requests rather than buffering the remaining upload. Health checks are exempt. Static assets are outside this app limiter.
 
+Browser tests run their own local server with `E2E_RELAX_LIMITS=1`, which multiplies the counts above by 100 (and allows 8 simultaneous uploads), because every Playwright worker shares 127.0.0.1. The server refuses to start with it when `NODE_ENV=production`, on Render, or when `SUPABASE_URL` isn't local. Never set it anywhere else.
+
 ## Deployment scope
 
 Counters and slots are in memory, bounded to 10,000 rate-limit keys, and reset on restart. They are appropriate for the current single-process service. Multiple Render instances/workers would each have their own allowances; use a shared limiter (for example Redis) before scaling horizontally. There is no new paid service for this implementation.
