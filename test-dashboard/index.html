@@ -316,11 +316,14 @@
   .modal-head { display: flex; align-items: center; gap: 10px; }
   .modal-head h2 { margin: 0; font-size: 16px; flex: 1; }
   dialog.modal label { display: grid; gap: 6px; font-size: 13px; color: var(--muted); font-weight: 550; }
-  dialog.modal input, dialog.modal textarea, dialog.modal select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); font: inherit; color: var(--text); }
+  dialog.modal input:not([type=checkbox]), dialog.modal textarea, dialog.modal select { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); font: inherit; color: var(--text); }
   dialog.modal textarea { resize: vertical; min-height: 110px; }
   .evidence { font-size: 12.5px; color: var(--muted); background: var(--panel-2); border-radius: 8px; padding: 10px 12px; display: grid; gap: 4px; }
   .evidence b { color: var(--text); font-weight: 600; }
   .att-list { display: grid; gap: 4px; margin-top: 6px; }
+  dialog.modal label.check { display: flex; align-items: center; gap: 8px; color: var(--text); font-weight: 400; cursor: pointer; }
+  dialog.modal .hint { padding: 8px 12px; border-radius: 8px; background: var(--panel-2); font-size: 13px; line-height: 1.6; }
+  dialog.modal .hint .buglink, .ai-match .buglink { padding: 1px 8px; vertical-align: baseline; max-width: 100%; }
   dialog.modal label.att-pick { display: grid; grid-template-columns: auto auto auto 1fr auto; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); font-weight: 400; cursor: pointer; }
   dialog.modal label.att-pick:has(input:checked) { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); background: var(--accent-soft); }
   .att-pick .att-has { color: var(--muted); font-size: 12px; justify-self: end; }
@@ -1002,9 +1005,7 @@ function renderAnalysis(t) {
         ${edits.map(e => `<div class="ai-diff"><div class="ai-diff-file mono">${esc(e.file)}</div><pre class="mono">${e.find.split('\n').map(l => `<span class="del">- ${esc(l)}</span>`).join('\n')}\n${e.replace.split('\n').map(l => `<span class="add">+ ${esc(l)}</span>`).join('\n')}</pre></div>`).join('')}
         <div class="actions">${a.appliedAt ? `<span class="pill passed">Applied ${esc(fmtAgo(a.appliedAt))}</span>${live ? '' : '<button class="btn small" data-ai="retry">↻ Retry the test</button>'}`
           : `<button class="btn small primary" data-ai="apply">Apply fix</button><button class="btn small" data-ai="apply-retry">Apply and retry</button>`}</div></div>`
-    : cat === 'app_bug' ? `<div class="ai-section"><div class="section-label">Draft bug report</div>
-        <p><b>${esc(r.bug_title)}</b></p><div class="ai-draft">${esc(r.bug_description)}</div>
-        <div class="actions">${t.bug ? `<span class="pill bugged">Bugged: ${esc(bugLabel(t.bug.number))}</span>` : live ? '' : '<button class="btn small primary" data-ai="bug">Create bug report…</button>'}</div></div>`
+    : cat === 'app_bug' ? renderBugSuggestion(t, r, live)
     : '';
   return `<div class="ai">
     <div class="ai-head"><span class="pill ${AI_CLASS[cat]}">${AI_LABEL[cat] || cat}</span><span class="loc">${esc(r.confidence)} confidence · attempt ${a.attempt} · ${fmtDur(a.durationMs)}${a.model ? ' · ' + esc(a.model) : ''}</span>
@@ -1014,6 +1015,24 @@ function renderAnalysis(t) {
     ${r.evidence?.length ? `<div class="ai-section"><div class="section-label">Evidence</div><ul>${r.evidence.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
     ${action}
   </div>`;
+}
+
+// For an app bug: an existing report with the same cause comes first (adding to it, reopening it if closed),
+// with the drafted new report as the alternative. Once the test is bugged, just say where it went.
+function renderBugSuggestion(t, r, live) {
+  const draft = (label, primary) => `<div class="ai-section"><div class="section-label">${label}</div>
+      <p><b>${esc(r.bug_title)}</b></p><div class="ai-draft">${esc(r.bug_description)}</div>
+      ${t.bug || live ? '' : `<div class="actions"><button class="btn small ${primary ? 'primary' : ''}" data-ai="bug">Create new report…</button></div>`}</div>`;
+  if (t.bug) return `<div class="ai-section"><div class="actions"><span class="pill bugged">Bugged: ${esc(bugLabel(t.bug.number))}</span></div></div>`;
+  const match = r.matching_bug_id && S.bugs.find(b => b.id === r.matching_bug_id);
+  if (!match) return draft('Draft bug report', true);
+  const closed = match.status === 'closed';
+  return `<div class="ai-section ai-match"><div class="section-label">Matches an existing report</div>
+      <p><a class="buglink" href="#bugs=${esc(match.id)}">${bugLabel(match.number)} · ${esc(match.title)}</a> <span class="pill ${esc(match.status)}">${closed ? 'Closed' : 'Open'}</span>
+        <span class="loc">${match.tests.includes(t.id) ? 'Already includes this test' : `${match.tests.length} other test${match.tests.length === 1 ? '' : 's'}`} · ${match.occurrences} occurrence${match.occurrences === 1 ? '' : 's'}</span></p>
+      <p>${esc(r.match_reason)}</p>
+      ${live ? '' : `<div class="actions"><button class="btn small primary" data-ai="link">${closed ? 'Reopen and add to' : 'Add to'} ${bugLabel(match.number)}…</button></div>`}</div>
+    ${draft('Or create a new report', false)}`;
 }
 
 // Apply the proposed find/replace edits through the same save path as the Code tab: files under tests/ only,
@@ -1050,9 +1069,9 @@ async function aiAction(action) {
     if (action === 'cancel') await api('/api/analyse/cancel', { runId: S.viewedId, testId: test.id });
     if (action === 'apply' || action === 'apply-retry') { await applyAiFix(test); if (action === 'apply-retry') await retry([test.id]); }
     if (action === 'retry') await retry([test.id]);
-    if (action === 'bug') {
+    if (action === 'bug' || action === 'link') {
       const r = test.analysis.result;
-      openBugDialog(test, { title: r.bug_title, description: r.bug_description, attempt: test.analysis.attempt - 1 });
+      openBugDialog(test, { mode: action === 'link' ? 'existing' : 'new', bugId: action === 'link' ? r.matching_bug_id : undefined, title: r.bug_title, description: r.bug_description, attempt: test.analysis.attempt - 1 });
     }
   } catch (e) { notice(e.message); }
 }
@@ -1083,8 +1102,10 @@ async function retry(ids, { headed = false } = {}) {
 }
 
 // "Mark as bugged": a new report needs a written description; adding to an existing report takes an optional note.
+// Any report can take the failure - another test it breaks, or the same test failing again in a later run - and a
+// closed one can be reopened in the same step. If the test is already in a report, that report is suggested first.
 // You choose which attempts to attach; each one brings its logs, video, trace and screenshot.
-// prefill (from AI analysis): { title, description, attempt } - the attempt to tick.
+// prefill (from AI analysis): { mode, bugId, title, description, attempt } - attempt is the one to tick.
 function openBugDialog(test, prefill = {}) {
   const failed = [...(test.attempts || [])].reverse().find(a => a.state === 'failed') || test;
   const firstLine = (String(failed.errors?.[0]?.message || '').split('\n').find(l => l.trim()) || '').replace(/^\s*Error:\s*/, '');
@@ -1097,20 +1118,26 @@ function openBugDialog(test, prefill = {}) {
       <span class="dot ${esc(a.state)}"></span><b>Attempt ${a.retry + 1}</b><span>${esc(LABEL[a.state] || a.state)}${a.duration != null ? ' · ' + fmtDur(a.duration) : ''}</span>
       <span class="att-has">${bundle(a).join(' · ') || 'no data recorded'}</span>
     </label>`).join('');
-  // Reports that already include this test come first.
-  const open = S.bugs.filter(b => b.status === 'open').sort((a, b) => (b.tests.includes(test.id) - a.tests.includes(test.id)) || b.number - a.number);
+  // Reports that already include this test come first, then open before closed, newest first.
+  const has = b => b.tests.includes(test.id);
+  const reports = [...S.bugs].sort((a, b) => (has(b) - has(a)) || ((a.status === 'closed') - (b.status === 'closed')) || b.number - a.number);
+  const previous = reports.find(has);
+  const suggested = reports.find(b => b.id === prefill.bugId) || previous || reports[0];
+  let mode = reports.length && (prefill.mode === 'existing' || (!prefill.mode && previous)) ? 'existing' : 'new';
   const dlg = document.createElement('dialog');
   dlg.className = 'modal';
   dlg.innerHTML = `<form novalidate>
     <div class="modal-head"><h2>Mark as bugged</h2><button type="button" class="btn small" data-close aria-label="Close">✕</button></div>
     <div class="loc">${esc(test.titlePath.join(' › '))} · <span class="mono">${esc(test.file)}:${test.line}</span></div>
-    <div class="seg"><button type="button" data-mode="new" class="active">New report</button><button type="button" data-mode="existing" ${open.length ? '' : 'disabled title="No open reports yet"'}>Add to existing${open.length ? ` (${open.length})` : ''}</button></div>
+    ${previous ? `<div class="hint">This test is already in <a class="buglink" href="#bugs=${esc(previous.id)}">${bugLabel(previous.number)} · ${esc(previous.title)}</a> (${previous.status === 'open' ? 'open' : 'closed'}). If it's the same bug, add this failure there to keep its history together.</div>` : ''}
+    <div class="seg"><button type="button" data-mode="new">New report</button><button type="button" data-mode="existing" ${reports.length ? '' : 'disabled title="No reports yet"'}>Add to existing${reports.length ? ` (${reports.length})` : ''}</button></div>
     <div data-pane="new" style="display:grid;gap:12px">
       <label>Title<input name="title" maxlength="200" value="${esc(prefill.title || (test.title + ': ' + firstLine).slice(0, 160))}"></label>
       <label>What's wrong?<textarea name="description" maxlength="20000" placeholder="Describe the bug: what you expected to happen and what happened instead.">${esc(prefill.description || '')}</textarea></label>
     </div>
     <div data-pane="existing" hidden style="display:grid;gap:12px">
-      <label>Report<select name="bug">${open.map(b => `<option value="${esc(b.id)}">${bugLabel(b.number)} · ${esc(b.title)}${b.tests.includes(test.id) ? ' (already has this test)' : ''}</option>`).join('')}</select></label>
+      <label>Report<select name="bug">${reports.map(b => `<option value="${esc(b.id)}" ${b === suggested ? 'selected' : ''}>${bugLabel(b.number)} · ${esc(b.title)}${b.status === 'closed' ? ' (closed)' : ''}${has(b) ? ' (already has this test)' : ''}</option>`).join('')}</select></label>
+      <label class="check" data-reopen hidden><input type="checkbox" name="reopen" checked> Reopen this report: the bug has come back</label>
       <label>Note (optional)<textarea name="note" maxlength="5000" placeholder="Anything different about this occurrence?"></textarea></label>
     </div>
     <div class="evidence"><b>Attach attempt data</b>
@@ -1121,20 +1148,24 @@ function openBugDialog(test, prefill = {}) {
     <div class="modal-actions"><button type="button" class="btn" data-close>Cancel</button><button type="submit" class="btn primary" data-submit>Create report</button></div>
   </form>`;
   document.body.append(dlg);
-  let mode = 'new';
   const form = dlg.querySelector('form'), errEl = dlg.querySelector('[data-error]');
   const close = () => { dlg.close(); dlg.remove(); };
+  const selected = () => reports.find(b => b.id === form.elements.bug?.value);
+  const reopening = () => mode === 'existing' && selected()?.status === 'closed' && form.elements.reopen.checked;
+  // Show the chosen mode, and offer reopening when the chosen report is closed.
+  const sync = () => {
+    dlg.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b.dataset.mode === mode));
+    dlg.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== mode);
+    dlg.querySelector('[data-reopen]').hidden = selected()?.status !== 'closed';
+    dlg.querySelector('[data-submit]').textContent = mode === 'new' ? 'Create report' : reopening() ? 'Reopen and add' : 'Add to report';
+  };
+  sync();
   dlg.addEventListener('close', () => dlg.remove());
+  dlg.addEventListener('change', sync);
   dlg.addEventListener('click', e => {
     if (e.target.closest('[data-close]')) close();
     const m = e.target.closest('[data-mode]');
-    if (m && !m.disabled) {
-      mode = m.dataset.mode;
-      dlg.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('active', b === m));
-      dlg.querySelectorAll('[data-pane]').forEach(p => p.hidden = p.dataset.pane !== mode);
-      dlg.querySelector('[data-submit]').textContent = mode === 'new' ? 'Create report' : 'Add to report';
-      errEl.hidden = true;
-    }
+    if (m && !m.disabled) { mode = m.dataset.mode; sync(); errEl.hidden = true; }
   });
   form.addEventListener('submit', async e => {
     e.preventDefault();
@@ -1145,12 +1176,13 @@ function openBugDialog(test, prefill = {}) {
     if (!chosen.length) return showError('Tick at least one attempt to attach.');
     if (mode === 'new' && v.description.trim().length < 10) return showError('Describe the bug (at least 10 characters) before creating the report.');
     dlg.querySelector('[data-submit]').disabled = true;
+    const reopened = reopening();
     try {
       const bug = mode === 'new'
         ? await api('/api/bugs', { runId: S.viewedId, testId: test.id, title: v.title, description: v.description, attempts: chosen })
-        : await api(`/api/bugs/${v.bug}/link`, { runId: S.viewedId, testId: test.id, note: v.note, attempts: chosen });
+        : await api(`/api/bugs/${v.bug}/link`, { runId: S.viewedId, testId: test.id, note: v.note, attempts: chosen, reopen: reopened });
       close();
-      notice(`Marked as bugged: ${bugLabel(bug.number)}.`, true);
+      notice(`Marked as bugged: ${bugLabel(bug.number)}${reopened ? ' (reopened)' : ''}.`, true);
     } catch (err) { showError(err.message); dlg.querySelector('[data-submit]').disabled = false; }
   });
   dlg.showModal();
@@ -1206,7 +1238,7 @@ function renderBug() {
   const kept = new Set(S.runs.map(r => r.id));
   el.innerHTML = `<section class="panel">
       <div class="bug-head">
-        <div class="row"><span class="mono loc">${bugLabel(b.number)}</span><span class="pill ${b.status}">${b.status === 'open' ? 'Open' : 'Closed'}</span><span class="loc">Reported ${esc(fmtTime(b.createdAt))}</span><span class="spacer"></span>
+        <div class="row"><span class="mono loc">${bugLabel(b.number)}</span><span class="pill ${b.status}">${b.status === 'open' ? 'Open' : 'Closed'}</span><span class="loc">Reported ${esc(fmtTime(b.createdAt))}</span>${b.reopenedAt ? `<span class="loc">Reopened ${esc(fmtTime(b.reopenedAt))}</span>` : ""}<span class="spacer"></span>
           <button class="btn small" data-bug-status="${b.status === 'open' ? 'closed' : 'open'}">${b.status === 'open' ? 'Close report' : 'Reopen'}</button></div>
         <h2>${esc(b.title)}</h2>
       </div>

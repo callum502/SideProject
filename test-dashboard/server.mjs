@@ -401,13 +401,16 @@ async function createBug({ runId, testId, title, description, attempts }) {
   return bug;
 }
 
-async function addToBug(id, { runId, testId, note, attempts }) {
+// Add a failure to an existing report: the same bug failing again, or another test it breaks.
+// A closed report can be reopened in the same step, when the bug has come back.
+async function addToBug(id, { runId, testId, note, attempts, reopen }) {
   const bug = await loadBug(id);
   if (!bug) throw fail('Bug report not found.', 404);
   note = String(note || '').trim();
   if (note.length > 5000) throw fail('Keep the note under 5000 characters.');
   const { run, t } = await investigatable(runId, testId);
   if (triage(t) !== 'investigate') throw fail('Only tests that need triage can be marked as bugged.');
+  if (reopen === true && bug.status === 'closed') Object.assign(bug, { status: 'open', reopenedAt: Date.now() });
   await linkBug(bug, run, t, note, attempts);
   return bug;
 }
@@ -503,12 +506,18 @@ async function startAnalysis(runId, testId) {
   if (!attempt) throw fail('This test has no failed attempt to analyse.');
   const claudePath = await findClaude();
   if (!claudePath) throw fail('Claude Code was not found. Install it, or set CLAUDE_CODE_PATH to the claude executable.', 503);
-  const prompt = await buildPrompt({ root, runsDir, run, test: t, attempt });
+  // Existing reports let the analysis spot a known bug, so the failure can join that report instead of a new one.
+  const bugs = (await Promise.all((await readdir(bugsDir).catch(() => [])).map(loadBug))).filter(Boolean);
+  const prompt = await buildPrompt({ root, runsDir, run, test: t, attempt, bugs });
   const base = { attempt: attempt.retry + 1, startedAt: Date.now() };
   analysing.set(key, null);
   await setAnalysis(runId, testId, { ...base, status: 'running' });
   analyse({ claudePath, cwd: root, prompt, onStart: cancel => analysing.set(key, cancel) })
-    .then(r => setAnalysis(runId, testId, { ...base, status: 'done', finishedAt: Date.now(), ...r }))
+    .then(r => {
+      // Only keep a suggested match that names a real report.
+      if (!bugs.some(b => b.id === r.result.matching_bug_id)) Object.assign(r.result, { matching_bug_id: '', match_reason: '' });
+      return setAnalysis(runId, testId, { ...base, status: 'done', finishedAt: Date.now(), ...r });
+    })
     .catch(e => setAnalysis(runId, testId, { ...base, status: e.message === 'Cancelled.' ? 'cancelled' : 'error', finishedAt: Date.now(), error: e.message }))
     .finally(() => analysing.delete(key));
 }
@@ -616,6 +625,7 @@ const server = http.createServer(async (req, res) => {
         const bug = await loadBug(pm[1]);
         if (!bug) return send(res, 404, { error: 'Bug report not found.' });
         if (!['open', 'closed'].includes(body.status)) return send(res, 400, { error: 'Status must be open or closed.' });
+        if (bug.status === 'closed' && body.status === 'open') bug.reopenedAt = Date.now();
         bug.status = body.status; await saveBug(bug);
         return send(res, 200, bug);
       }

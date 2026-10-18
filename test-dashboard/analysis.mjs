@@ -26,7 +26,7 @@ export async function findClaude() {
 export const RESULT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['category', 'confidence', 'summary', 'cause', 'evidence', 'fix_description', 'edits', 'bug_title', 'bug_description'],
+  required: ['category', 'confidence', 'summary', 'cause', 'evidence', 'fix_description', 'edits', 'bug_title', 'bug_description', 'matching_bug_id', 'match_reason'],
   properties: {
     category: { type: 'string', enum: ['ui_change', 'timing', 'app_bug', 'unclear'] },
     confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
@@ -48,6 +48,8 @@ export const RESULT_SCHEMA = {
     },
     bug_title: { type: 'string', description: 'For app_bug: a concise bug report title. Empty otherwise.' },
     bug_description: { type: 'string', description: 'For app_bug: what happened, what was expected, steps to reproduce and the evidence. Empty otherwise.' },
+    matching_bug_id: { type: 'string', description: 'For app_bug: the id (e.g. bug-003) of an existing report with the same root cause, open or closed. Empty if none matches.' },
+    match_reason: { type: 'string', description: 'When matching_bug_id is set: why this failure is the same bug, and whether a closed report looks like a regression. Empty otherwise.' },
   },
 };
 
@@ -61,7 +63,9 @@ Decide which one of these explains the failure:
 
 Use Read, Grep and Glob to look at the test, the helpers and the app source before deciding; compare what the test expects with what the app now renders. Base the verdict on specifics you can point to.
 
-For ui_change or timing, propose the smallest change to files under tests/ as exact find/replace edits: copy "find" exactly from the current file (it must occur once) and keep the test's intent. Don't weaken or delete assertions just to make it pass, and prefer Playwright's auto-waiting assertions over fixed sleeps. For app_bug, leave edits empty and write the bug report: what happened, what was expected, steps to reproduce, and the evidence (error, step, failing request or status if seen). Fill fields that don't apply with an empty string or empty list.`;
+For ui_change or timing, propose the smallest change to files under tests/ as exact find/replace edits: copy "find" exactly from the current file (it must occur once) and keep the test's intent. Don't weaken or delete assertions just to make it pass, and prefer Playwright's auto-waiting assertions over fixed sleeps. For app_bug, leave edits empty and write the bug report: what happened, what was expected, steps to reproduce, and the evidence (error, step, failing request or status if seen). Fill fields that don't apply with an empty string or empty list.
+
+For app_bug, also check the existing bug reports listed in the prompt before treating this as a new bug. If one has the same root cause, set matching_bug_id to its id and explain the match in match_reason. A report that already includes this test is the likeliest match. If that report is closed, say whether the bug looks like it has come back. Match on the cause, not just the same test or a similar error message; if unsure, leave matching_bug_id empty. Still write bug_title and bug_description, so a new report can be made if the match is rejected.`;
 
 const run = (cmd, args, cwd) => new Promise(resolve => execFile(cmd, args, { cwd, maxBuffer: 8 * 1024 * 1024 }, (err, out) => resolve(err ? '' : out)));
 const clip = (text, max) => text.length > max ? text.slice(0, max) + `\n… (${text.length - max} more characters not shown)` : text;
@@ -69,7 +73,7 @@ const fmtMs = ms => ms == null ? '?' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).t
 const rel = (root, file) => file ? path.relative(root, file).split(path.sep).join('/') : '';
 
 // Everything the model should know about one failed attempt, as plain text.
-export async function buildPrompt({ root, runsDir, run: testRun, test, attempt }) {
+export async function buildPrompt({ root, runsDir, run: testRun, test, attempt, bugs = [] }) {
   const dir = path.join(runsDir, testRun.id);
   const attempts = [...(test.attempts?.length ? test.attempts : [test])].sort((a, b) => (a.retry ?? 0) - (b.retry ?? 0));
   const lines = [];
@@ -117,8 +121,24 @@ export async function buildPrompt({ root, runsDir, run: testRun, test, attempt }
   lines.push('\n## Recent commits to the app (src/, server.mjs)\n' + (log.trim() || 'none'));
   lines.push('\n## Uncommitted app changes\n' + (uncommitted.trim() ? '```diff\n' + clip(uncommitted, 20000) + '\n```' : 'none'));
 
+  lines.push('\n## Existing bug reports\n' + (describeBugs(bugs, test.id) || 'none'));
+
   lines.push(`\nRead tests/e2e/${test.file} and any helpers or app files you need, then return the verdict.`);
   return lines.join('\n');
+}
+
+// The reports a failure could belong to: those already including this test first, then the newest. Each lists the
+// tests it covers and how its latest occurrence failed, so the model can compare causes.
+function describeBugs(bugs, testId) {
+  const has = b => b.occurrences.some(o => o.testId === testId);
+  return [...bugs].sort((a, b) => (has(b) - has(a)) || b.number - a.number).slice(0, 30).map(b => {
+    const latest = b.occurrences.at(-1);
+    const tests = [...new Set(b.occurrences.map(o => o.title))];
+    return [`### ${b.id}: ${b.title} (${b.status}${has(b) ? ', already includes this test' : ''})`,
+      clip(String(b.description || ''), 800),
+      `Tests: ${tests.join('; ') || 'none'}`,
+      latest ? `Latest occurrence: ${new Date(latest.addedAt).toISOString().slice(0, 10)}${latest.step ? `, failed in step "${latest.step}"` : ''}: ${clip(String(latest.error || '').split('\n').find(l => l.trim()) || 'no error recorded', 300)}` : ''].filter(Boolean).join('\n');
+  }).join('\n\n');
 }
 
 // Run one analysis. Resolves with { result, model, durationMs } or rejects; returns a cancel function via onStart.
