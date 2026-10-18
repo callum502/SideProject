@@ -5,6 +5,7 @@ import UserMenu from './UserMenu';
 import CompleteProfile from './CompleteProfile';
 import { validLocationLinks } from '../location-links.mjs';
 import { duplicateMediaName, normalizeMediaName } from '../media-names.mjs';
+import { guideChanges } from '../guide-changes.mjs';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
@@ -61,7 +62,7 @@ function App() {
   }
   const canEdit = item => !!user && (user.role === 'admin' || item?.createdBy === user.id);
   useEffect(() => { const refresh = () => api('/api/session').then(data => setUser(data.user)).catch(() => setUser(null)); refresh(); window.addEventListener('focus', refresh); return () => window.removeEventListener('focus', refresh); }, []);
-  const [db, setDb] = useState({ revision: 0, locations: [] }), [loaded, setLoaded] = useState(false);
+  const [db, setDb] = useState({ locations: [] }), [loaded, setLoaded] = useState(false);
   const [locationId, setLocationId] = useState(null), [boulderId, setBoulderId] = useState(null);
   const [problemId, setProblemId] = useState(null);
   const [modal, setModal] = useState(null), [error, setError] = useState('');
@@ -80,7 +81,7 @@ function App() {
   async function logout() { try { await api('/api/logout', { method: 'POST' }); setUser(null); setModal(null); location.hash = '#login'; } catch (e) { setError(e.message); } }
   async function save(next) {
     setBusy(true); setError('');
-    try { const result = await api('/api/guide', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(next) }); setDb(result); setToast('Changes saved'); return true; }
+    try { const result = await api('/api/guide', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ changes: guideChanges(db, next) }) }); setDb(result); setToast('Changes saved'); return true; }
     catch (e) { setError(e.message); return false; } finally { setBusy(false); }
   }
   const updatePlace = async patch => save({ ...db, locations: db.locations.map(l => l.id === place.id ? { ...l, ...patch } : l) });

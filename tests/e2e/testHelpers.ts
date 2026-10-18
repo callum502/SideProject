@@ -71,7 +71,7 @@ export async function navigate(page: Page, location?: string, boulder?: string, 
   if (problem) params.set('problem', problem);
   // Navigate to the requested page.
   await page.goto('/#' + (location ? params.toString() : 'explore'));
-  // Hash navigation alone keeps the previous guide revision after API cleanup.
+  // Hash navigation alone keeps showing locations removed by API cleanup.
   if (!location) await page.reload();
   // Verify the signed-in account menu is available.
   await expect(page.getByRole('button', { name: /^Account menu for / })).toBeVisible();

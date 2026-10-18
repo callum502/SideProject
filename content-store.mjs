@@ -4,6 +4,7 @@ import { mediaReference, mediaUrl } from './media-reference.mjs';
 import { loadEnv } from 'vite';
 import { isDeepStrictEqual } from 'node:util';
 import { authorizeChanges } from './ownership.mjs';
+import { applyChanges, conflict } from './guide-changes.mjs';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const tables = ['locations', 'boulders', 'problems', 'media', 'problem_media'];
@@ -16,7 +17,7 @@ export function toGuide(snapshot) {
   const media = row => {
     return { id: row.id, name: row.name, caption: row.caption || '', url: mediaUrl(row.storage_bucket, row.storage_path), ...owner(row), ...(row.kind === 'image' ? { annotations: row.annotations } : {}) };
   };
-  return { revision: snapshot.revision, locations: snapshot.locations.map(l => ({
+  return { locations: snapshot.locations.map(l => ({
     id: l.id, name: l.name, latitude: String(l.latitude), longitude: String(l.longitude), approach: l.approach_notes, links: l.additional_links || [], ...owner(l),
     photos: snapshot.media.filter(m => m.location_id === l.id).map(media),
     boulders: snapshot.boulders.filter(b => b.location_id === l.id).map(b => ({
@@ -76,7 +77,8 @@ export function contentOperations(before, after) {
   for (const t of tables) for (const [key, row] of next[t]) {
     const previous = old[t].get(key);
     if (!previous) operations.push({ table: t, action: 'insert', row });
-    else if (!isDeepStrictEqual(row, Object.fromEntries(Object.keys(row).map(k => [k, previous[k]])))) operations.push({ table: t, action: 'update', row });
+    // The version read here lets save_content reject the update if the row changed since.
+    else if (!isDeepStrictEqual(row, Object.fromEntries(Object.keys(row).map(k => [k, previous[k]])))) operations.push({ table: t, action: 'update', row: { ...row, version: previous.version } });
   }
   return operations;
 }
@@ -91,7 +93,8 @@ export function createContentStore({ env = { ...loadEnv('development', process.c
     if (!response.ok) {
       if (result?.code === 'PZ002') throw fail(MEDIA_LIMIT_MESSAGE,400);
       if (result?.code === 'PZ001' && Object.hasOwn(POST_LIMITS,result?.details || '')) throw fail(limitMessage(result.details),400);
-      if (result?.code === '40001' || result?.code === '23505') throw fail('This guide changed. Reload before saving again.', 409);
+      // Row changed or removed, duplicate insert, parent removed/child added concurrently, or concurrent saves deadlocked.
+      if (['40001', '23505', '23503', '40P01'].includes(result?.code)) throw conflict();
       if (response.status === 401) throw fail('Your session expired. Log in again.', 401);
       if (result?.code === '42501') throw fail('You do not have permission to change one of these records.', 403);
       if (result?.code === 'PGRST202') throw fail('Apply the content API SQL migration before switching to Supabase content.', 503);
@@ -102,16 +105,18 @@ export function createContentStore({ env = { ...loadEnv('development', process.c
   }
   return {
     async read(token) { return toGuide(await rpc('read_content', {}, token)); },
-    async save(incoming, user, token) {
+    // `check` validates the merged guide before any permission checks or writes.
+    async save(changes, user, token, check = () => {}) {
       const snapshot = await rpc('read_content', {}, token);
-      if (incoming.revision !== snapshot.revision) throw fail('This guide changed. Reload before saving again.', 409);
       const previous = toGuide(snapshot);
+      const incoming = applyChanges(previous, changes);
+      check(incoming, previous);
       authorizeChanges(previous, incoming, user);
       enforcePostLimits(previous, incoming, user.id);
       enforceMediaLimits(previous, incoming);
       const rows = await toRows(incoming, snapshot.media, storage, token);
       const operations = contentOperations(snapshot, rows);
-      return toGuide(await rpc('save_content', { expected_revision: incoming.revision, operations }, token));
+      return toGuide(await rpc('save_content', { operations }, token));
     },
   };
 }

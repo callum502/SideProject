@@ -40,11 +40,12 @@
  */
 
 import { expect, type Page, type TestInfo } from '@playwright/test';
+import { guideChanges } from '../../guide-changes.mjs';
 
 /**
  * Read the latest guide through the app API using the browser session.
  * @param page - Page whose request context supplies the session cookies.
- * @returns The parsed guide containing locations, boulders, problems and its revision.
+ * @returns The parsed guide containing locations, boulders and problems.
  * @throws If the API request fails.
  */
 export async function guide(page: Page) {
@@ -64,13 +65,13 @@ export async function guide(page: Page) {
  */
 export async function cleanup(page: Page, prefix: string) {
   if (!prefix.startsWith('test_') || prefix.length <= 5) throw new Error('Cleanup requires a scoped test_ prefix.');
-  // Fetch current data so cleanup preserves unrelated locations and the latest revision.
+  // Fetch current data so cleanup deletes the latest copy of each matching location.
   const current = await guide(page);
   // Remove only locations whose names start with this test prefix.
   const locations = current.locations.filter((l: any) => !l.name.startsWith(prefix));
   if (locations.length === current.locations.length) return;
-  // Persist cleanup through the authenticated app API.
-  const response = await page.request.put('/api/guide', { data: { ...current, locations }, timeout: 10000 });
+  // Persist cleanup through the authenticated app API, sending only the removed records.
+  const response = await page.request.put('/api/guide', { data: { changes: guideChanges(current, { locations }) }, timeout: 10000 });
   if (!response.ok()) throw new Error('Cleanup failed: HTTP ' + response.status());
 }
 

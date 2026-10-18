@@ -53,7 +53,7 @@ function validateContentLengths(data, previous) {
   }
 }
 function validate(data) {
-  if (!Number.isSafeInteger(data.revision) || !Array.isArray(data.locations) || data.locations.length > 1000) throw fail('Invalid guide.');
+  if (!Array.isArray(data.locations) || data.locations.length > 1000) throw fail('Invalid guide.');
   const ids = new Set();
   const id = value => { if (!text(value, 100, true) || ids.has(value)) throw fail('Invalid or duplicate record ID.'); ids.add(value); };
   for (const l of data.locations) {
@@ -255,9 +255,9 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
       if (url.pathname === '/api/guide' && req.method === 'GET') return json(200, await contentStore.read(user ? session.accessToken : undefined));
       if (url.pathname === '/api/guide' && req.method === 'PUT') {
         let data; try { data = JSON.parse((await body(req, 12 * 1024 * 1024)).toString()); } catch (e) { if (e.status) throw e; throw fail('Invalid JSON.'); }
-        validate(data);
-        validateContentLengths(data, await contentStore.read(session.accessToken));
-        return json(200, await contentStore.save(data, user, session.accessToken));
+        if (!data || !Array.isArray(data.changes)) throw fail('Invalid changes.');
+        // Changes are applied to the latest guide; the merged result must pass the same checks as a full guide.
+        return json(200, await contentStore.save(data.changes, user, session.accessToken, (next, current) => { validate(next); validateContentLengths(next, current); }));
       }
       if (isUpload(url.pathname,req.method)) releaseUpload=requestLimits.upload(user.id);
       if (url.pathname === '/api/images' && req.method === 'POST') {
