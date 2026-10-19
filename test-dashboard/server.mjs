@@ -238,8 +238,12 @@ function launch(run, dir, args, { slowMo, video, append = false, env = {} }) {
     if (buffer) onLine(buffer);
     await Promise.all(current.pending);
     run.endedAt = Date.now();
-    // A retry that didn't finish leaves the test where it was (needing triage).
-    for (const t of Object.values(run.tests)) if (t.state === 'running' || t.state === 'queued') t.state = append ? 'failed' : current.stopped ? 'stopped' : 'skipped';
+    // A retry that didn't finish leaves the test where it was (needing triage). So does an automatic retry
+    // that never started because the run was stopped: its earlier attempt failed.
+    for (const t of Object.values(run.tests)) {
+      if (t.retryPending) { t.state = 'failed'; delete t.retryPending; }
+      else if (t.state === 'running' || t.state === 'queued') t.state = append ? 'failed' : current.stopped ? 'stopped' : 'skipped';
+    }
     const anyFailed = Object.values(run.tests).some(t => t.state === 'failed');
     run.status = current.stopped && !append ? 'stopped' : anyFailed || (!append && code !== 0) ? 'failed' : 'passed';
     delete run.retrying; delete run.keepOpen;
@@ -262,6 +266,7 @@ async function handleEvent(run, dir, e) {
       if (!t) return;
       // Attempt numbers continue across in-run retries: attemptBase is the attempts made before this process.
       Object.assign(t, { state: 'running', retry: (t.attemptBase || 0) + e.retry, workerIndex: e.workerIndex, steps: [], errors: [], attachments: [] });
+      delete t.retryPending;
       break;
     case 'stepBegin':
       // Step locations let the Code tab mark each test.step() line with its result.
@@ -289,7 +294,9 @@ async function handleEvent(run, dir, e) {
         attachments.push(entry);
       }
       // Only pass or fail: a test that passes on a retry counts as passed (its attempts are kept).
-      const state = e.outcome === 'flaky' ? 'passed' : e.outcome === 'skipped' ? 'skipped' : e.outcome === 'expected' ? 'passed' : (e.status === 'failed' || e.status === 'timedOut' || e.status === 'interrupted' || e.outcome === 'unexpected') ? 'failed' : 'passed';
+      // A failed attempt that Playwright will retry isn't finished: it waits in the queue rather than needing triage.
+      const state = e.willRetry ? 'queued' : e.outcome === 'flaky' ? 'passed' : e.outcome === 'skipped' ? 'skipped' : e.outcome === 'expected' ? 'passed' : (e.status === 'failed' || e.status === 'timedOut' || e.status === 'interrupted' || e.outcome === 'unexpected') ? 'failed' : 'passed';
+      if (e.willRetry) t.retryPending = true; else delete t.retryPending;
       const errors = e.errors.map(cleanError);
       for (const s of t.steps) if (s.state === 'running') s.state = 'failed';
       // Keep every attempt so a retried test still shows the failed attempt's error, steps and video.

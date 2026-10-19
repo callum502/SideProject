@@ -93,6 +93,8 @@ export default class StreamReporter {
       outcome: test.outcome(),
       duration: result.duration,
       retry: result.retry,
+      // Playwright runs another attempt after a failure while retries remain (test.retries is the configured count).
+      willRetry: ['failed', 'timedOut'].includes(result.status) && result.status !== test.expectedStatus && result.retry < test.retries,
       errors: result.errors.map(serializeError),
       annotations: [...test.annotations, ...(result.annotations || [])],
       attachments: result.attachments.map(a => ({ name: a.name, contentType: a.contentType, path: a.path, body: a.body && a.body.length < 100_000 ? a.body.toString() : undefined })),
