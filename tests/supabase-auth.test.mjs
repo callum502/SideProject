@@ -38,6 +38,19 @@ test('an unconfirmed email refused by Supabase at login gets the app message, no
   await assert.rejects(auth.login({ email: 'climber@example.com', password: 'test-password' }), error => error.status === 401 && error.message === 'Confirm your email before logging in.');
 });
 
+test('sign-up with a registered email gets the same reply as a new one; other sign-up errors still show', async () => {
+  let signupReply;
+  const auth = createAuth({ env, fetchImpl: async url => url.endsWith('/rpc/display_name_available') ? new Response('true', { status: 200 }) : new Response(JSON.stringify(signupReply.body), { status: signupReply.status }) });
+  const values = { name: 'New climber', height: 178, apeIndex: 'unknown', email: 'taken@example.com', password: 'six123' };
+  // Supabase's reply for an email that already has an account.
+  signupReply = { status: 422, body: { code: 422, error_code: 'user_already_exists', msg: 'User already registered' } };
+  const existing = await auth.signup(values);
+  signupReply = { status: 200, body: { id: 'new-user' } };
+  assert.deepEqual(existing, await auth.signup(values), 'Same reply as a new sign-up');
+  signupReply = { status: 422, body: { code: 422, error_code: 'weak_password', msg: 'Password is too weak' } };
+  await assert.rejects(auth.signup(values), /Password is too weak/);
+});
+
 test('logging a problem deleted meanwhile says it no longer exists; other database errors stay generic', async () => {
   // PostgREST's reply when set_problem_log raises 'Problem not found' (plpgsql's default code P0001).
   let reply = { code: 'P0001', message: 'Problem not found' };

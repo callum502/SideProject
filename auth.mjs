@@ -53,7 +53,8 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       }
       // Supabase refuses password logins for unconfirmed emails before issuing a token, so identity() never sees them.
       if (data.error_code === 'email_not_confirmed') throw fail('Confirm your email before logging in.', 401);
-      throw fail(response.status === 429 ? 'Too many attempts. Please wait before trying again.' : data.msg || data.message || data.error_description || 'Account request failed.', response.status === 429 ? 429 : 401);
+      // Keep Supabase's error code so callers can handle specific cases (it isn't shown to users).
+      throw Object.assign(fail(response.status === 429 ? 'Too many attempts. Please wait before trying again.' : data.msg || data.message || data.error_description || 'Account request failed.', response.status === 429 ? 429 : 401), { code: data.error_code });
     }
     return data;
   }
@@ -134,9 +135,14 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       const details=profileDetails(values);
       if (typeof values.name !== 'string' || !values.name.trim() || values.name.trim().length > 120 || typeof values.email !== 'string' || typeof values.password !== 'string' || values.password.length < 6) throw fail('Provide a display name, email and a password of at least 6 characters.');
       await checkName(details.name);
+      const message = 'Check your email for a confirmation code. If you already have an account, log in instead.';
       try { await request('/auth/v1/signup', { email: values.email.trim(), password: values.password, data: { display_name: details.name, height_cm:details.height, ape_index_inches:details.apeIndex } }); }
-      catch(error) { await checkName(details.name); throw error; }
-      return { message: 'Check your email for a confirmation code. If you already have an account, log in instead.' };
+      catch(error) {
+        // A registered email gets the same reply as a new one, so sign-up can't reveal which emails have accounts.
+        if (['user_already_exists', 'email_exists'].includes(error.code)) return { message };
+        await checkName(details.name); throw error;
+      }
+      return { message };
     },
     async confirm(values) {
       validateAccountInputs(values);

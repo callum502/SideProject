@@ -193,9 +193,7 @@ test("login gives the same answer for an unknown email as a wrong password, and 
   await login(page, { email: '  ' + account.email.toUpperCase() + ' ', password: account.password });
 });
 
-// Fails until fixed: signing up with a registered email shows Supabase's "User already registered", which tells
-// anyone whether an email has an account (auth.mjs signup passes the message through). The app's own reply,
-// "...If you already have an account, log in instead.", is written to avoid revealing that.
+// Regression: this used to show Supabase's "User already registered", telling anyone whether an email has an account.
 test('sign-up with an already registered email looks like any sign-up, and creates and sends nothing', async ({ page }) => {
   const existing = await createApiAccount(prefix);
   const details = accountDetails(prefix);
