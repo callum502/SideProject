@@ -12,14 +12,19 @@ export function ProblemList({ loggedIds = new Set(), place, boulder, add, busy, 
 }
 
 export function ProblemForm({ boulder, problem, save, busy, error, cancel }) {
+  // Text of only spaces passes the browser's required check, so say which field is missing.
+  const [missing, setMissing] = React.useState('');
   async function submit(e) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
     const fields = { name: form.get('name').trim(), grade: form.get('grade').trim(), description: form.get('description').trim(), imageIds: form.getAll('imageIds'), videoIds: form.getAll('videoIds') };
-    if (!fields.name || !fields.grade || !fields.description) { e.currentTarget.querySelector(!fields.name ? '[name=name]' : !fields.grade ? '[name=grade]' : '[name=description]').focus(); return; }
+    const empty = !fields.name ? ['name', 'Please enter a name.'] : !fields.grade ? ['grade', 'Choose a grade.'] : !fields.description ? ['description', 'Description is required.'] : null;
+    if (empty) { setMissing(empty[1]); e.currentTarget.querySelector(`[name=${empty[0]}]`).focus(); return; }
+    setMissing('');
     await save({ ...fields, id: problem?.id || crypto.randomUUID() });
   }
-  return <form onSubmit={submit}>{error && <p className="error" role="alert">{error}</p>}
+  const message = missing || error;
+  return <form onSubmit={submit}>{message && <p className="error" role="alert">{message}</p>}
     <label>Problem name <span aria-hidden="true">*</span><input name="name" required autoFocus maxLength={80} defaultValue={problem?.name || ''}/></label>
     <label>Grade <span aria-hidden="true">*</span><select name="grade" required defaultValue={problem?.grade || ''}><option value="" disabled>Select a grade</option>{problem?.grade && !grades.includes(problem.grade) && <option value={problem.grade}>{problem.grade} (current)</option>}{grades.map(grade => <option key={grade} value={grade}>{grade}</option>)}</select></label>
     <label>Description <span aria-hidden="true">*</span><textarea name="description" required maxLength={800} rows={5} placeholder="Describe the start, the line, key moves, and finish..." defaultValue={problem?.description || ''}/></label>
