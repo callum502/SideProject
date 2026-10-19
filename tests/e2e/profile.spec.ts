@@ -242,3 +242,32 @@ test('a new display name shows on everything the user made and wherever others s
     for (const user of users) await user.context.close();
   }
 });
+
+test('replacing or removing a profile photo deletes the old file, unless the guide still uses it', async () => {
+  const { id, name } = owner.current.account;
+  const request = owner.current.request;
+  const usedBytes = async () => (await (await request.get('/api/storage/usage')).json()).usedBytes as number;
+  const photoFile = async () => (await request.get('/api/profile-photo?id=' + id, { maxRedirects: 0 })).headers().location;
+  const reachable = async (url: string) => (await request.get(url)).status() === 200;
+  const before = await usedBytes();
+  const page = await openProfile(owner.current.context, id, name);
+  const input = page.locator('label', { hasText: 'Upload profile photo' }).locator('input[type="file"]');
+  // Replacing the photo deletes the first file.
+  await input.setInputFiles([mediaFile('jpg')]);
+  await expect.poll(photoFile).toMatch(/\.jpg$/);
+  const first = (await photoFile())!;
+  await input.setInputFiles([mediaFile('png')]);
+  await expect.poll(photoFile).toMatch(/\.png$/);
+  const second = (await photoFile())!;
+  expect(await reachable(first), 'The replaced photo file was deleted').toBe(false);
+  // Removing the photo deletes its file too, so storage is back where it started.
+  await page.getByRole('button', { name: 'Remove profile photo', exact: true }).click();
+  await expect.poll(() => photoStatus(id)).toBe(404);
+  expect(await reachable(second), 'The removed photo file was deleted').toBe(false);
+  expect(await usedBytes(), 'Storage freed').toBe(before);
+  // A guide photo used as the profile photo keeps its file when the profile photo changes.
+  const { image } = await seedLocation(request, prefix);
+  expect((await request.post('/api/profile-photo', { data: { url: image.url } })).status(), 'Guide photo set as profile photo').toBe(200);
+  expect((await request.post('/api/profile-photo', { data: { url: null } })).status(), 'Profile photo removed').toBe(200);
+  expect(await reachable(image.url), 'The guide photo is kept').toBe(true);
+});

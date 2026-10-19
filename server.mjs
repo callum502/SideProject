@@ -194,7 +194,11 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         let values;try{values=JSON.parse((await body(req,2048)).toString());}catch{throw fail('Invalid photo.');}
         const ref=typeof values?.url==='string' ? mediaReference(values.url) : null;
         if(values?.url!==null && (!ref || !/\.(jpg|png|webp)$/.test(ref.path) || ref.path.split('/')[0]!==user.id))throw fail('Choose an image uploaded by your account.',400);
+        const previous=await auth.profilePhoto(user.id).catch(()=>null);
         await auth.setProfilePhoto(ref?.path || null,session);
+        // A replaced or removed photo's file would otherwise stay stored, using the allowance. Storage keeps it if
+        // something still uses it (such as a guide photo). The change is saved either way; a failure is only logged.
+        if(previous && previous!==ref?.path) await storage.remove([previous],session.accessToken).catch(error=>console.error('Could not delete the previous profile photo:',error.message));
         return json(200,{saved:true});
       }
       if (url.pathname === '/api/public-profile' && req.method === 'GET') {
