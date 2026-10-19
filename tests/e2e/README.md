@@ -61,6 +61,19 @@ Each of these specs uses its own account (`testUser` in `seedHelpers.ts`), creat
 - `navigation.spec.ts`: the breadcrumb trail, deep links for signed-out visitors, and "not found" pages.
 - `limits.spec.ts`: 25 locations, 50 boulders and 250 problems per user, 50 photos and videos per location, and text length limits, through the API and, where the app checks first, the UI. Each limit uses its own account.
 - `permissions.spec.ts` also covers a deleted user's content: it's credited to Deleted User and only an admin can change it.
+- `validation.spec.ts`: required fields on the location, boulder and problem forms (empty fields are blocked by the browser, so the tests check the field is invalid and nothing was saved; text of only spaces must get the app's own message), length caps when typing, and names containing HTML shown as text without running.
+- `failures.spec.ts`: simulated network and server failures. A failed save keeps the dialog and what was typed and can be retried; server messages such as rate limiting are shown; a guide that fails to load shows an error; and dropped connections or HTML error pages must get a readable message.
+
+Unhappy paths are also covered in the existing specs:
+- coordinates and links at their limits
+- the profile's display name rules, and profile photo contents and replacement
+- a new account reusing a deleted account's display name inheriting none of its data
+- mixed upload batches, the exact 8 MB photo size, failed uploads and retrying
+- a freed media slot and the 10 GB storage allowance (set with `runSql`)
+- login, sign-up, confirmation and recovery codes not revealing which emails have accounts and working only once
+- the delete-account confirmation, and saving after the session ended elsewhere
+- logging a problem that was deleted meanwhile
+- invite edge cases
 
 Password recovery reads the emailed code from Mailpit, which local Supabase uses to capture all email (http://127.0.0.1:54324; override with `E2E_MAILPIT_URL`).
 

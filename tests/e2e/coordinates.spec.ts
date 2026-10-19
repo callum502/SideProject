@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import type { Locator, Page } from '@playwright/test';
 import { locationName } from './testHelpers';
 import { guide } from './apiTestHelpers';
-import { testUser, openPage, seedLocation } from './seedHelpers';
+import { testUser, openPage, seedLocation, editGuide } from './seedHelpers';
 
 const prefix = 'test_coords_loc_';
 const user = testUser('test_coords_user_', prefix);
@@ -139,4 +139,32 @@ test('editing a location starts the map at its saved point and saves a new one',
   const savedLocation = (await guide(page)).locations.find((l: any) => l.id === location.id);
   expect(Number(savedLocation.latitude), 'API/DB: latitude saved').toBeCloseTo(Number(lat), 6);
   expect(Number(savedLocation.longitude), 'API/DB: longitude saved').toBeCloseTo(Number(lng), 6);
+});
+
+test('coordinates at the exact limits save, and just past them are refused', async () => {
+  const { dialog, latitude, longitude, page } = await openCreateDialog();
+  const name = locationName(prefix);
+  await dialog.getByLabel(/^Location name/).fill(name);
+  await dialog.getByLabel(/^Approach notes/).fill('At the edge of the map.');
+  let saves = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++; });
+  // Just past each limit is refused by the browser, and nothing is sent.
+  for (const [field, value] of [[latitude, '90.000001'], [latitude, '-90.000001'], [longitude, '180.000001'], [longitude, '-180.000001']] as const) {
+    await latitude.fill('0');
+    await longitude.fill('0');
+    await field.fill(value);
+    await dialog.getByRole('button', { name: 'Save location', exact: true }).click();
+    expect(await field.evaluate((input: HTMLInputElement) => input.validity.valid), value + ' is refused').toBe(false);
+  }
+  expect(saves, 'No guide save was sent').toBe(0);
+  // The exact limits are valid and save.
+  await latitude.fill('-90');
+  await longitude.fill('180');
+  const saved = page.waitForResponse(r => r.url().endsWith('/api/guide') && r.request().method() === 'PUT');
+  await dialog.getByRole('button', { name: 'Save location', exact: true }).click();
+  expect((await saved).status(), 'Boundary coordinates saved').toBe(200);
+  await expect(page.locator('.coordinates')).toHaveText('-90.00000, 180.00000');
+  // API check: the server refuses values past the limits from any client.
+  const response = await editGuide(user.current.request, g => { g.locations.find((l: any) => l.name === name).latitude = '90.000001'; });
+  expect(response.status(), 'API: latitude past 90 refused').toBe(400);
 });

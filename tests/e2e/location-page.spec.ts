@@ -72,3 +72,42 @@ test('additional links can be added, edited and removed, and must be valid', asy
     expect(find(await guide(page), location.id).links, 'API/DB: links saved').toEqual([{ label: 'Tide chart', url: 'https://example.com/tides' }]);
   });
 });
+
+test('links need both a label and an http(s) URL, and stop at 50', async () => {
+  const { location } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id }, location.name);
+  const dialog = page.getByRole('dialog');
+  const link = dialog.getByRole('group').nth(1);
+  await page.getByRole('button', { name: 'Edit links', exact: true }).click();
+  await dialog.getByRole('button', { name: '+ Add link', exact: true }).click();
+  let saves = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++; });
+  /** Fill the new link, try to save and return whether the browser accepted both fields. */
+  async function attempt(label: string, url: string) {
+    await link.getByLabel('Label').fill(label);
+    await link.getByLabel('URL').fill(url);
+    await dialog.getByRole('button', { name: 'Save links', exact: true }).click();
+    return link.evaluate(group => [...group.querySelectorAll('input')].every(input => (input as HTMLInputElement).validity.valid));
+  }
+  // A label without a URL, or a URL without a label, is blocked by the browser.
+  expect(await attempt('Tide times', ''), 'URL required').toBe(false);
+  expect(await attempt('', 'https://example.com/tides'), 'Label required').toBe(false);
+  // Other schemes are refused by the app.
+  expect(await attempt('Old archive', 'ftp://example.com/archive'), 'ftp passes the browser check').toBe(true);
+  await expect(dialog.getByRole('alert')).toHaveText('Each link needs a label and a valid HTTP or HTTPS URL.');
+  expect(saves, 'Nothing was saved').toBe(0);
+  // Plain http is allowed. The dialog closes on save, so don't read its fields afterwards (unlike attempt()).
+  await link.getByLabel('URL').fill('http://example.com/archive');
+  const saved = page.waitForResponse(r => r.url().endsWith('/api/guide') && r.request().method() === 'PUT');
+  await dialog.getByRole('button', { name: 'Save links', exact: true }).click();
+  expect((await saved).status(), 'http link saved').toBe(200);
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Old archive' })).toHaveAttribute('href', 'http://example.com/archive');
+  // At 50 links, no more can be added, in the form or through the API.
+  const fifty = Array.from({ length: 50 }, (_, i) => ({ label: 'Link ' + i, url: 'https://example.com/' + i }));
+  expect((await editGuide(user.current.request, g => { find(g, location.id).links = fifty; })).status(), '50 links allowed').toBe(200);
+  await page.reload();
+  await page.getByRole('button', { name: 'Edit links', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: '+ Add link', exact: true })).toBeDisabled();
+  expect((await editGuide(user.current.request, g => { find(g, location.id).links.push({ label: 'One too many', url: 'https://example.com/51' }); })).status(), 'API: 51st link refused').toBe(400);
+});

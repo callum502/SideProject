@@ -124,3 +124,57 @@ test('parking photos can be uploaded with a caption, recaptioned and removed', a
   await expect(page.getByText('No parking or approach photos yet.', { exact: true })).toBeVisible();
   expect(find(await guide(page), location.id).photos, 'API/DB: photo removed').toEqual([]);
 });
+
+/** The user's stored upload total, from the storage allowance API. */
+const usedBytes = async () => (await (await user.current.request.get('/api/storage/usage')).json()).usedBytes as number;
+
+// Fails until fixed: uploadNamedPhotos (src/main.jsx) checks each file only just before uploading it, so the valid
+// files before an invalid one are already stored. Nothing is saved to the guide, so they are orphaned, but they
+// still count towards the user's 10 GB allowance.
+test('a batch with an unsupported file uploads nothing', async () => {
+  const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+  const before = await usedBytes();
+  await chooseFiles(page, '+ Upload images', [mediaFile('png'), { name: 'climb.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') }]);
+  await dialogError(page, 'Upload', 'Choose JPEG, PNG, or WebP images.');
+  expect(find(await guide(page), boulder.id).images, 'API/DB: no photos saved').toEqual([]);
+  expect(await usedBytes(), 'No file was stored').toBe(before);
+});
+
+test('a photo of exactly 8 MB uploads', async () => {
+  const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+  // A real PNG padded to the limit; data after the image's end marker is ignored by viewers.
+  const png = mediaFile('png').buffer;
+  const file = { name: 'limit.png', mimeType: 'image/png', buffer: Buffer.concat([png, Buffer.alloc(8 * 1024 * 1024 - png.length)]) };
+  expect(file.buffer.length).toBe(8 * 1024 * 1024);
+  await chooseFiles(page, '+ Upload images', [file]);
+  await completeUpload(page, { names: ['Exactly 8 MB'] });
+  expect(find(await guide(page), boulder.id).images.map((i: any) => i.name), 'API/DB: photo saved').toEqual(['Exactly 8 MB']);
+});
+
+test('a failed upload keeps the dialog open, saves nothing, and can be retried', async () => {
+  const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+  for (const [what, fail] of [
+    ['the server fails', (route: any) => route.fulfill({ status: 500, json: { error: 'Could not save or load the guide. Please try again.' } })],
+    ['the connection drops', (route: any) => route.abort('connectionreset')],
+  ] as const) {
+    await test.step(what, async () => {
+      await page.route('**/api/images', fail, { times: 1 });
+      await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
+      const dialog = page.getByRole('dialog');
+      await dialog.getByLabel('Photo 1 name').fill('Retried photo');
+      await dialog.getByRole('button', { name: 'Upload', exact: true }).click();
+      // The error is shown in the dialog, which keeps the chosen name.
+      await expect(dialog.getByRole('alert')).toBeVisible();
+      await expect(dialog.getByLabel('Photo 1 name')).toHaveValue('Retried photo');
+      expect(find(await guide(page), boulder.id).images, 'API/DB: nothing saved').toEqual([]);
+      await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    });
+  }
+  // With the connection back, the same upload succeeds.
+  await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
+  await completeUpload(page, { names: ['Retried photo'] });
+  expect(find(await guide(page), boulder.id).images.map((i: any) => i.name), 'API/DB: saved on retry').toEqual(['Retried photo']);
+});

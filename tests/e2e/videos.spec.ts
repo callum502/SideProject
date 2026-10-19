@@ -61,3 +61,14 @@ test('removing a boulder video also removes it from its problems', async () => {
   expect(find(current, video.id), 'API/DB: video removed').toBeUndefined();
   expect(find(current, problem.id).videoIds, 'API/DB: problem link removed').toEqual([]);
 });
+
+test('a batch with an unsupported file uploads nothing', async () => {
+  const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+  const usedBytes = async () => (await (await user.current.request.get('/api/storage/usage')).json()).usedBytes as number;
+  const before = await usedBytes();
+  await chooseFiles(page, '+ Upload video', [mediaFile('mp4'), { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('beta') }]);
+  await dialogError(page, 'Upload', 'Choose MP4, WebM, or MOV videos.');
+  expect(find(await guide(page), boulder.id).videos, 'API/DB: no videos saved').toEqual([]);
+  expect(await usedBytes(), 'No file was stored').toBe(before);
+});

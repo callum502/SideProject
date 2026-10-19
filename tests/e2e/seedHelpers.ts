@@ -13,6 +13,7 @@
  * seedLocation              Create a location with a boulder, problem, annotated photo, video, parking photo and link.
  * logProblem                Add a problem to (or remove it from) a user's logbook.
  * befriend                  Make two users friends: one invites, the other accepts.
+ * runSql                    Run SQL as the database owner in the local Supabase container (for state no API can set).
  *
  * Internal helpers
  * makeAdmin                 Grant the admin role in the local database container.
@@ -37,11 +38,11 @@ export type User = Awaited<ReturnType<typeof signIn>> & { account: TestAccount }
  * Uses no app login requests, so it does not count towards the app's 20-per-10-minute login limit.
  * @param prefix - Stable test-specific prefix for the email and display name, used by cleanupAccounts.
  * @param options - `admin` grants the admin role; `confirmed: false` leaves the email unconfirmed;
- *   `profile: false` leaves the profile incomplete (no height), as after Google sign-in.
+ *   `profile: false` leaves the profile incomplete (no height), as after Google sign-in; `name` sets the display name.
  * @returns The account's ID, email, password and display name.
  */
-export async function createApiAccount(prefix: string, options: { admin?: boolean, confirmed?: boolean, profile?: boolean } = {}): Promise<TestAccount> {
-  const details = accountDetails(prefix);
+export async function createApiAccount(prefix: string, options: { admin?: boolean, confirmed?: boolean, profile?: boolean, name?: string } = {}): Promise<TestAccount> {
+  const details = { ...accountDetails(prefix), ...(options.name ? { name: options.name } : {}) };
   // The sign-up trigger completes the profile from this metadata, as it does for the sign-up form.
   const response = await adminRequest('/auth/v1/admin/users', { method: 'POST', body: JSON.stringify({
     email: details.email, password: details.password, email_confirm: options.confirmed !== false,
@@ -59,16 +60,31 @@ export async function createApiAccount(prefix: string, options: { admin?: boolea
  * @throws If the ID is not a UUID, Supabase is not local or the database container cannot be found.
  */
 function makeAdmin(userId: string) {
-  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(userId)) throw new Error('Invalid account ID.');
-  if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(process.env.E2E_SUPABASE_URL || 'http://invalid').hostname)) throw new Error('Granting admin requires local Supabase.');
+  const output = runSql(`UPDATE private.user_roles SET role = 'admin' WHERE user_id = '${uuid(userId)}'`);
+  if (!output.includes('UPDATE 1')) throw new Error('Granting admin did not update the account: ' + output.trim());
+}
+
+/** Return the value if it is a UUID, for safe use in SQL; otherwise throw. */
+export function uuid(value: string) {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)) throw new Error('Invalid ID: ' + value);
+  return value;
+}
+
+/**
+ * Run SQL as the database owner in the local Supabase database container, for state no API can set
+ * (roles, storage usage). Only interpolate trusted values; use uuid() for IDs.
+ * @param sql - Statement to run.
+ * @returns psql's output.
+ * @throws If Supabase is not local or the database container cannot be found.
+ */
+export function runSql(sql: string) {
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(process.env.E2E_SUPABASE_URL || 'http://invalid').hostname)) throw new Error('Running SQL requires local Supabase.');
   // Local Supabase names its database container supabase_db_<project_id>.
   const projectId = readFileSync('supabase/config.toml', 'utf8').match(/^project_id\s*=\s*"([^"]+)"/m)?.[1];
   const running = execFileSync('docker', ['ps', '--format', '{{.Names}}'], { encoding: 'utf8' }).split(/\r?\n/).filter(name => name.startsWith('supabase_db_'));
   const container = running.find(name => name === 'supabase_db_' + projectId) || (running.length === 1 ? running[0] : undefined);
   if (!container) throw new Error('Could not find the local Supabase database container. Start it with npx supabase start.');
-  const output = execFileSync('docker', ['exec', container, 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c',
-    `UPDATE private.user_roles SET role = 'admin' WHERE user_id = '${userId}'`], { encoding: 'utf8' });
-  if (!output.includes('UPDATE 1')) throw new Error('Granting admin did not update the account: ' + output.trim());
+  return execFileSync('docker', ['exec', container, 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1', '-c', sql], { encoding: 'utf8' });
 }
 
 /**

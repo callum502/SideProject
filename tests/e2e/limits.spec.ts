@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
-import { findRecord as find } from './apiTestHelpers';
-import { locationName, chooseFiles } from './testHelpers';
-import { testUser, openPage, seedLocation, editGuide, uploadImage, type User } from './seedHelpers';
+import { guide, findRecord as find } from './apiTestHelpers';
+import { locationName, chooseFiles, completeUpload, dialogError } from './testHelpers';
+import { testUser, openPage, seedLocation, editGuide, uploadImage, runSql, uuid, type User } from './seedHelpers';
 import { mediaFile } from './media';
 
 // Each limit test uses its own account, so filling one user's allowance doesn't affect the other tests.
@@ -11,6 +11,8 @@ const locations = testUser('test_limits_loc_user_', prefix);
 const boulders = testUser('test_limits_boulder_user_', boulderPrefix);
 const problems = testUser('test_limits_problem_user_', problemPrefix);
 const media = testUser('test_limits_media_user_', mediaPrefix);
+const quotaPrefix = 'test_limits_q_';
+const quota = testUser('test_limits_quota_user_', quotaPrefix);
 
 const newLocation = (name: string) => ({ id: crypto.randomUUID(), name, latitude: '56.8', longitude: '-3.2', approach: 'Limit test.', links: [], photos: [], boulders: [] });
 const newBoulder = () => ({ id: crypto.randomUUID(), name: 'Limit boulder', notes: 'Limit test.', otherNotes: '', images: [], videos: [], problems: [] });
@@ -73,6 +75,38 @@ test('a location can hold at most 50 photos and videos', async () => {
   await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
   await expect(page.getByRole('alert')).toContainText(message);
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  // Removing a photo frees a slot, and the next upload succeeds.
+  await page.getByRole('button', { name: 'Dismiss error', exact: true }).click();
+  await page.getByRole('button', { name: 'Remove image Limit photo 0', exact: true }).click();
+  const removed = page.waitForResponse(r => r.url().endsWith('/api/guide') && r.request().method() === 'PUT');
+  await page.getByRole('dialog').getByRole('button', { name: 'Remove', exact: true }).click();
+  expect((await removed).status(), 'Photo removed').toBe(200);
+  await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
+  await completeUpload(page, { names: ['Freed slot'] });
+  expect(find(await guide(page), boulder.id).images.map((i: any) => i.name), 'API/DB: the new photo took the freed slot').toContain('Freed slot');
+});
+
+test('uploads stop at the 10 GB storage allowance', async () => {
+  const user = quota.current;
+  const { location, boulder } = await seedLocation(user.request, quotaPrefix, { media: false });
+  // Filling 10 GB for real isn't practical: set the account's recorded usage to just under the limit.
+  runSql(`INSERT INTO private.user_storage_usage(user_id, used_bytes) VALUES ('${uuid(user.account.id)}', 9999999000)
+    ON CONFLICT (user_id) DO UPDATE SET used_bytes = EXCLUDED.used_bytes`);
+  try {
+    const message = 'This upload would exceed your 10 GB upload allowance.';
+    // The API refuses the upload...
+    const response = await user.request.post('/api/images', { headers: { 'Content-Type': 'image/png' }, data: mediaFile('png').buffer });
+    expect({ status: response.status(), error: (await response.json()).error }, 'API: upload refused').toEqual({ status: 400, error: message });
+    // ...the upload dialog explains it...
+    const page = await openPage(user.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+    await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
+    await dialogError(page, 'Upload', message);
+    // ...and the profile shows the allowance as full.
+    await page.goto('/#user=' + user.account.id);
+    await expect(page.getByText('Uploads: 10.00 GB of 10 GB', { exact: true })).toBeVisible();
+  } finally {
+    runSql(`DELETE FROM private.user_storage_usage WHERE user_id = '${uuid(user.account.id)}'`);
+  }
 });
 
 test('names and notes over their length limits are refused', async () => {
