@@ -205,8 +205,8 @@ test('removing a photo frees its storage, and its old link stops working', async
   expect((await user.current.request.get(image.url)).status(), 'The old link no longer works').toBeGreaterThanOrEqual(400);
 });
 
-// Fails until fixed: only the server can tell that a file named and typed as an image isn't one, and by then the
-// earlier files in the batch are already stored, unused but counting towards the allowance.
+// Regression: only the server can tell a file named and typed as an image isn't one, and by then the earlier files in
+// the batch are stored. They used to stay, unused but counting towards the allowance; they are now discarded.
 test('a batch with a disguised file stores nothing', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
@@ -214,7 +214,52 @@ test('a batch with a disguised file stores nothing', async () => {
   await chooseFiles(page, '+ Upload images', [mediaFile('png'), { name: 'fake.png', mimeType: 'image/png', buffer: Buffer.from('not really an image') }]);
   await dialogError(page, 'Upload', 'The file is not a supported image.');
   expect(find(await guide(page), boulder.id).images, 'API/DB: no photos saved').toEqual([]);
-  expect(await usedBytes(), 'No file was stored').toBe(before);
+  // The earlier file is discarded just after the error is shown.
+  await expect.poll(usedBytes, { message: 'No file was left stored', timeout: 5000 }).toBe(before);
+});
+
+test('a video batch with a disguised file stores nothing', async () => {
+  const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+  const before = await usedBytes();
+  await chooseFiles(page, '+ Upload video', [mediaFile('mp4'), { name: 'fake.mp4', mimeType: 'video/mp4', buffer: Buffer.from('not really a video at all') }]);
+  await dialogError(page, 'Upload', 'The file is not a supported video.');
+  expect(find(await guide(page), boulder.id).videos, 'API/DB: no videos saved').toEqual([]);
+  await expect.poll(usedBytes, { message: 'No file was left stored', timeout: 5000 }).toBe(before);
+});
+
+test('uploads whose guide save fails are discarded', async () => {
+  const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+  const before = await usedBytes();
+  // The files upload, then the save of the guide is refused (as if someone else had just changed it).
+  const refuseSave = (route: any) => route.request().method() === 'PUT'
+    ? route.fulfill({ status: 409, json: { error: 'Someone else changed this while you were editing. Reload before saving again.' } })
+    : route.fallback();
+  await page.route('**/api/guide', refuseSave);
+  await chooseFiles(page, '+ Upload images', [mediaFile('png'), mediaFile('jpg')]);
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('button', { name: 'Upload', exact: true }).click();
+  await expect(dialog.getByRole('alert')).toHaveText('Someone else changed this while you were editing. Reload before saving again.');
+  await expect(dialog, 'The naming dialog stays open').toBeVisible();
+  await page.unroute('**/api/guide', refuseSave);
+  await expect.poll(usedBytes, { message: 'The uploaded files were discarded', timeout: 5000 }).toBe(before);
+  expect(find(await guide(page), boulder.id).images, 'API/DB: no photos saved').toEqual([]);
+});
+
+test("discarding uploads only removes the user's own files that nothing uses", async () => {
+  const { image } = await seedLocation(user.current.request, prefix);
+  const discard = (urls: string[]) => user.current.request.post('/api/uploads/discard', { data: { urls } });
+  // A file already in the guide is kept.
+  expect(await (await discard([image.url])).json(), 'File in use kept').toEqual({ removed: 0 });
+  expect((await user.current.request.get(image.url)).status(), 'Still served').toBe(200);
+  // Another user's file can't be named at all.
+  const someoneElse = `/media/${crypto.randomUUID()}/${crypto.randomUUID()}.png`;
+  expect((await discard([someoneElse])).status(), "Another user's upload refused").toBe(403);
+  // An unused upload of the user's own is deleted.
+  const url = (await (await user.current.request.post('/api/images', { headers: { 'Content-Type': 'image/png' }, data: mediaFile('png').buffer })).json()).url;
+  expect(await (await discard([url])).json(), 'Unused upload removed').toEqual({ removed: 1 });
+  expect((await user.current.request.get(url)).status(), 'Its link no longer works').toBeGreaterThanOrEqual(400);
 });
 
 test('media links work for guests, and missing or malformed links are refused', async ({ browser }) => {

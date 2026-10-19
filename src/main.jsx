@@ -116,8 +116,12 @@ function App() {
   }
   const upload = e => prepareUpload(e, 'photo');
   const uploadVideos = e => prepareUpload(e, 'video');
+  // Files uploaded for a batch that then failed (a later file refused, or the guide save failed) would otherwise stay
+  // stored but unused, counting towards the allowance. Best effort: the batch's own error is what the user sees.
+  const discardUploads = items => { if (items.length) api('/api/uploads/discard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ urls: items.map(item => item.url) }) }).catch(() => {}); };
   async function uploadNamedPhotos(files, names, captions = []) {
     setBusy(true); setError('');
+    const images = [];
     try {
       // Check every file before uploading any, so a bad file can't leave earlier ones stored but unused.
       for (const file of files) {
@@ -128,17 +132,17 @@ function App() {
       const destination = latest.locations.find(item => item.id === place.id);
       if (!destination) throw new Error('This location no longer exists.');
       checkMediaCapacity(destination, files.length);
-      const images = [];
       for (const file of files) {
         const result = await api('/api/images', { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
         images.push({ id: uid(), name: names[images.length], caption: captions[images.length] || '', url: result.url, annotations: [] });
       }
       const saved = !boulder ? await updatePlace({ photos: [...(place.photos || []), ...images] }) : await updateBoulder({ images: [...boulder.images, ...images], ...(problem ? { problems: boulder.problems.map(p => p.id === problem.id ? { ...p, imageIds: [...p.imageIds, ...images.map(image => image.id)] } : p) } : {}) });
-      if (saved) setModal(null);
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+      if (saved) setModal(null); else discardUploads(images);
+    } catch (e) { discardUploads(images); setError(e.message); } finally { setBusy(false); }
   }
   async function uploadNamedVideos(files, names) {
     setBusy(true); setError('');
+    const videos = [];
     try {
       for (const file of files) {
         if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type) && !/\.mov$/i.test(file.name)) throw new Error('Choose MP4, WebM, or MOV videos.');
@@ -148,14 +152,13 @@ function App() {
       const destination = latest.locations.find(item => item.id === place.id);
       if (!destination) throw new Error('This location no longer exists.');
       checkMediaCapacity(destination, files.length);
-      const videos = [];
       for (const file of files) {
         const result = await api('/api/videos', { method: 'POST', headers: { 'Content-Type': /\.mov$/i.test(file.name) ? 'video/quicktime' : file.type }, body: file });
         videos.push({ id: uid(), name: names[videos.length], url: result.url });
       }
       const saved = await updateBoulder({ videos: [...(boulder.videos || []), ...videos], ...(problem ? { problems: boulder.problems.map(p => p.id === problem.id ? { ...p, videoIds: [...p.videoIds, ...videos.map(video => video.id)] } : p) } : {}) });
-      if (saved) setModal(null);
-    } catch (e) { setError(e.message); } finally { setBusy(false); }
+      if (saved) setModal(null); else discardUploads(videos);
+    } catch (e) { discardUploads(videos); setError(e.message); } finally { setBusy(false); }
   }
   const home = !locationId;
   const goHome = () => { setLocationId(null); setBoulderId(null); setProblemId(null); location.hash = '#explore'; };

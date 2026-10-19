@@ -269,6 +269,17 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         return json(200, await contentStore.save(data.changes, user, session.accessToken, (next, current) => { validate(next); validateContentLengths(next, current); }));
       }
       if (isUpload(url.pathname,req.method)) releaseUpload=requestLimits.upload(user.id);
+      // Delete the user's own uploads from a batch that didn't save, so they don't use up the storage allowance.
+      // Storage only deletes files nothing uses (sideproj_remove_unused), so a file already in the guide is kept.
+      if (url.pathname === '/api/uploads/discard' && req.method === 'POST') {
+        if (!user) throw fail('Log in first.',401);
+        let values;try{values=JSON.parse((await body(req,16384)).toString());}catch{throw fail('Invalid uploads.');}
+        const urls=values?.urls;
+        if(!Array.isArray(urls) || !urls.length || urls.length>50) throw fail('Invalid uploads.');
+        const paths=urls.map(u=>typeof u==='string' ? mediaReference(u)?.path : null);
+        if(paths.some(p=>!p || p.split('/')[0]!==user.id)) throw fail('You can only discard your own uploads.',403);
+        return json(200,{removed:await storage.remove(paths,session.accessToken)});
+      }
       if (url.pathname === '/api/images' && req.method === 'POST') {
         const mime = req.headers['content-type'];
         if (!['image/jpeg', 'image/png', 'image/webp'].includes(mime)) throw fail('Choose JPEG, PNG, or WebP images.');
