@@ -124,14 +124,17 @@ function App() {
   async function uploadNamedPhotos(files, names, captions = []) {
     setBusy(true); setError('');
     try {
+      // Check every file before uploading any, so a bad file can't leave earlier ones stored but unused.
+      for (const file of files) {
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Choose JPEG, PNG, or WebP images.');
+        if (file.size > 8 * 1024 * 1024) throw new Error('Each image must be smaller than 8 MB.');
+      }
       const latest = await api('/api/guide');
       const destination = latest.locations.find(item => item.id === place.id);
       if (!destination) throw new Error('This location no longer exists.');
       checkMediaCapacity(destination, files.length);
       const images = [];
       for (const file of files) {
-        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) throw new Error('Choose JPEG, PNG, or WebP images.');
-        if (file.size > 8 * 1024 * 1024) throw new Error('Each image must be smaller than 8 MB.');
         const result = await api('/api/images', { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
         images.push({ id: uid(), name: names[images.length], caption: captions[images.length] || '', url: result.url, annotations: [] });
       }

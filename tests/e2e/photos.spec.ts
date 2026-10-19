@@ -128,17 +128,28 @@ test('parking photos can be uploaded with a caption, recaptioned and removed', a
 /** The user's stored upload total, from the storage allowance API. */
 const usedBytes = async () => (await (await user.current.request.get('/api/storage/usage')).json()).usedBytes as number;
 
-// Fails until fixed: uploadNamedPhotos (src/main.jsx) checks each file only just before uploading it, so the valid
-// files before an invalid one are already stored. Nothing is saved to the guide, so they are orphaned, but they
-// still count towards the user's 10 GB allowance.
+// Regression: valid files before an unsupported one in the same batch used to be uploaded before the bad file was
+// found, leaving them stored but unused, still counting towards the user's 10 GB allowance.
 test('a batch with an unsupported file uploads nothing', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+  let uploads = 0;
+  page.on('request', request => { if (request.url().endsWith('/api/images')) uploads++; });
   const before = await usedBytes();
-  await chooseFiles(page, '+ Upload images', [mediaFile('png'), { name: 'climb.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') }]);
-  await dialogError(page, 'Upload', 'Choose JPEG, PNG, or WebP images.');
+  for (const [what, bad, message] of [
+    ['a file of the wrong type', { name: 'climb.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') }, 'Choose JPEG, PNG, or WebP images.'],
+    ['a file over 8 MB', { name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(8 * 1024 * 1024 + 1) }, 'Each image must be smaller than 8 MB.'],
+  ] as const) {
+    await test.step(what, async () => {
+      // The bad file comes last, after valid ones.
+      await chooseFiles(page, '+ Upload images', [mediaFile('png'), mediaFile('jpg'), bad]);
+      await dialogError(page, 'Upload', message);
+      await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
+    });
+  }
+  expect(uploads, 'No file was uploaded').toBe(0);
   expect(find(await guide(page), boulder.id).images, 'API/DB: no photos saved').toEqual([]);
-  expect(await usedBytes(), 'No file was stored').toBe(before);
+  expect(await usedBytes(), 'No storage used').toBe(before);
 });
 
 test('a photo of exactly 8 MB uploads', async () => {
