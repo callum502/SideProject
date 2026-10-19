@@ -2,9 +2,9 @@ import Avatar from './Avatar';
 import BackLink from './BackLink';
 ﻿import React, {useEffect,useState} from 'react';
 import {problemHref} from './Problems';
+import {api} from './api';
 async function request(action,values={},signal) {
- const response=await fetch('/api/friends',{signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...values})});
- const data=await response.json();if(!response.ok)throw Error(data.error || 'Could not update Friends.');return data;
+ return api('/api/friends',{signal,method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,...values})},'Could not update Friends.');
 }
 export default function Friends() {
  const [people,setPeople]=useState([]),[notice,setNotice]=useState(''),[name,setName]=useState(''),[busy,setBusy]=useState(false),[loading,setLoading]=useState(true),[error,setError]=useState(''),[friend,setFriend]=useState(null),[mutual,setMutual]=useState(false);

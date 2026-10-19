@@ -1,6 +1,7 @@
 import Avatar from './Avatar';
 import {useRef} from 'react';
 import BackLink from './BackLink';
+import {api} from './api';
 ﻿import React,{useEffect,useState} from 'react';
 export function CreatorLink({item}) {
  const name=item.createdByName || 'Climber';
@@ -9,7 +10,7 @@ export function CreatorLink({item}) {
 export default function PublicProfile({id,user,onLogsChange}) {
  const [profile,setProfile]=useState(null),[error,setError]=useState(''),[loading,setLoading]=useState(true);
  useEffect(()=>{const controller=new AbortController();setLoading(true);setError('');setProfile(null);
- fetch('/api/public-profile?id='+encodeURIComponent(id),{signal:controller.signal}).then(async response=>{const data=await response.json();if(!response.ok)throw Error(data.error || 'Could not load profile.');return data;}).then(setProfile).catch(e=>{if(e.name!=='AbortError')setError(e.message);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();
+ api('/api/public-profile?id='+encodeURIComponent(id),{signal:controller.signal},'Could not load profile.').then(setProfile).catch(e=>{if(e.name!=='AbortError')setError(e.message);}).finally(()=>{if(!controller.signal.aborted)setLoading(false);});return()=>controller.abort();
  },[id]);
  const [storageUsage,setStorageUsage]=useState(null);
  useEffect(()=>{
@@ -25,8 +26,8 @@ export default function PublicProfile({id,user,onLogsChange}) {
   if(!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size>8*1024*1024){setError('Choose a JPEG, PNG or WebP image up to 8 MB.');return;}
   setUploading(true);
   try{
-   const response=await fetch('/api/images',{method:'POST',headers:{'Content-Type':file.type},body:file});const data=await response.json();if(!response.ok)throw Error(data.error || 'Upload failed.');
-   const saved=await fetch('/api/profile-photo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:data.url})});const result=await saved.json();if(!saved.ok)throw Error(result.error || 'Could not save photo.');
+   const data=await api('/api/images',{method:'POST',headers:{'Content-Type':file.type},body:file},'Upload failed.');
+   await api('/api/profile-photo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:data.url})},'Could not save photo.');
    setProfile(previous=>({...previous,hasPhoto:true}));
    setPhotoVersion(Date.now());
    fetch('/api/storage/usage').then(r=>r.ok?r.json():null).then(setStorageUsage).catch(()=>{});
@@ -37,8 +38,7 @@ export default function PublicProfile({id,user,onLogsChange}) {
   if(uploading || removing)return;
   setRemoving(true);setError('');
   try {
-   const response=await fetch('/api/profile-photo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:null})});
-   const data=await response.json();if(!response.ok)throw Error(data.error || 'Could not remove profile photo.');
+   await api('/api/profile-photo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:null})},'Could not remove profile photo.');
    setProfile(previous=>({...previous,hasPhoto:false}));setPhotoVersion(Date.now());
   }catch(e){setError(e.message);}finally{setRemoving(false);}
  }
@@ -47,8 +47,7 @@ export default function PublicProfile({id,user,onLogsChange}) {
   if(user?.id!==id || removingEntry)return;
   setRemovingEntry(entry.entry_id);setError('');
   try {
-   const response=await fetch('/api/logbook',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({problemId:entry.problem_id || entry.entry_id,completed:false})});
-   const data=await response.json();if(!response.ok)throw Error(data.error || 'Could not remove climb.');
+   const data=await api('/api/logbook',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({problemId:entry.problem_id || entry.entry_id,completed:false})},'Could not remove climb.');
    const remaining=new Set(data.map(item=>item.entry_id));
    setProfile(previous=>({...previous,entries:previous.entries.filter(item=>remaining.has(item.entry_id))}));
    onLogsChange?.(data);
@@ -61,8 +60,7 @@ export default function PublicProfile({id,user,onLogsChange}) {
   e.preventDefault();if(deleting)return;setDeleting(true);setDeleteError('');
   try{
    const confirmation=new FormData(e.currentTarget).get('confirmation');
-   const response=await fetch('/api/account',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation})});
-   const data=await response.json();if(!response.ok)throw Error(data.error || 'Could not delete account.');
+   await api('/api/account',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({confirmation})},'Could not delete account.');
    window.location.replace('/#login');
   }catch(e){setDeleteError(e.message);setDeleting(false);}
  }

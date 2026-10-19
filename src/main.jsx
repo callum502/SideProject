@@ -6,6 +6,7 @@ import CompleteProfile from './CompleteProfile';
 import { validLocationLinks } from '../location-links.mjs';
 import { duplicateMediaName, normalizeMediaName } from '../media-names.mjs';
 import { guideChanges } from '../guide-changes.mjs';
+import { api } from './api';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
@@ -21,17 +22,6 @@ const uid = () => crypto.randomUUID();
 const countLabel = (count, noun) => `${count} ${noun}${count === 1 ? '' : 's'}`;
 const symbols = { pin: '◎', mountain: '△', plus: '+', arrow: '↗', photo: '▧' };
 function Icon({ name }) { return <span aria-hidden="true" className="icon">{symbols[name]}</span>; }
-// Errors reaching the UI are always readable: a dropped connection or a non-JSON reply (such as a proxy's HTML
-// error page while the server restarts) would otherwise show the browser's raw "Failed to fetch" or a JSON parse error.
-async function api(path, options) {
-  let response;
-  try { response = await fetch(path, options); }
-  catch (e) { if (e.name === 'AbortError') throw e; throw new Error("Couldn't reach SideProj. Check your connection and try again."); }
-  const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.error || (response.status >= 500 ? 'SideProj is having trouble right now. Please try again in a moment.' : 'Something went wrong. Please try again.'));
-  if (data === null) throw new Error('Something went wrong. Please try again.');
-  return data;
-}
 function Modal({ title, children, close }) {
   const ref = useRef();
   useEffect(() => {

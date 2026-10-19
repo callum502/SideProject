@@ -1,5 +1,6 @@
 import ProfileFields from './ProfileFields';
 import googleLogo from './assets/google-g.png';
+import { api } from './api';
 ﻿import React, { useEffect, useRef, useState } from 'react';
 
 const screens = {
@@ -17,7 +18,7 @@ export default function LoginPage({ onLogin }) {
   }, []);
   async function googleLogin() {
     setBusy(true);setError('');
-    try { const response=await fetch('/api/auth/google',{method:'POST'});const data=await response.json();if(!response.ok)throw new Error(data.error || 'Could not start Google sign-in.');window.location.assign(data.url); }
+    try { const data=await api('/api/auth/google',{method:'POST'},'Could not start Google sign-in.');window.location.assign(data.url); }
     catch(error){setError(error.message);setBusy(false);}
   }
   const [mode, setMode] = useState('login');
@@ -33,9 +34,7 @@ export default function LoginPage({ onLogin }) {
     const values = Object.fromEntries(new FormData(event.currentTarget));
     try {
       const endpoint = { login: 'login', signup: 'signup', recover: 'recover', reset: 'reset-password', confirm: 'confirm' }[mode];
-      const response = await fetch('/api/' + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Could not complete your request.');
+      const data = await api('/api/' + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) }, 'Could not complete your request.');
       if (mode === 'login') await onLogin(data.user);
       else { setMessage(data.message); setMode(mode === 'recover' ? 'reset' : mode === 'signup' ? 'confirm' : 'login'); }
     } catch (error) { setError(error.message); } finally { setBusy(false); }

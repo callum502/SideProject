@@ -73,8 +73,8 @@ test('network failures and non-JSON error pages get a readable message', async (
   }
 });
 
-// Fail until fixed: these screens make their own fetch calls instead of api() in src/main.jsx, so a dropped
-// connection shows the browser's raw "Failed to fetch" (LoginPage, CompleteProfile, Friends, PublicProfile).
+// Regression: these screens used to make their own fetch calls, so a dropped connection showed the browser's raw
+// "Failed to fetch". Every screen now uses the shared api() in src/api.js.
 const offline = "Couldn't reach SideProj. Check your connection and try again.";
 const dropConnection = (page: Page, path: string, when: (body: string) => boolean = () => true) =>
   page.route('**' + path, route => when(route.request().postData() || '') ? route.abort('connectionreset') : route.fallback());
