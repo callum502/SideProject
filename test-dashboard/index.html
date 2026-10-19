@@ -660,6 +660,7 @@ function bindView() {
   if (S.view === 'bug') $('#bugBody').addEventListener('click', e => {
     const tr = e.target.closest('[data-bug-trace]');
     if (tr) api('/api/trace', { bugId: S.bugId, file: tr.dataset.bugTrace }).catch(err => notice(err.message));
+    if (e.target.closest('[data-bug-run]')) runBugTests(S.bugCache.get(S.bugId));
     const st = e.target.closest('[data-bug-status]');
     if (st) api(`/api/bugs/${S.bugId}/status`, { status: st.dataset.bugStatus }).then(bug => { S.bugCache.set(bug.id, bug); loadBugs(); }).catch(err => notice(err.message));
   });
@@ -1231,6 +1232,28 @@ function renderBugAttempt(a, fileUrl, labelled) {
   </div>`;
 }
 
+// "Run attached tests" re-runs every test linked to the report, to check whether the bug still happens:
+// 1 worker so they run one at a time, with 250 ms slow-mo so the recordings are easy to follow, and one attempt.
+const BUG_RUN = { workers: 1, slowMo: 250, retries: 0, headed: false };
+const bugTestIds = b => [...new Set(b.occurrences.map(o => o.testId))];
+function bugRunButton(b) {
+  const n = bugTestIds(b).length;
+  const why = S.liveId ? 'A run is already in progress' : !n ? 'No tests are attached to this report' : '';
+  return `<button class="btn small primary" data-bug-run ${why ? `disabled title="${why}"` : `title="Run the ${n} attached test${n === 1 ? '' : 's'} with 1 worker and 250 ms slow-mo"`}>▶ Run attached test${n === 1 ? '' : 's'}${n > 1 ? ` (${n})` : ''}</button>`;
+}
+async function runBugTests(b) {
+  if (!b) return;
+  const ids = bugTestIds(b);
+  // Tests renamed or removed since they were reported can't run; say so rather than failing silently.
+  const known = S.tests?.length ? ids.filter(id => S.tests.some(t => t.id === id)) : ids;
+  if (!known.length) return notice('None of the attached tests exist any more (renamed or removed), so there is nothing to run.');
+  try {
+    const run = await api('/api/run', { ids: known, ...BUG_RUN });
+    location.hash = 'results=' + run.id;
+    if (known.length < ids.length) notice(`Running ${known.length} of ${ids.length} attached tests; ${ids.length - known.length} no longer exist${ids.length - known.length === 1 ? 's' : ''}.`);
+  } catch (e) { notice(e.message); }
+}
+
 function renderBug() {
   const el = $('#bugBody'); if (!el) return;
   const b = S.bugCache.get(S.bugId);
@@ -1240,6 +1263,7 @@ function renderBug() {
   el.innerHTML = `<section class="panel">
       <div class="bug-head">
         <div class="row"><span class="mono loc">${bugLabel(b.number)}</span><span class="pill ${b.status}">${b.status === 'open' ? 'Open' : 'Closed'}</span><span class="loc">Reported ${esc(fmtTime(b.createdAt))}</span>${b.reopenedAt ? `<span class="loc">Reopened ${esc(fmtTime(b.reopenedAt))}</span>` : ""}<span class="spacer"></span>
+          ${bugRunButton(b)}
           <button class="btn small" data-bug-status="${b.status === 'open' ? 'closed' : 'open'}">${b.status === 'open' ? 'Close report' : 'Reopen'}</button></div>
         <h2>${esc(b.title)}</h2>
       </div>
