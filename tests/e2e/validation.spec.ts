@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import type { Locator, Page } from '@playwright/test';
 import { guide, findRecord as find } from './apiTestHelpers';
-import { testUser, openPage, seedLocation, editGuide } from './seedHelpers';
+import { testUser, openPage, seedLocation, editGuide, uploadImage } from './seedHelpers';
 
 // Required fields: the browser blocks empty ones with its own message, so the tests check the field is invalid
 // and nothing was saved. Input of only spaces passes the browser's check, so the app must catch it with a message.
@@ -158,4 +158,94 @@ test('names containing HTML are shown as text and never run as code', async () =
   // Check no payload ran on any of these pages.
   expect(await ran(), 'No script ran').toBeUndefined();
   expect(await page.locator('img[src="x"]').count(), 'No injected image elements').toBe(0);
+});
+
+// The forms cap and check these, but the server must refuse them from any client. Each case is checked even if
+// another fails. The case for annotations on a photo that isn't on the boulder fails until fixed: validate() in
+// server.mjs doesn't check photoAnnotations keys, so marks for any photo ID are stored.
+test('the server refuses invalid content sent directly to the API', async () => {
+  const { location, boulder, problem, image, parking } = await seedLocation(user.current.request, prefix);
+  const url = await uploadImage(user.current.request);
+  const mark = { type: 'box', color: 'green', x: 10, y: 10, x2: 20, y2: 20 };
+  const newImage = (name: string, extra = {}) => ({ id: crypto.randomUUID(), name, caption: '', url, annotations: [], ...extra });
+  const cases: [string, (g: any) => void, number, string | RegExp][] = [
+    ['a photo named like one already on the boulder', g => find(g, boulder.id).images.push(newImage('  SEED PHOTO ')), 400, /already exists on this boulder/],
+    ['a media name over 255 characters', g => find(g, boulder.id).images.push(newImage('x'.repeat(256))), 400, 'Enter a valid media name.'],
+    ['a boulder photo caption over 2000 characters', g => { find(g, image.id).caption = 'x'.repeat(2001); }, 400, /./],
+    ['a parking photo caption over 2000 characters', g => { find(g, parking.id).caption = 'x'.repeat(2001); }, 400, 'Invalid location photo.'],
+    ['over 1000 marks on a photo', g => { find(g, image.id).annotations = Array(1001).fill(mark); }, 400, 'Invalid image.'],
+    ['over 1000 marks for a problem photo', g => { find(g, problem.id).photoAnnotations = { [image.id]: Array(1001).fill(mark) }; }, 400, 'Invalid annotations.'],
+    ['an unknown drawing tool', g => { find(g, problem.id).photoAnnotations = { [image.id]: [{ ...mark, type: 'circle' }] }; }, 400, 'Unknown annotation tool.'],
+    ['an unknown colour', g => { find(g, problem.id).photoAnnotations = { [image.id]: [{ ...mark, color: 'blue' }] }; }, 400, 'Unknown annotation colour.'],
+    ['marks outside the photo', g => { find(g, problem.id).photoAnnotations = { [image.id]: [{ ...mark, x2: 1001 }] }; }, 400, 'Invalid annotation coordinates.'],
+    ["marks for a photo that isn't on the boulder", g => { find(g, problem.id).photoAnnotations = { [crypto.randomUUID()]: [mark] }; }, 400, /./],
+    ['a grade over 40 characters', g => { find(g, problem.id).grade = 'x'.repeat(41); }, 400, 'A problem needs a name, grade, and description.'],
+    ["attaching another boulder's photo to a problem", g => find(g, location.id).boulders.push({ id: crypto.randomUUID(), name: 'Other boulder', notes: 'Elsewhere.', otherNotes: '', images: [], videos: [],
+      problems: [{ id: crypto.randomUUID(), name: 'Borrower', grade: 'V1 (5)', description: 'Uses a photo from elsewhere.', imageIds: [image.id], videoIds: [] }] }), 400, 'Problem attachments must belong to this boulder.'],
+    ['a link label over 120 characters', g => { find(g, location.id).links = [{ label: 'x'.repeat(121), url: 'https://example.com' }]; }, 400, 'Links need a label and a valid HTTP or HTTPS URL.'],
+  ];
+  const before = await guide(user.current.page);
+  for (const [what, change, status, message] of cases) {
+    const response = await editGuide(user.current.request, change);
+    expect.soft(response.status(), what + ': refused').toBe(status);
+    if (!response.ok()) expect.soft((await response.json()).error, what + ': message').toMatch(message);
+  }
+  // API/DB check: nothing was changed by the refused saves.
+  expect(find(await guide(user.current.page), location.id), 'API/DB: location unchanged').toEqual(find(before, location.id));
+});
+
+// Fails until decided: the shared Modal (src/main.jsx) cancels the dialog's Escape (onCancel preventDefault), so
+// Escape never closes a dialog, though keyboard users expect it to. If that's deliberate (to protect typed text),
+// delete this test.
+test('Escape closes a dialog', async () => {
+  const { location } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id }, location.name);
+  await page.getByRole('button', { name: /^Edit location/ }).click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+// Fails until fixed: the location and boulder forms close on ✕ even while saving (close={() => setModal(null)}),
+// unlike the other dialogs, so if that save then fails, its error is never seen.
+test("a dialog can't be closed while it is saving", async () => {
+  const { location } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id }, location.name);
+  await page.getByRole('button', { name: /^Edit location/ }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByLabel(/^Location name/).fill(location.name + '_saved');
+  // Hold the save so the dialog stays busy.
+  let release = () => {};
+  const held = new Promise<void>(resolve => release = resolve);
+  await page.route('**/api/guide', async route => { if (route.request().method() !== 'PUT') return route.fallback(); await held; await route.continue(); });
+  await dialog.getByRole('button', { name: 'Save location', exact: true }).click();
+  // While busy the button reads Saving… and is disabled.
+  await expect(dialog.getByRole('button', { name: 'Saving…', exact: true })).toBeDisabled();
+  try {
+    await page.keyboard.press('Escape');
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(dialog, 'Still open while saving').toBeVisible();
+  } finally { release(); }
+  // Once saved, it closes as normal.
+  await expect(dialog).toHaveCount(0);
+  await expect(page.locator('.detail-banner').getByRole('heading', { name: location.name + '_saved', exact: true })).toBeVisible();
+});
+
+test('the Add Photo menu closes with Escape or a click elsewhere', async () => {
+  const { location, boulder, problem } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id, problem: problem.id }, 'V2 (5+) - Seed Problem');
+  const button = page.getByRole('button', { name: '+ Add Photo' }), menu = page.locator('.photo-dropdown-options');
+  await button.click();
+  await expect(menu).toBeVisible();
+  await expect(button).toHaveAttribute('aria-expanded', 'true');
+  // Escape closes it and returns focus to the button.
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await expect(button).toBeFocused();
+  // So does clicking elsewhere on the page.
+  await button.click();
+  await expect(menu).toBeVisible();
+  await page.locator('.notes-block').first().click();
+  await expect(menu).toHaveCount(0);
+  await expect(button).toHaveAttribute('aria-expanded', 'false');
 });

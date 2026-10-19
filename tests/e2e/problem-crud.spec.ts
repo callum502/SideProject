@@ -1,12 +1,14 @@
 import { test, expect } from './fixtures';
-import { login, createLocation, createBoulder, createProblem, editItem, deleteItem } from './testHelpers';
-import { deleteLocationsWithPrefix, assertProblemExistsDB, assertProblemOldDetailsRemovedFromDB, assertProblemRemovedFromDB } from './apiTestHelpers';
+import { createLocation, createBoulder, createProblem, editItem, deleteItem, cancelEditAndRemoval } from './testHelpers';
+import { testUser, openPage, seedLocation } from './seedHelpers';
+import { guide, findRecord as find, deleteLocationsWithPrefix, assertProblemExistsDB, assertProblemOldDetailsRemovedFromDB, assertProblemRemovedFromDB } from './apiTestHelpers';
 
-test('problem CRUD', async ({ page }, info) => {
-  // Keep cleanup scoped to the data created by this test.
-  const prefix = 'test_problem_';
-  // Sign in using the configured local test account.
-  await login(page);
+// Each spec uses its own account (signed in through the API); the login form is covered by login-logout and auth.
+const prefix = 'test_problem_';
+const user = testUser('test_crud_problem_user_', prefix);
+
+test('problem CRUD', async ({}, info) => {
+  const page = await user.current.context.newPage();
 
   try {
     const { location, boulder, problem } = await test.step('Create', async () => {
@@ -74,4 +76,12 @@ test('problem CRUD', async ({ page }, info) => {
     // Remove leftover test data even if a step fails; cleanup errors are only warnings.
     await deleteLocationsWithPrefix(page, prefix, info);
   }
+});
+
+test('cancelling an edit or removal changes nothing', async () => {
+  const { location, boulder, problem } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id, problem: problem.id }, 'V2 (5+) - Seed Problem');
+  await cancelEditAndRemoval(page, 'problem', 'V2 (5+) - Seed Problem');
+  // API/DB check: the problem is unchanged.
+  expect(find(await guide(page), problem.id), 'API/DB: unchanged').toMatchObject({ name: 'Seed Problem' });
 });

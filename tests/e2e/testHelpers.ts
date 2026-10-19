@@ -400,3 +400,29 @@ export async function dialogError(page: Page, label: string, message: string | R
   expect(saves, 'No guide save was sent').toBe(0);
   await expect(page.getByRole('dialog')).toBeVisible();
 }
+
+/**
+ * Open an item's edit form, change its name, then cancel; open its removal dialog, then cancel.
+ * Verify neither sends a save and the page still shows the original name.
+ * @param page - Page showing the item.
+ * @param kind - Item type: `location`, `boulder` or `problem`.
+ * @param heading - The item's current heading.
+ */
+export async function cancelEditAndRemoval(page: Page, kind: string, heading: string) {
+  let saves = 0;
+  const count = (request: { url(): string, method(): string }) => { if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++; };
+  page.on('request', count);
+  const dialog = page.getByRole('dialog');
+  // Edit, change the name, then cancel.
+  await page.getByRole('button', { name: new RegExp('^Edit ' + kind) }).click();
+  await dialog.locator('[name="name"]').fill('Cancelled edit');
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  // Remove, then cancel.
+  await page.getByRole('button', { name: 'Remove ' + kind, exact: true }).click();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  page.off('request', count);
+  expect(saves, 'Nothing was saved').toBe(0);
+  await expect(page.locator('.detail-banner').getByRole('heading', { name: heading, exact: true })).toBeVisible();
+}

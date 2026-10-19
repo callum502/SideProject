@@ -2,6 +2,7 @@ import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
 import { guide, findRecord as find } from './apiTestHelpers';
 import { testUser, openPage, seedLocation } from './seedHelpers';
+import { mediaFile } from './media';
 
 // Network and server failures are simulated by intercepting the app's own requests to its API.
 const prefix = 'test_failures_loc_';
@@ -70,4 +71,52 @@ test('network failures and non-JSON error pages get a readable message', async (
       await expect(dialog.getByLabel(/^Location name/)).toHaveValue(location.name + '_edited');
     });
   }
+});
+
+// Fail until fixed: these screens make their own fetch calls instead of api() in src/main.jsx, so a dropped
+// connection shows the browser's raw "Failed to fetch" (LoginPage, CompleteProfile, Friends, PublicProfile).
+const offline = "Couldn't reach SideProj. Check your connection and try again.";
+const dropConnection = (page: Page, path: string, when: (body: string) => boolean = () => true) =>
+  page.route('**' + path, route => when(route.request().postData() || '') ? route.abort('connectionreset') : route.fallback());
+
+test('a dropped connection while logging in gets a readable message', async ({ browser }) => {
+  const guest = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  try {
+    const page = await guest.newPage();
+    await page.goto('/#login');
+    await dropConnection(page, '/api/login');
+    await page.locator('input[name="email"]').fill('someone@example.com');
+    await page.locator('input[name="password"]').fill('pw-anything');
+    await page.getByRole('button', { name: 'Log in', exact: true }).click();
+    await expect(page.getByRole('alert')).toHaveText(offline);
+  } finally { await guest.close(); }
+});
+
+test('a dropped connection while saving the profile gets a readable message', async () => {
+  const page = await user.current.context.newPage();
+  await page.goto('/#details');
+  await expect(page.getByRole('heading', { name: 'Your profile', exact: true })).toBeVisible();
+  await dropConnection(page, '/api/profile');
+  await page.getByRole('button', { name: 'Save profile', exact: true }).click();
+  await expect(page.getByRole('alert')).toHaveText(offline);
+});
+
+test('a dropped connection while inviting a friend gets a readable message', async () => {
+  const page = await user.current.context.newPage();
+  await page.goto('/#friends');
+  await expect(page.getByRole('heading', { level: 1, name: 'Friends', exact: true })).toBeVisible();
+  // Only the invite fails; the live name suggestions still work.
+  await dropConnection(page, '/api/friends', body => /"action":"(search|request)"/.test(body));
+  await page.getByLabel('Display name').fill('test_failures_nobody');
+  await page.getByRole('button', { name: 'Send invite', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: /Couldn|Failed to fetch/ })).toHaveText(offline);
+});
+
+test('a dropped connection while uploading a profile photo gets a readable message', async () => {
+  const page = await user.current.context.newPage();
+  await page.goto('/#user=' + user.current.account.id);
+  await expect(page.getByRole('heading', { level: 1, name: user.current.account.name, exact: true })).toBeVisible();
+  await dropConnection(page, '/api/images');
+  await page.locator('label', { hasText: 'Upload profile photo' }).locator('input[type="file"]').setInputFiles([mediaFile('png')]);
+  await expect(page.getByRole('alert')).toHaveText(offline);
 });

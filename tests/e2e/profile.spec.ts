@@ -162,3 +162,82 @@ test("a new account reusing a deleted account's display name inherits none of it
     for (const user of users) await user.context.close();
   }
 });
+
+// Fails until fixed: the profile page (src/PublicProfile.jsx) uploads the image first and sets it as the profile
+// photo second, so if the second step fails the uploaded file is left in Storage, counting towards the allowance.
+test('a profile photo that fails to save leaves no file behind', async () => {
+  const { id, name } = owner.current.account;
+  const page = await openProfile(owner.current.context, id, name);
+  const usedBytes = async () => (await (await owner.current.request.get('/api/storage/usage')).json()).usedBytes as number;
+  const before = await usedBytes();
+  await page.route('**/api/profile-photo', route => route.request().method() === 'POST' ? route.fulfill({ status: 500, json: { error: 'Could not save photo.' } }) : route.fallback());
+  await page.locator('label', { hasText: 'Upload profile photo' }).locator('input[type="file"]').setInputFiles([mediaFile('png')]);
+  await expect(page.getByRole('alert')).toHaveText('Could not save photo.');
+  expect(await photoStatus(id), 'No profile photo set').toBe(404);
+  expect(await usedBytes(), 'No file was left behind').toBe(before);
+});
+
+/** Every object key in a JSON value, at any depth. */
+const keysOf = (value: any): string[] => value && typeof value === 'object' ? Object.entries(value).flatMap(([key, child]) => [...(Array.isArray(value) ? [] : [key]), ...keysOf(child)]) : [];
+
+test("no response about another user reveals their email or role", async () => {
+  const [o, v] = [owner.current, visitor.current];
+  await befriend(o, v);
+  try {
+    const { problem } = await seedLocation(o.request, prefix, { media: false });
+    await logProblem(o.request, problem.id);
+    // Everything the visitor can read about the owner.
+    const responses: [string, Promise<any>][] = [
+      ['public profile', v.request.get('/api/public-profile?id=' + o.account.id).then(r => r.json())],
+      ['friend search', friendsAction(v.request, 'suggest', { name: o.account.name }).then(r => r.json())],
+      ['friends list', friendsAction(v.request, 'list').then(r => r.json())],
+      ["friend's logbook", friendsAction(v.request, 'logbook', { target: o.account.id }).then(r => r.json())],
+      ['guide', v.request.get('/api/guide').then(r => r.json())],
+    ];
+    for (const [what, response] of responses) {
+      const body = await response;
+      expect.soft(JSON.stringify(body), what + ': no email').not.toContain(o.account.email);
+      expect.soft(keysOf(body).filter(key => /^(email|role)$/i.test(key)), what + ': no email or role fields').toEqual([]);
+    }
+  } finally {
+    await friendsAction(o.request, 'remove', { target: v.account.id });
+  }
+});
+
+const renamePrefix = 'test_profile_rename_';
+test.afterAll(async ({}, info) => { await deleteAccountsWithPrefix(renamePrefix, info); });
+
+test('a new display name shows on everything the user made and wherever others see them', async ({ browser }) => {
+  const users: User[] = [];
+  const open = async () => { const account = await createApiAccount(renamePrefix); const user = { ...await signIn(browser, account), account }; users.push(user); return user; };
+  const [climber, friend] = [await open(), await open()];
+  const oldName = climber.account.name, newName = renamePrefix + 'renamed_' + crypto.randomUUID().slice(0, 8);
+  let locationId: string | undefined;
+  try {
+    await befriend(climber, friend);
+    const { location } = await seedLocation(climber.request, renamePrefix + 'loc_', { media: false });
+    locationId = location.id;
+    // The climber renames themselves on their profile.
+    const page = await climber.context.newPage();
+    await page.goto('/#details');
+    await page.locator('input[name="name"]').fill(newName);
+    const saved = page.waitForResponse(r => r.url().endsWith('/api/profile') && r.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Save profile', exact: true }).click();
+    expect((await saved).status(), 'Profile saved').toBe(200);
+    // Their friend sees the new name as the location's creator and in their friends list.
+    const location_ = await openPage(friend.context, { location: location.id }, location.name);
+    await expect(location_.locator('.detail-banner .created-by').getByRole('link')).toContainText(newName);
+    const friends = await friend.context.newPage();
+    await friends.goto('/#friends');
+    await expect(friends.locator('section').filter({ has: friends.getByRole('heading', { name: /^Your friends/ }) })).toContainText(newName);
+    // Search finds the new name, and the old name finds no one.
+    const search = async (name: string) => (await (await friendsAction(friend.request, 'suggest', { name })).json()).map((p: any) => p.id);
+    expect(await search(newName), 'Found by the new name').toEqual([climber.account.id]);
+    expect(await search(oldName), 'The old name finds no one').toEqual([]);
+    expect(find(await guide(friend.page), location.id).createdByName, 'API/DB: creator name updated').toBe(newName);
+  } finally {
+    // Remove the location before the accounts are deleted, while its creator still can.
+    if (locationId) await editGuide(climber.request, g => { g.locations = g.locations.filter((l: any) => l.id !== locationId); });
+    for (const user of users) await user.context.close();
+  }
+});

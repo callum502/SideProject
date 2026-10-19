@@ -1,12 +1,14 @@
 import { test, expect } from './fixtures';
-import { login, createLocation, editItem, deleteItem } from './testHelpers';
-import { deleteLocationsWithPrefix, assertLocationExistsDB, assertLocationOldDetailsRemovedFromDB, assertLocationRemovedFromDB } from './apiTestHelpers';
+import { createLocation, editItem, deleteItem, cancelEditAndRemoval } from './testHelpers';
+import { testUser, openPage, seedLocation } from './seedHelpers';
+import { guide, findRecord as find, deleteLocationsWithPrefix, assertLocationExistsDB, assertLocationOldDetailsRemovedFromDB, assertLocationRemovedFromDB } from './apiTestHelpers';
 
-test('location CRUD', async ({ page }, info) => {
-  // Keep cleanup scoped to the data created by this test.
-  const prefix = 'test_location_';
-  // Sign in using the configured local test account.
-  await login(page);
+// Each spec uses its own account (signed in through the API); the login form is covered by login-logout and auth.
+const prefix = 'test_location_';
+const user = testUser('test_crud_location_user_', prefix);
+
+test('location CRUD', async ({}, info) => {
+  const page = await user.current.context.newPage();
 
   try {
     const { location } = await test.step('Create', async () => {
@@ -66,4 +68,12 @@ test('location CRUD', async ({ page }, info) => {
     // Remove leftover test data even if a step fails; cleanup errors are only warnings.
     await deleteLocationsWithPrefix(page, prefix, info);
   }
+});
+
+test('cancelling an edit or removal changes nothing', async () => {
+  const { location } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id }, location.name);
+  await cancelEditAndRemoval(page, 'location', location.name);
+  // API/DB check: the location is unchanged.
+  expect(find(await guide(page), location.id), 'API/DB: unchanged').toMatchObject({ name: location.name });
 });

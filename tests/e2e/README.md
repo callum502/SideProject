@@ -74,6 +74,18 @@ Unhappy paths are also covered in the existing specs:
 - the delete-account confirmation, and saving after the session ended elsewhere
 - logging a problem that was deleted meanwhile
 - invite edge cases
+- friends errors and the 50-invite limit
+- removed media freeing storage, and partial upload failures leaving no files
+- invalid content sent straight to the API, bypassing the forms
+- Escape and ✕ on dialogs, including while saving
+- `/media` links for guests, missing files and malformed paths
+- other sessions ending after an account deletion or password reset
+- no response about another user revealing their email or role
+- a display-name change showing up everywhere
+- an admin managing other users' media
+- cancelling an edit or removal in the CRUD specs, which now use their own accounts
+
+The database tests (`npm test --prefix supabase/tests`) now run all 13 files, and `npm test` includes `navigation.test.mjs`.
 
 Password recovery reads the emailed code from Mailpit, which local Supabase uses to capture all email (http://127.0.0.1:54324; override with `E2E_MAILPIT_URL`).
 

@@ -285,3 +285,27 @@ test("a deleted user's content is credited to Deleted User and only an admin can
   expect((await editGuide(owner.request, g => { find(g, boulder.id).name = 'Owner edit'; })).status(), "Location owner can't edit it").toBe(403);
   expect((await editGuide(admin.request, g => { find(g, boulder.id).name = 'Admin edit'; })).status(), 'Admin can edit it').toBe(200);
 });
+
+test("an admin can edit and remove other users' photos, videos, captions and annotations", async () => {
+  const { location, boulder, problem, image, video, parking } = await seedLocation(owner.request, prefix);
+  await test.step('UI: the owner\'s media controls are offered to the admin', async () => {
+    await expectButtons(await open(admin, { location: location.id }, location.name), ['Edit caption', 'Remove photo']);
+    await expectButtons(await open(admin, { location: location.id, boulder: boulder.id }, 'Seed Boulder'), ['Remove image Seed photo', 'Remove video Seed video']);
+    await expectButtons(await open(admin, { location: location.id, boulder: boulder.id, problem: problem.id }, 'V2 (5+) - Seed Problem'), ['Annotate', 'Remove photo']);
+  });
+  await test.step('API: each change succeeds', async () => {
+    const marks = [{ type: 'arrow', color: 'red', x: 100, y: 100, x2: 400, y2: 400 }];
+    const changes: [string, (g: any) => void][] = [
+      ['recaption a parking photo', g => { find(g, parking.id).caption = 'Admin caption'; }],
+      ['recaption a boulder photo', g => { find(g, image.id).caption = 'Admin photo caption'; }],
+      ["change a problem's annotations", g => { find(g, problem.id).photoAnnotations = { [image.id]: marks }; }],
+      ['remove a video', g => { find(g, boulder.id).videos = []; find(g, problem.id).videoIds = []; }],
+    ];
+    for (const [name, change] of changes) expect.soft((await editGuide(admin.request, change)).status(), 'Admin can ' + name).toBe(200);
+    // API/DB check: the changes were saved, and the owner is still credited.
+    const saved = await guide(owner.page);
+    expect(find(saved, parking.id), 'API/DB: caption saved').toMatchObject({ caption: 'Admin caption', createdBy: owner.account!.id });
+    expect(find(saved, problem.id).photoAnnotations[image.id], 'API/DB: annotations saved').toEqual(marks);
+    expect(find(saved, video.id), 'API/DB: video removed').toBeUndefined();
+  });
+});

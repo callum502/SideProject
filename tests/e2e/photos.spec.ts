@@ -189,3 +189,54 @@ test('a failed upload keeps the dialog open, saves nothing, and can be retried',
   await completeUpload(page, { names: ['Retried photo'] });
   expect(find(await guide(page), boulder.id).images.map((i: any) => i.name), 'API/DB: saved on retry').toEqual(['Retried photo']);
 });
+
+// Fails until fixed: removing a photo only deletes its database record. The file stays in Storage (a documented
+// follow-up in supabase/STORAGE.md), so it still counts towards the uploader's 10 GB allowance and stays publicly
+// reachable at its old link.
+test('removing a photo frees its storage, and its old link stops working', async () => {
+  const { location, boulder, image } = await seedLocation(user.current.request, prefix);
+  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+  expect((await user.current.request.get(image.url)).status(), 'The photo is reachable while in the guide').toBe(200);
+  const before = await usedBytes();
+  await page.getByRole('button', { name: 'Remove image Seed photo', exact: true }).click();
+  const removed = page.waitForResponse(r => r.url().endsWith('/api/guide') && r.request().method() === 'PUT');
+  await page.getByRole('dialog').getByRole('button', { name: 'Remove', exact: true }).click();
+  expect((await removed).status(), 'Removal saved').toBe(200);
+  await expect.poll(usedBytes, { message: 'Storage used went down', timeout: 5000 }).toBeLessThan(before);
+  expect((await user.current.request.get(image.url)).status(), 'The old link no longer works').toBeGreaterThanOrEqual(400);
+});
+
+// Fails until fixed: only the server can tell that a file named and typed as an image isn't one, and by then the
+// earlier files in the batch are already stored, unused but counting towards the allowance.
+test('a batch with a disguised file stores nothing', async () => {
+  const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+  const before = await usedBytes();
+  await chooseFiles(page, '+ Upload images', [mediaFile('png'), { name: 'fake.png', mimeType: 'image/png', buffer: Buffer.from('not really an image') }]);
+  await dialogError(page, 'Upload', 'The file is not a supported image.');
+  expect(find(await guide(page), boulder.id).images, 'API/DB: no photos saved').toEqual([]);
+  expect(await usedBytes(), 'No file was stored').toBe(before);
+});
+
+test('media links work for guests, and missing or malformed links are refused', async ({ browser }) => {
+  const { image, video } = await seedLocation(user.current.request, prefix);
+  const guest = await browser.newContext({ baseURL: test.info().project.use.baseURL });
+  try {
+    // A guest can view a photo: the link redirects to Storage, which serves the image.
+    const photo = await guest.request.get(image.url);
+    expect(photo.status(), 'Photo served to a guest').toBe(200);
+    expect(photo.headers()['content-type'], 'Served as an image').toBe('image/png');
+    // A download link passes the chosen file name on to Storage.
+    const download = await guest.request.get(video.url + '?download=' + encodeURIComponent('Sit start beta'), { maxRedirects: 0 });
+    expect(download.status(), 'Download redirects').toBe(302);
+    expect(new URL(download.headers().location).searchParams.get('download'), 'Download name kept').toBe('Sit start beta');
+    // A well-formed link to a file that doesn't exist fails.
+    const owner = user.current.account.id;
+    expect((await guest.request.get(`/media/${owner}/${crypto.randomUUID()}.png`)).status(), 'Missing file refused').toBeGreaterThanOrEqual(400);
+    // Malformed links never reach Storage.
+    for (const path of ['/media/%2e%2e/%2e%2e/.env.local', `/media/${owner}/..%2f..%2fserver.mjs`, `/media/${owner}/x.exe`, '/media/not-a-user/x.png', `/media/${owner}/${crypto.randomUUID()}.png/extra`]) {
+      const response = await guest.request.get(path, { maxRedirects: 0 });
+      expect.soft(response.status(), path + ' refused').toBe(404);
+    }
+  } finally { await guest.close(); }
+});

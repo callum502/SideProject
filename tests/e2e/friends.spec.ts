@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
-import { testUser, seedLocation, logProblem, befriend, friendsAction, editGuide, type User } from './seedHelpers';
-import { findRecord as find } from './apiTestHelpers';
+import { testUser, seedLocation, logProblem, befriend, friendsAction, editGuide, createApiAccount, signIn, type User, type TestAccount } from './seedHelpers';
+import { findRecord as find, deleteAccountsWithPrefix } from './apiTestHelpers';
 
 // Each test uses its own pair of accounts, so friendships from one test can't affect another.
 const ana = testUser('test_friends_ana_', 'test_friends_ana_loc_');
@@ -12,6 +12,9 @@ const eve = testUser('test_friends_eve_', 'test_friends_eve_loc_');
 const fin = testUser('test_friends_fin_', 'test_friends_fin_loc_');
 const gil = testUser('test_friends_gil_', 'test_friends_gil_loc_');
 const hal = testUser('test_friends_hal_', 'test_friends_hal_loc_');
+const ivy = testUser('test_friends_ivy_', 'test_friends_ivy_loc_');
+const jon = testUser('test_friends_jon_', 'test_friends_jon_loc_');
+const kim = testUser('test_friends_kim_', 'test_friends_kim_loc_');
 
 /** Open the Friends page as the user and wait for the lists to load. */
 async function friendsPage(user: User) {
@@ -160,4 +163,58 @@ test("invites can't go to yourself, and repeated or out-of-date actions change n
     await expect(page.getByRole('status').filter({ hasText: 'You are already friends.' })).toBeVisible();
     expect(await (await friendsAction(g.request, 'list')).json(), 'Still one friendship, no extra invite').toEqual([expect.objectContaining({ id: h.account.id, status: 'accepted' })]);
   });
+});
+
+// Fail until fixed: the /api/friends route (server.mjs) replaces every error with one message, "Friends request
+// failed. Check that the Friends migration is applied...", so a user can't tell what went wrong.
+const bulkPrefix = 'test_friends_bulk_';
+test.afterAll(async ({}, info) => { await deleteAccountsWithPrefix(bulkPrefix, info); });
+
+/** Send a friends action and return its status and error message. */
+async function refused(user: User, action: string, values: { target?: string, name?: string }) {
+  const response = await friendsAction(user.request, action, values);
+  return { status: response.status(), error: response.ok() ? '' : (await response.json()).error as string };
+}
+
+test('refused friend actions explain why', async () => {
+  const [i, j] = [ivy.current, jon.current];
+  await test.step('inviting yourself', async () => {
+    const result = await refused(i, 'request', { target: i.account.id });
+    expect(result.status, 'Refused as a bad request').toBe(400);
+    expect(result.error, 'Says you cannot invite yourself').toMatch(/yourself/i);
+  });
+  await test.step("viewing a non-friend's logbook", async () => {
+    const result = await refused(i, 'logbook', { target: j.account.id });
+    expect(result.status, 'Refused as forbidden').toBe(403);
+    expect(result.error, 'Says only friends can view it').toMatch(/friends/i);
+    expect(result.error, 'Not a setup error').not.toMatch(/migration/i);
+  });
+});
+
+test('the 50 pending invite limit is explained', async () => {
+  test.setTimeout(120000);
+  const k = kim.current;
+  // Fifty other accounts to invite.
+  const targets: TestAccount[] = [];
+  for (let n = 0; n < 51; n += 10) targets.push(...await Promise.all(Array.from({ length: Math.min(10, 51 - n) }, () => createApiAccount(bulkPrefix))));
+  for (const target of targets.slice(0, 50)) expect((await friendsAction(k.request, 'request', { target: target.id })).status(), 'Invite sent').toBe(200);
+  // The 51st is refused, through the API and the Friends page.
+  const result = await refused(k, 'request', { target: targets[50].id });
+  expect(result.status, 'Refused').toBe(400);
+  expect(result.error, 'Mentions the limit').toMatch(/50 pending invites/i);
+  expect(result.error, 'Not a setup error').not.toMatch(/migration/i);
+  const page = await friendsPage(k);
+  await page.getByLabel('Display name').fill(targets[50].name);
+  await page.getByRole('button', { name: 'Send invite', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText(/50 pending invites/i);
+  await expect(page.getByRole('alert')).not.toContainText(/migration/i);
+});
+
+test('friend actions after the session ended ask you to log in', async ({ browser }) => {
+  // A separate session of the same account, so the shared one stays signed in.
+  const other = await signIn(browser, ivy.current.account);
+  try {
+    expect((await other.request.post('/api/logout')).status(), 'Logged out').toBe(200);
+    expect(await refused({ ...ivy.current, ...other }, 'list', {}), 'API: asked to log in').toEqual({ status: 401, error: 'Log in to use Friends.' });
+  } finally { await other.context.close(); }
 });

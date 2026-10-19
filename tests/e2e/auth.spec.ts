@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures';
-import type { Page } from '@playwright/test';
-import { login, accountDetails } from './testHelpers';
+import type { Page, APIRequestContext } from '@playwright/test';
+import { login, accountDetails, deleteAccount } from './testHelpers';
 import { emailCode, sessionUser, deleteAccountsWithPrefix, adminRequest, findRecord } from './apiTestHelpers';
 import { createApiAccount, signIn, seedLocation, openPage, editGuide } from './seedHelpers';
 
@@ -13,6 +13,18 @@ async function loginPage(page: Page, link?: string) {
   await page.goto('/#login');
   await expect(page.getByRole('heading', { name: 'Welcome back', exact: true })).toBeVisible();
   if (link) await page.getByRole('button', { name: link, exact: true }).click();
+}
+
+/**
+ * Verify a wrong, used or expired email code is explained in the app's words.
+ * Fails until fixed: Supabase's own text ("Token has expired or is invalid") is shown, which talks about a
+ * "token" the user never saw (auth.mjs confirm/reset pass it through).
+ */
+async function expectCodeError(page: Page) {
+  const alert = page.getByRole('alert');
+  await expect(alert).toBeVisible();
+  await expect(alert, 'Talks about the code').toContainText(/code/i);
+  await expect(alert, "Not Supabase's wording").not.toContainText(/token/i);
 }
 
 /** Fill the email and password fields and submit the current screen. */
@@ -84,7 +96,7 @@ test('a wrong recovery code is refused', async ({ page }) => {
   await page.locator('input[name="code"]').fill('000000');
   await page.locator('input[name="password"]').fill('pw-never-used');
   await page.getByRole('button', { name: 'Update password', exact: true }).click();
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expectCodeError(page);
   await expect(page.getByRole('heading', { name: 'Choose a new password', exact: true })).toBeVisible();
   // The original password still works. Reload first: the login screen keeps its current step across hash changes.
   await page.reload();
@@ -238,7 +250,7 @@ test("a wrong confirmation code is refused, and a used code can't be used again"
   };
   // A wrong code is refused, and the account stays unconfirmed.
   await verify('000000');
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expectCodeError(page);
   await expect(page.getByRole('heading', { name: 'Check your inbox', exact: true })).toBeVisible();
   expect((await accountsWithEmail(details.email))[0]?.email_confirmed_at, 'Still unconfirmed').toBeFalsy();
   // The emailed code confirms it.
@@ -250,7 +262,7 @@ test("a wrong confirmation code is refused, and a used code can't be used again"
   await page.getByRole('button', { name: 'Verify your email', exact: true }).click();
   await page.locator('input[name="email"]').fill(details.email);
   await verify(code);
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expectCodeError(page);
 });
 
 test('a recovery code works only once, and an unknown email gets the same reply without an email', async ({ page }) => {
@@ -283,7 +295,7 @@ test('a recovery code works only once, and an unknown email gets the same reply 
   await expect(page.getByRole('status')).toHaveText('Password updated. Log in with your new password.');
   // The used code is refused next time.
   await reset(used);
-  await expect(page.getByRole('alert')).toBeVisible();
+  await expectCodeError(page);
   await expect(page.getByRole('heading', { name: 'Choose a new password', exact: true })).toBeVisible();
 });
 
@@ -335,4 +347,43 @@ test('saving after the session ended elsewhere asks you to log in again', async 
     await owner.context.close();
     await user.context.close();
   }
+});
+
+/** Whether a browser's session is still signed in, checked through the session and save APIs. */
+async function stillSignedIn(request: APIRequestContext) {
+  const session = await (await request.get('/api/session')).json();
+  const save = await request.put('/api/guide', { data: { changes: [] } });
+  return { user: session.user?.id ?? null, saveStatus: save.status() };
+}
+
+test('deleting an account signs it out in every browser', async ({ browser }) => {
+  const account = await createApiAccount(prefix);
+  const [first, second] = [await signIn(browser, account), await signIn(browser, account)];
+  try {
+    expect(await stillSignedIn(second.request), 'Signed in elsewhere beforehand').toEqual({ user: account.id, saveStatus: 200 });
+    const page = await first.context.newPage();
+    await page.goto('/#user=' + account.id);
+    await deleteAccount(page);
+    expect(await stillSignedIn(second.request), 'The other browser is signed out').toEqual({ user: null, saveStatus: 401 });
+  } finally { await first.context.close(); await second.context.close(); }
+});
+
+test('resetting the password signs the account out in every browser', async ({ browser, page }) => {
+  const account = await createApiAccount(prefix);
+  const other = await signIn(browser, account);
+  try {
+    expect(await stillSignedIn(other.request), 'Signed in elsewhere beforehand').toEqual({ user: account.id, saveStatus: 200 });
+    // Someone resets the password from the login page.
+    await loginPage(page, 'Forgot password?');
+    const sent = new Date();
+    await page.locator('input[name="email"]').fill(account.email);
+    await page.getByRole('button', { name: 'Send recovery code', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Choose a new password', exact: true })).toBeVisible();
+    await page.locator('input[name="code"]').fill(await emailCode(account.email, sent));
+    await page.locator('input[name="password"]').fill('pw-new-' + crypto.randomUUID());
+    await page.getByRole('button', { name: 'Update password', exact: true }).click();
+    await expect(page.getByRole('status')).toHaveText('Password updated. Log in with your new password.');
+    // A session that knew the old password must not carry on.
+    expect(await stillSignedIn(other.request), 'The other browser is signed out').toEqual({ user: null, saveStatus: 401 });
+  } finally { await other.context.close(); }
 });
