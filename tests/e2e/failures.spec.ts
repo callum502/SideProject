@@ -52,22 +52,22 @@ test('a guide that fails to load shows an error instead of an empty page', async
   await expect(page.getByRole('alert')).toContainText('Database is unavailable.');
 });
 
-// Fails until fixed: api() in src/main.jsx shows the browser's raw error when there's no JSON reply: "Failed to
-// fetch" for a dropped connection, and a JSON parse error for an HTML error page (such as a proxy's 502 while
-// the server restarts).
+// Regression: these used to show the browser's raw "Failed to fetch", or a JSON parse error for an HTML error page
+// (such as a proxy's 502 while the server restarts).
 test('network failures and non-JSON error pages get a readable message', async () => {
-  const { page, dialog } = await editLocationName();
-  const raw = /Failed to fetch|NetworkError|Unexpected token|JSON|<html/i;
-  for (const [what, handler] of [
-    ['a dropped connection', (route: any) => route.abort('connectionreset')],
-    ['an HTML error page', (route: any) => route.fulfill({ status: 502, contentType: 'text/html', body: '<html><body>502 Bad Gateway</body></html>' })],
+  const { page, dialog, location } = await editLocationName();
+  const html = (status: number) => (route: any) => route.fulfill({ status, contentType: 'text/html', body: `<html><body>${status}</body></html>` });
+  for (const [what, handler, message] of [
+    ['a dropped connection', (route: any) => route.abort('connectionreset'), "Couldn't reach SideProj. Check your connection and try again."],
+    ['an HTML server error page', html(502), 'SideProj is having trouble right now. Please try again in a moment.'],
+    ['an HTML client error page', html(404), 'Something went wrong. Please try again.'],
   ] as const) {
     await test.step(what, async () => {
       await failNextSave(page, handler);
       await dialog.getByRole('button', { name: 'Save location', exact: true }).click();
-      const alert = dialog.getByRole('alert');
-      await expect(alert).toBeVisible();
-      await expect(alert, 'No raw browser error').not.toHaveText(raw);
+      await expect(dialog.getByRole('alert')).toHaveText(message);
+      // The dialog keeps what was typed, so the save can be retried.
+      await expect(dialog.getByLabel(/^Location name/)).toHaveValue(location.name + '_edited');
     });
   }
 });
