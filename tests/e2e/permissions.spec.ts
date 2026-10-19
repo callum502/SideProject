@@ -307,5 +307,7 @@ test("an admin can edit and remove other users' photos, videos, captions and ann
     expect(find(saved, parking.id), 'API/DB: caption saved').toMatchObject({ caption: 'Admin caption', createdBy: owner.account!.id });
     expect(find(saved, problem.id).photoAnnotations[image.id], 'API/DB: annotations saved').toEqual(marks);
     expect(find(saved, video.id), 'API/DB: video removed').toBeUndefined();
+    // Removing the owner's video deletes its file too.
+    expect((await owner.request.get(video.url)).status(), "The owner's video file was deleted").toBeGreaterThanOrEqual(400);
   });
 });

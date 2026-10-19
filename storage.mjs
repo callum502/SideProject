@@ -35,6 +35,14 @@ export function createStorage({ env = { ...loadEnv('development', process.cwd(),
   return {
     publicUrl,
     usage,
+    // Delete files of removed photos and videos. Storage only deletes those the user may delete and nothing still
+    // uses (see the sideproj_remove_unused policy); others are skipped. Returns how many were deleted.
+    async remove(paths,token) {
+      if(!paths.length)return 0;
+      const r=await request('object/'+BUCKET,token,{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({prefixes:paths.map(p=>objectPath(p).slice(BUCKET.length+1))})});
+      await check(r);
+      return (await r.json().catch(()=>[])).length;
+    },
     async stat(path,token) {
       const r=await request('object/authenticated/'+objectPath(path),token,{method:'HEAD'});await check(r);
       const size=Number(r.headers.get('content-length'));

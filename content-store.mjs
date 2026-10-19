@@ -116,7 +116,12 @@ export function createContentStore({ env = { ...loadEnv('development', process.c
       enforceMediaLimits(previous, incoming);
       const rows = await toRows(incoming, snapshot.media, storage, token);
       const operations = contentOperations(snapshot, rows);
-      return toGuide(await rpc('save_content', { operations }, token));
+      const saved = toGuide(await rpc('save_content', { operations }, token));
+      // Delete the files of removed photos and videos, so they stop using storage and their links stop working.
+      // The save has already succeeded, so a failure here only leaves the file behind (logged, not shown).
+      const removed = operations.filter(op => op.table === 'media' && op.action === 'delete').map(op => op.row.storage_path);
+      if (removed.length && storage?.remove) await storage.remove(removed, token).catch(error => console.error('Could not delete removed media files:', error.message));
+      return saved;
     },
   };
 }

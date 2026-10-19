@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { chooseFiles, completeUpload, dialogError } from './testHelpers';
 import { guide, findRecord as find } from './apiTestHelpers';
-import { testUser, openPage, seedLocation } from './seedHelpers';
+import { testUser, openPage, seedLocation, editGuide } from './seedHelpers';
 import { mediaFile } from './media';
 
 const prefix = 'test_photos_loc_';
@@ -190,9 +190,8 @@ test('a failed upload keeps the dialog open, saves nothing, and can be retried',
   expect(find(await guide(page), boulder.id).images.map((i: any) => i.name), 'API/DB: saved on retry').toEqual(['Retried photo']);
 });
 
-// Fails until fixed: removing a photo only deletes its database record. The file stays in Storage (a documented
-// follow-up in supabase/STORAGE.md), so it still counts towards the uploader's 10 GB allowance and stays publicly
-// reachable at its old link.
+// Regression: removing a photo used to delete only its database record, leaving the file in Storage, still counting
+// towards the uploader's 10 GB allowance and still reachable at its old link.
 test('removing a photo frees its storage, and its old link stops working', async () => {
   const { location, boulder, image } = await seedLocation(user.current.request, prefix);
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
@@ -239,4 +238,33 @@ test('media links work for guests, and missing or malformed links are refused', 
       expect.soft(response.status(), path + ' refused').toBe(404);
     }
   } finally { await guest.close(); }
+});
+
+test('a removed photo that is also a profile photo keeps its file', async () => {
+  const { location, boulder, image } = await seedLocation(user.current.request, prefix);
+  // The user's profile photo is the same file as the guide photo.
+  expect((await user.current.request.post('/api/profile-photo', { data: { url: image.url } })).status(), 'Profile photo set').toBe(200);
+  try {
+    const before = await usedBytes();
+    const removed = await editGuide(user.current.request, g => { find(g, boulder.id).images = []; find(g, boulder.id).problems.forEach((p: any) => { p.imageIds = []; p.photoAnnotations = {}; }); });
+    expect(removed.status(), 'Photo removed from the guide').toBe(200);
+    // The file is still in use, so it stays: the profile photo still works and storage is unchanged.
+    expect((await user.current.request.get(image.url)).status(), 'File still served').toBe(200);
+    expect((await user.current.request.get('/api/profile-photo?id=' + user.current.account.id)).status(), 'Profile photo still works').toBe(200);
+    expect(await usedBytes(), 'Storage unchanged').toBe(before);
+    expect(find(await guide(user.current.page), location.id), 'API/DB: location still there').toBeDefined();
+  } finally {
+    await user.current.request.post('/api/profile-photo', { data: { url: null } });
+  }
+});
+
+test("removing a location deletes the files of all its photos and videos", async () => {
+  const { location, image, video, parking } = await seedLocation(user.current.request, prefix);
+  const before = await usedBytes();
+  const removed = await editGuide(user.current.request, g => { g.locations = g.locations.filter((l: any) => l.id !== location.id); });
+  expect(removed.status(), 'Location removed').toBe(200);
+  for (const [what, url] of [['photo', image.url], ['video', video.url], ['parking photo', parking.url]]) {
+    expect.soft((await user.current.request.get(url)).status(), what + ' link no longer works').toBeGreaterThanOrEqual(400);
+  }
+  expect(await usedBytes(), 'Storage freed').toBeLessThan(before);
 });

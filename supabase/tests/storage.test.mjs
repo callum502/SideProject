@@ -50,3 +50,41 @@ test('Storage policies and media references enforce ownership, size, immutable f
   assert.equal((await db.query("SELECT file_size_limit FROM storage.buckets WHERE id='sideproj-media'")).rows[0].file_size_limit,104857600);
  }finally{await db.close();}
 });
+
+test('Media files can be deleted only when unused, by their owner or an admin', async () => {
+ const db = new PGlite();
+ try {
+  await db.exec(`CREATE ROLE anon;CREATE ROLE authenticated;CREATE SCHEMA auth;
+    CREATE TABLE auth.users(id uuid PRIMARY KEY,raw_user_meta_data jsonb DEFAULT '{}');
+    CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql STABLE AS $$ SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+    GRANT USAGE ON SCHEMA auth TO anon,authenticated;GRANT EXECUTE ON FUNCTION auth.uid() TO anon,authenticated;
+    CREATE SCHEMA storage;
+    CREATE TABLE storage.buckets(id text PRIMARY KEY,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+    CREATE TABLE storage.objects(id uuid DEFAULT gen_random_uuid(),bucket_id text,name text,owner_id text DEFAULT auth.uid()::text,metadata jsonb DEFAULT '{}',UNIQUE(bucket_id,name));
+    ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
+    GRANT USAGE ON SCHEMA storage TO anon,authenticated;GRANT SELECT,INSERT,UPDATE,DELETE ON storage.objects TO authenticated;`);
+  for (const m of ['20260909000100_initial_schema.sql','20260909000200_account_access.sql','20260910000100_content_api.sql','20260912000100_media_storage.sql','20260912000200_retire_local_storage.sql','20260913000100_location_photos.sql','20261010000200_profile_photos.sql','20261020000100_delete_unused_media_files.sql'])
+   await db.exec(await readFile(new URL('../migrations/' + m, import.meta.url), 'utf8'));
+  await db.exec(`INSERT INTO auth.users(id) VALUES ('${a}'),('${b}'),('${admin}');UPDATE private.user_roles SET role='admin' WHERE user_id='${admin}';`);
+  async function as(user, sql, params = []) { await db.exec('BEGIN'); try { await db.exec('SET LOCAL ROLE ' + (user ? 'authenticated' : 'anon')); await db.query("SELECT set_config('request.jwt.claim.sub',$1,true)", [user || '']); const result = await db.query(sql, params); await db.exec('COMMIT'); return result; } catch (error) { await db.exec('ROLLBACK'); throw error; } }
+  const upload = (user, p) => as(user, "INSERT INTO storage.objects(bucket_id,name,metadata) VALUES ('sideproj-media',$1,'{\"size\":8,\"mimetype\":\"image/png\"}')", [p]);
+  const remove = (user, p) => as(user, "DELETE FROM storage.objects WHERE bucket_id='sideproj-media' AND name=$1 RETURNING name", [p]).then(r => r.rows.length);
+  const [guidePhoto, profilePhoto, otherPhoto] = [a + '/30000000-0000-4000-8000-000000000001.png', a + '/30000000-0000-4000-8000-000000000002.png', b + '/30000000-0000-4000-8000-000000000003.png'];
+  for (const [user, p] of [[a, guidePhoto], [a, profilePhoto], [b, otherPhoto]]) await upload(user, p);
+  const l = (await as(a, "INSERT INTO public.locations(name,latitude,longitude) VALUES ('Crag',0,0) RETURNING id")).rows[0].id;
+  const rock = (await as(a, "INSERT INTO public.boulders(location_id,name) VALUES ($1,'Rock') RETURNING id", [l])).rows[0].id;
+  const media = (await as(a, "INSERT INTO public.media(boulder_id,name,kind,storage_bucket,storage_path,mime_type,size_bytes) VALUES ($1,'Photo','image','sideproj-media',$2,'image/png',8) RETURNING id", [rock, guidePhoto])).rows[0].id;
+  await as(a, 'SELECT public.set_profile_photo($1)', [profilePhoto]);
+  // Files still in use can't be deleted, even by their owner or an admin.
+  assert.equal(await remove(a, guidePhoto), 0, 'a guide photo in use is kept');
+  assert.equal(await remove(admin, profilePhoto), 0, 'a profile photo in use is kept');
+  // Once unused, the owner can delete them.
+  await as(a, 'DELETE FROM public.media WHERE id=$1', [media]);
+  await as(a, 'SELECT public.set_profile_photo(NULL)');
+  assert.equal(await remove(b, guidePhoto), 0, "another user can't delete it");
+  assert.equal(await remove(a, guidePhoto), 1, 'the owner deletes an unused guide photo');
+  assert.equal(await remove(a, profilePhoto), 1, 'the owner deletes an unused former profile photo');
+  // An admin can delete another user's unused file.
+  assert.equal(await remove(admin, otherPhoto), 1, "an admin deletes another user's unused file");
+ } finally { await db.close(); }
+});
