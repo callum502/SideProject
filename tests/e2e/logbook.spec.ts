@@ -75,9 +75,8 @@ test('a guest is asked to sign up instead of logging problems', async ({ browser
   } finally { await guest.close(); }
 });
 
-// Fails until fixed: the database refuses with "Problem not found", but the /api/logbook route (server.mjs) replaces
-// every logbook error with "Could not load or save your logbook. Check your connection and that the logbook SQL
-// migration has been applied.", which blames the connection or setup instead of saying the problem was removed.
+// Regression: this used to show "Could not load or save your logbook. Check your connection and that the logbook SQL
+// migration has been applied.", blaming the connection or setup instead of saying the problem was removed.
 test('logging a problem that was deleted meanwhile gives a clear message', async () => {
   const { location, boulder, problem } = await seedLocation(climber.current.request, prefix, { media: false });
   const page = await openPage(climber.current.context, { location: location.id, boulder: boulder.id, problem: problem.id }, entryName);
@@ -88,5 +87,5 @@ test('logging a problem that was deleted meanwhile gives a clear message', async
   const alert = page.locator('.problem-log-action').getByRole('alert');
   await expect(alert).toBeVisible();
   expect(await (await climber.current.request.get('/api/logbook')).json(), 'API/DB: nothing logged').toEqual(before);
-  await expect(alert, 'Says the problem no longer exists').toContainText(/no longer exists|not found|removed|deleted/i);
+  await expect(alert, 'Says the problem no longer exists').toHaveText('This problem no longer exists. It may have been removed; reload to see the latest guide.');
 });

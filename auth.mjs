@@ -46,6 +46,8 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
         const rpc = route.split('/').pop();
         const code = typeof data.code === 'string' && /^[A-Z0-9]{3,12}$/.test(data.code) ? data.code : 'HTTP ' + response.status;
         if (response.status === 401 || code === 'PGRST301' || code === 'PGRST303') throw fail('Your session could not be verified. Please log in again. (' + code + ')',401);
+        // set_problem_log raises this when the problem was deleted after the page loaded.
+        if (rpc === 'set_problem_log' && data.message === 'Problem not found') throw fail('This problem no longer exists. It may have been removed; reload to see the latest guide.',404);
         const action = rpc === 'current_account' ? 'Could not load your account profile' : rpc === 'display_name_available' ? 'Could not check display-name availability' : rpc === 'complete_profile' ? 'Could not save your profile' : 'Database request failed';
         throw fail(action + ' (' + rpc + ': ' + code + ').' + (code === 'PGRST202' ? ' The database function is missing or its schema cache needs refreshing.' : code === '42501' ? ' The database denied access.' : ' Please share this error so the database issue can be identified.'),503);
       }

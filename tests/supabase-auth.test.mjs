@@ -38,6 +38,16 @@ test('an unconfirmed email refused by Supabase at login gets the app message, no
   await assert.rejects(auth.login({ email: 'climber@example.com', password: 'test-password' }), error => error.status === 401 && error.message === 'Confirm your email before logging in.');
 });
 
+test('logging a problem deleted meanwhile says it no longer exists; other database errors stay generic', async () => {
+  // PostgREST's reply when set_problem_log raises 'Problem not found' (plpgsql's default code P0001).
+  let reply = { code: 'P0001', message: 'Problem not found' };
+  const auth = createAuth({ env, fetchImpl: async () => new Response(JSON.stringify(reply), { status: 400 }) });
+  const session = { accessToken: 'access' };
+  await assert.rejects(auth.logbook(session, { problemId: 'problem-id', completed: true }), error => error.status === 404 && /no longer exists/.test(error.message));
+  reply = { code: 'P0001', message: 'Completion is required' };
+  await assert.rejects(auth.logbook(session, { problemId: 'problem-id', completed: true }), error => error.status === 503);
+});
+
 test('concurrent requests refresh a session only once', async () => {
   const f = fixture();
   const session = await f.auth.login({ email: 'climber@example.com', password: 'test-password' });

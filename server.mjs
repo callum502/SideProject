@@ -220,7 +220,11 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
           if (!values || typeof values.completed !== 'boolean' || typeof values.problemId !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(values.problemId)) throw fail('Invalid log entry.');
         }
         try { return json(200,await auth.logbook(session,values)); }
-        catch { throw fail('Could not load or save your logbook. Check your connection and that the logbook SQL migration has been applied.',503); }
+        catch (e) {
+          // Errors meant for the user (a removed problem, an expired session) keep their own message.
+          if (e.status >= 400 && e.status < 500) throw e;
+          throw fail('Could not load or save your logbook. Check your connection and that the logbook SQL migration has been applied.',503);
+        }
       }
       if (url.pathname === '/api/profile' && req.method === 'POST') {
         if(!user) throw fail('Log in first.',401);
