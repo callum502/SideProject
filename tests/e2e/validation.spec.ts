@@ -197,20 +197,30 @@ test('the server refuses invalid content sent directly to the API', async () => 
   expect(find(await guide(user.current.page), location.id), 'API/DB: location unchanged').toEqual(find(before, location.id));
 });
 
-// Fails until decided: the shared Modal (src/main.jsx) cancels the dialog's Escape (onCancel preventDefault), so
-// Escape never closes a dialog, though keyboard users expect it to. If that's deliberate (to protect typed text),
-// delete this test.
-test('Escape closes a dialog', async () => {
+// Regression: the shared Modal used to cancel the dialog's Escape, so Escape never closed a dialog.
+test('Escape closes a dialog, like its ✕ button, without saving anything', async () => {
   const { location } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id }, location.name);
+  const saves = countSaves(page);
+  // A form: Escape closes it and discards the change.
   await page.getByRole('button', { name: /^Edit location/ }).click();
+  await page.getByRole('dialog').getByLabel(/^Location name/).fill('Never saved');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  // A confirmation: Escape closes it without removing anything.
+  await page.getByRole('button', { name: 'Remove location', exact: true }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(saves.count, 'Nothing was saved').toBe(0);
+  await expect(page.locator('.detail-banner').getByRole('heading', { name: location.name, exact: true })).toBeVisible();
+  // The dialog opens again normally afterwards.
+  await page.getByRole('button', { name: /^Edit location/ }).click();
+  await expect(page.getByRole('dialog').getByLabel(/^Location name/)).toHaveValue(location.name);
 });
 
-// Fails until fixed: the location and boulder forms close on ✕ even while saving (close={() => setModal(null)}),
-// unlike the other dialogs, so if that save then fails, its error is never seen.
+// Regression: the location and boulder forms used to close on ✕ even while saving, unlike the other dialogs, so if
+// that save then failed, its error was never seen.
 test("a dialog can't be closed while it is saving", async () => {
   const { location } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id }, location.name);
