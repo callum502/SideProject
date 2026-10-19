@@ -48,6 +48,13 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
         if (response.status === 401 || code === 'PGRST301' || code === 'PGRST303') throw fail('Your session could not be verified. Please log in again. (' + code + ')',401);
         // set_problem_log raises this when the problem was deleted after the page loaded.
         if (rpc === 'set_problem_log' && data.message === 'Problem not found') throw fail('This problem no longer exists. It may have been removed; reload to see the latest guide.',404);
+        // friends_action's refusals, in the user's terms (inviting yourself is caught before the call; see friends()).
+        const refusal = rpc === 'friends_action' && {
+          'Choose another climber': ["That climber can't be found. They may have deleted their account.", 404],
+          'Too many pending invites': ['You can have up to 50 pending invites. Cancel one before sending another.', 400],
+          'Only accepted friends can view this logbook': ['Only accepted friends can view this logbook.', 403],
+        }[data.message];
+        if (refusal) throw fail(...refusal);
         const action = rpc === 'current_account' ? 'Could not load your account profile' : rpc === 'display_name_available' ? 'Could not check display-name availability' : rpc === 'complete_profile' ? 'Could not save your profile' : 'Database request failed';
         throw fail(action + ' (' + rpc + ': ' + code + ').' + (code === 'PGRST202' ? ' The database function is missing or its schema cache needs refreshing.' : code === '42501' ? ' The database denied access.' : ' Please share this error so the database issue can be identified.'),503);
       }
@@ -129,6 +136,7 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       return request('/rest/v1/rpc/read_public_profile',{target_user:id});
     },
     async friends(session, values) {
+      if(values.action==='request' && values.target===session.user?.id) throw fail("You can't invite yourself.",400);
       if(values.action==='suggest')return request('/rest/v1/rpc/search_friend_profiles',{query_name:values.name},session.accessToken);
       return request('/rest/v1/rpc/friends_action',{action:values.action,target:values.target || null,query_name:values.name || null},session.accessToken);
     },

@@ -210,7 +210,12 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         if (!values || !['list','search','suggest','request','accept','decline','remove','logbook'].includes(values.action)) throw fail('Invalid friend action.');
         if (['search','suggest'].includes(values.action) && (typeof values.name!=='string' || !values.name.trim() || values.name.length>120)) throw fail('Enter a display name.');
         if (!['list','search','suggest'].includes(values.action) && (typeof values.target!=='string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(values.target))) throw fail('Choose a valid account.');
-        try {return json(200,await auth.friends(session,values));} catch {throw fail('Friends request failed. Check that the Friends migration is applied. Viewing a logbook requires an accepted friendship; you can have up to 50 pending invites.',400);}
+        try {return json(200,await auth.friends(session,values));}
+        catch (e) {
+          // Refusals (inviting yourself, the invite limit, a non-friend's logbook, an expired session) keep their own message.
+          if (e.status >= 400 && e.status < 500) throw e;
+          throw fail('Could not update Friends. Please try again in a moment.',503);
+        }
       }
       if (url.pathname === '/api/logbook' && ['GET','POST'].includes(req.method)) {
         if (!user) throw fail('Log in to use your logbook.',401);

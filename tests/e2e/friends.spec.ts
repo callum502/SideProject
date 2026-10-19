@@ -165,8 +165,8 @@ test("invites can't go to yourself, and repeated or out-of-date actions change n
   });
 });
 
-// Fail until fixed: the /api/friends route (server.mjs) replaces every error with one message, "Friends request
-// failed. Check that the Friends migration is applied...", so a user can't tell what went wrong.
+// Regression: the /api/friends route used to replace every refusal with one message, "Friends request failed. Check
+// that the Friends migration is applied...", so a user couldn't tell what went wrong.
 const bulkPrefix = 'test_friends_bulk_';
 test.afterAll(async ({}, info) => { await deleteAccountsWithPrefix(bulkPrefix, info); });
 
@@ -181,13 +181,12 @@ test('refused friend actions explain why', async () => {
   await test.step('inviting yourself', async () => {
     const result = await refused(i, 'request', { target: i.account.id });
     expect(result.status, 'Refused as a bad request').toBe(400);
-    expect(result.error, 'Says you cannot invite yourself').toMatch(/yourself/i);
+    expect(result.error, 'Says you cannot invite yourself').toBe("You can't invite yourself.");
   });
   await test.step("viewing a non-friend's logbook", async () => {
     const result = await refused(i, 'logbook', { target: j.account.id });
     expect(result.status, 'Refused as forbidden').toBe(403);
-    expect(result.error, 'Says only friends can view it').toMatch(/friends/i);
-    expect(result.error, 'Not a setup error').not.toMatch(/migration/i);
+    expect(result.error, 'Says only friends can view it').toBe('Only accepted friends can view this logbook.');
   });
 });
 
@@ -201,13 +200,11 @@ test('the 50 pending invite limit is explained', async () => {
   // The 51st is refused, through the API and the Friends page.
   const result = await refused(k, 'request', { target: targets[50].id });
   expect(result.status, 'Refused').toBe(400);
-  expect(result.error, 'Mentions the limit').toMatch(/50 pending invites/i);
-  expect(result.error, 'Not a setup error').not.toMatch(/migration/i);
+  expect(result.error, 'Explains the limit').toBe('You can have up to 50 pending invites. Cancel one before sending another.');
   const page = await friendsPage(k);
   await page.getByLabel('Display name').fill(targets[50].name);
   await page.getByRole('button', { name: 'Send invite', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText(/50 pending invites/i);
-  await expect(page.getByRole('alert')).not.toContainText(/migration/i);
+  await expect(page.getByRole('alert')).toHaveText('You can have up to 50 pending invites. Cancel one before sending another.');
 });
 
 test('friend actions after the session ended ask you to log in', async ({ browser }) => {

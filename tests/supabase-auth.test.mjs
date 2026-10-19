@@ -58,6 +58,21 @@ test('a wrong, used or expired email code is explained in terms of the code', as
   await assert.rejects(auth.confirm({ email: 'climber@example.com', code: '000000' }), error => error.status === 400 && /^That confirmation code is wrong or has expired/.test(error.message));
 });
 
+test('refused friend actions explain why; unexpected database errors stay generic', async () => {
+  let reply;
+  const auth = createAuth({ env, fetchImpl: async () => new Response(JSON.stringify(reply), { status: 400 }) });
+  const session = { accessToken: 'access', user: { id: 'me' } };
+  // Inviting yourself is refused before asking the database.
+  await assert.rejects(auth.friends(session, { action: 'request', target: 'me' }), error => error.status === 400 && error.message === "You can't invite yourself.");
+  // PostgREST's replies when friends_action raises each refusal (plpgsql's default code P0001).
+  for (const [message, status, text] of [['Choose another climber', 404, /can't be found/], ['Too many pending invites', 400, /up to 50 pending invites/], ['Only accepted friends can view this logbook', 403, /^Only accepted friends/]]) {
+    reply = { code: 'P0001', message };
+    await assert.rejects(auth.friends(session, { action: 'request', target: 'other' }), error => error.status === status && text.test(error.message), message);
+  }
+  reply = { code: 'P0001', message: 'Something unexpected' };
+  await assert.rejects(auth.friends(session, { action: 'request', target: 'other' }), error => error.status === 503);
+});
+
 test('logging a problem deleted meanwhile says it no longer exists; other database errors stay generic', async () => {
   // PostgREST's reply when set_problem_log raises 'Problem not found' (plpgsql's default code P0001).
   let reply = { code: 'P0001', message: 'Problem not found' };
