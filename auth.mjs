@@ -58,6 +58,17 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     }
     return data;
   }
+  // Supabase reports a wrong, used or expired email code as "Token has expired or is invalid" (otp_expired),
+  // which talks about a token the user never saw; explain it in terms of the code instead.
+  async function verifyCode(email, token, type) {
+    try { return await request('/auth/v1/verify', { email, token, type }); }
+    catch (error) {
+      if (error.code === 'otp_expired') throw fail(type === 'recovery'
+        ? 'That recovery code is wrong or has expired. Check your latest email, or request a new code.'
+        : 'That confirmation code is wrong or has expired. Check your latest email, or sign up again to get a new code.', 400);
+      throw error;
+    }
+  }
   function validateAccountInputs(values) {
     for (const [field,limit] of [['email',254],['password',256],['code',32]]) {
       if (values[field] !== undefined && (typeof values[field] !== 'string' || values[field].length > limit)) throw fail(field[0].toUpperCase()+field.slice(1)+' must be no more than '+limit+' characters.');
@@ -149,7 +160,7 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
       if (typeof values.email !== 'string' || typeof values.code !== 'string') throw fail('Enter your email and confirmation code.');
       const email = values.email.trim(), code = values.code.trim();
       const token = testConfirmCode && code === testConfirmCode ? await testSignupCode(email) : code;
-      const session = await request('/auth/v1/verify', { email, token, type: 'signup' });
+      const session = await verifyCode(email, token, 'signup');
       // Confirmation is separate from logging in to the local app.
       if (session.access_token) await request('/auth/v1/logout?scope=local', {}, session.access_token);
       return { message: 'Email confirmed. You can now log in.' };
@@ -163,7 +174,7 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     async reset(values) {
       validateAccountInputs(values);
       if (typeof values.password !== 'string' || values.password.length < 6 || typeof values.code !== 'string' || typeof values.email !== 'string') throw fail('Enter your email, recovery code and a password of at least 6 characters.');
-      const session = await request('/auth/v1/verify', { email: values.email.trim(), token: values.code.trim(), type: 'recovery' });
+      const session = await verifyCode(values.email.trim(), values.code.trim(), 'recovery');
       await request('/auth/v1/user', { password: values.password }, session.access_token, 'PUT');
       await request('/auth/v1/logout?scope=global', {}, session.access_token);
       return { message: 'Password updated. Log in with your new password.' };

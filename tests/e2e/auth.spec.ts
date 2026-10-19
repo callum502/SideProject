@@ -17,14 +17,13 @@ async function loginPage(page: Page, link?: string) {
 
 /**
  * Verify a wrong, used or expired email code is explained in the app's words.
- * Fails until fixed: Supabase's own text ("Token has expired or is invalid") is shown, which talks about a
- * "token" the user never saw (auth.mjs confirm/reset pass it through).
+ * Regression: Supabase's own "Token has expired or is invalid" used to be shown, about a token the user never saw.
+ * @param kind - Which code the screen asks for.
  */
-async function expectCodeError(page: Page) {
-  const alert = page.getByRole('alert');
-  await expect(alert).toBeVisible();
-  await expect(alert, 'Talks about the code').toContainText(/code/i);
-  await expect(alert, "Not Supabase's wording").not.toContainText(/token/i);
+async function expectCodeError(page: Page, kind: 'recovery' | 'confirmation') {
+  await expect(page.getByRole('alert')).toHaveText(kind === 'recovery'
+    ? 'That recovery code is wrong or has expired. Check your latest email, or request a new code.'
+    : 'That confirmation code is wrong or has expired. Check your latest email, or sign up again to get a new code.');
 }
 
 /** Fill the email and password fields and submit the current screen. */
@@ -96,7 +95,7 @@ test('a wrong recovery code is refused', async ({ page }) => {
   await page.locator('input[name="code"]').fill('000000');
   await page.locator('input[name="password"]').fill('pw-never-used');
   await page.getByRole('button', { name: 'Update password', exact: true }).click();
-  await expectCodeError(page);
+  await expectCodeError(page, 'recovery');
   await expect(page.getByRole('heading', { name: 'Choose a new password', exact: true })).toBeVisible();
   // The original password still works. Reload first: the login screen keeps its current step across hash changes.
   await page.reload();
@@ -250,7 +249,7 @@ test("a wrong confirmation code is refused, and a used code can't be used again"
   };
   // A wrong code is refused, and the account stays unconfirmed.
   await verify('000000');
-  await expectCodeError(page);
+  await expectCodeError(page, 'confirmation');
   await expect(page.getByRole('heading', { name: 'Check your inbox', exact: true })).toBeVisible();
   expect((await accountsWithEmail(details.email))[0]?.email_confirmed_at, 'Still unconfirmed').toBeFalsy();
   // The emailed code confirms it.
@@ -262,7 +261,7 @@ test("a wrong confirmation code is refused, and a used code can't be used again"
   await page.getByRole('button', { name: 'Verify your email', exact: true }).click();
   await page.locator('input[name="email"]').fill(details.email);
   await verify(code);
-  await expectCodeError(page);
+  await expectCodeError(page, 'confirmation');
 });
 
 test('a recovery code works only once, and an unknown email gets the same reply without an email', async ({ page }) => {
@@ -295,7 +294,7 @@ test('a recovery code works only once, and an unknown email gets the same reply 
   await expect(page.getByRole('status')).toHaveText('Password updated. Log in with your new password.');
   // The used code is refused next time.
   await reset(used);
-  await expectCodeError(page);
+  await expectCodeError(page, 'recovery');
   await expect(page.getByRole('heading', { name: 'Choose a new password', exact: true })).toBeVisible();
 });
 

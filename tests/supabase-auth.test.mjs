@@ -51,6 +51,13 @@ test('sign-up with a registered email gets the same reply as a new one; other si
   await assert.rejects(auth.signup(values), /Password is too weak/);
 });
 
+test('a wrong, used or expired email code is explained in terms of the code', async () => {
+  // Supabase's reply to /verify for a bad recovery or confirmation code.
+  const auth = createAuth({ env, fetchImpl: async () => new Response(JSON.stringify({ code: 403, error_code: 'otp_expired', msg: 'Token has expired or is invalid' }), { status: 403 }) });
+  await assert.rejects(auth.reset({ email: 'climber@example.com', code: '000000', password: 'new-pw' }), error => error.status === 400 && /^That recovery code is wrong or has expired/.test(error.message));
+  await assert.rejects(auth.confirm({ email: 'climber@example.com', code: '000000' }), error => error.status === 400 && /^That confirmation code is wrong or has expired/.test(error.message));
+});
+
 test('logging a problem deleted meanwhile says it no longer exists; other database errors stay generic', async () => {
   // PostgREST's reply when set_problem_log raises 'Problem not found' (plpgsql's default code P0001).
   let reply = { code: 'P0001', message: 'Problem not found' };
