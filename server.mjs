@@ -27,6 +27,18 @@ function validateAnnotations(annotations) {
           } else if (![a.x, a.y, a.x2, a.y2].every(coord)) throw fail('Invalid annotation coordinates.');
         }
 }
+// A problem's annotations must be for photos on its boulder. Only keys a save adds are refused: older data may still
+// hold annotations for since-removed photos, and refusing those would block every save to the guide.
+function validateAnnotationTargets(data, previous) {
+  const oldKeys = new Map();
+  for (const location of previous.locations) for (const boulder of location.boulders) for (const problem of boulder.problems || []) oldKeys.set(problem.id, new Set(Object.keys(problem.photoAnnotations || {})));
+  for (const location of data.locations) for (const boulder of location.boulders) {
+    const photos = new Set(boulder.images.map(image => image.id));
+    for (const problem of boulder.problems || []) {
+      for (const id of Object.keys(problem.photoAnnotations || {})) if (!photos.has(id) && !oldKeys.get(problem.id)?.has(id)) throw fail('Problem annotations must be for photos on this boulder.');
+    }
+  }
+}
 function validateContentLengths(data, previous) {
   const oldRecords = new Map();
   for (const location of previous.locations) {
@@ -270,7 +282,7 @@ export async function createGuideServer({ distDir = path.join(root, 'dist'), liv
         let data; try { data = JSON.parse((await body(req, 12 * 1024 * 1024)).toString()); } catch (e) { if (e.status) throw e; throw fail('Invalid JSON.'); }
         if (!data || !Array.isArray(data.changes)) throw fail('Invalid changes.');
         // Changes are applied to the latest guide; the merged result must pass the same checks as a full guide.
-        return json(200, await contentStore.save(data.changes, user, session.accessToken, (next, current) => { validate(next); validateContentLengths(next, current); }));
+        return json(200, await contentStore.save(data.changes, user, session.accessToken, (next, current) => { validate(next); validateContentLengths(next, current); validateAnnotationTargets(next, current); }));
       }
       if (isUpload(url.pathname,req.method)) releaseUpload=requestLimits.upload(user.id);
       // Delete the user's own uploads from a batch that didn't save, so they don't use up the storage allowance.

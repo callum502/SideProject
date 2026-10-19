@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import type { Locator, Page } from '@playwright/test';
 import { guide, findRecord as find } from './apiTestHelpers';
-import { testUser, openPage, seedLocation, editGuide, uploadImage } from './seedHelpers';
+import { testUser, openPage, seedLocation, editGuide, uploadImage, runSql, uuid } from './seedHelpers';
 
 // Required fields: the browser blocks empty ones with its own message, so the tests check the field is invalid
 // and nothing was saved. Input of only spaces passes the browser's check, so the app must catch it with a message.
@@ -141,7 +141,8 @@ test('form fields stop accepting text at their length limits', async () => {
 test('names containing HTML are shown as text and never run as code', async () => {
   // Each name tries to run script if it were inserted as HTML.
   const payload = (tag: string) => `<img src=x onerror="window.__xss='${tag}'">`;
-  const { location, boulder, problem } = await seedLocation(user.current.request, prefix, { media: false, name: prefix + payload('location') });
+  // Its own coordinates keep its map marker clear of other tests' locations.
+  const { location, boulder, problem } = await seedLocation(user.current.request, prefix, { media: false, name: prefix + payload('location'), latitude: '-12.5', longitude: '130.8' });
   expect((await editGuide(user.current.request, g => { find(g, boulder.id).name = payload('boulder'); find(g, problem.id).name = payload('problem'); })).status(), 'Names saved').toBe(200);
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id, problem: problem.id }, 'V2 (5+) - ' + payload('problem'));
   const ran = () => page.evaluate(() => (window as any).__xss);
@@ -154,15 +155,17 @@ test('names containing HTML are shown as text and never run as code', async () =
   await page.goto('/#explore');
   await page.getByLabel('Find a location', { exact: true }).fill(payload('location').slice(0, 12));
   await expect(page.locator('.location-result').filter({ hasText: payload('location') })).toBeVisible();
-  await page.locator('.location-map-section .leaflet-marker-icon').and(page.getByTitle(prefix + payload('location'), { exact: true })).hover();
+  // Open the marker's tooltip directly (markers from other tests can overlap) and check it shows the name as text.
+  await page.locator('.location-map-section .leaflet-marker-icon').and(page.getByTitle(prefix + payload('location'), { exact: true })).dispatchEvent('mouseover');
+  await expect(page.locator('.leaflet-tooltip')).toHaveText(prefix + payload('location'));
   // Check no payload ran on any of these pages.
   expect(await ran(), 'No script ran').toBeUndefined();
   expect(await page.locator('img[src="x"]').count(), 'No injected image elements').toBe(0);
 });
 
 // The forms cap and check these, but the server must refuse them from any client. Each case is checked even if
-// another fails. The case for annotations on a photo that isn't on the boulder fails until fixed: validate() in
-// server.mjs doesn't check photoAnnotations keys, so marks for any photo ID are stored.
+// another fails. Regression: annotations for a photo that isn't on the boulder used to be stored, because the server
+// didn't check photoAnnotations keys.
 test('the server refuses invalid content sent directly to the API', async () => {
   const { location, boulder, problem, image, parking } = await seedLocation(user.current.request, prefix);
   const url = await uploadImage(user.current.request);
@@ -178,7 +181,7 @@ test('the server refuses invalid content sent directly to the API', async () => 
     ['an unknown drawing tool', g => { find(g, problem.id).photoAnnotations = { [image.id]: [{ ...mark, type: 'circle' }] }; }, 400, 'Unknown annotation tool.'],
     ['an unknown colour', g => { find(g, problem.id).photoAnnotations = { [image.id]: [{ ...mark, color: 'blue' }] }; }, 400, 'Unknown annotation colour.'],
     ['marks outside the photo', g => { find(g, problem.id).photoAnnotations = { [image.id]: [{ ...mark, x2: 1001 }] }; }, 400, 'Invalid annotation coordinates.'],
-    ["marks for a photo that isn't on the boulder", g => { find(g, problem.id).photoAnnotations = { [crypto.randomUUID()]: [mark] }; }, 400, /./],
+    ["marks for a photo that isn't on the boulder", g => { find(g, problem.id).photoAnnotations = { [crypto.randomUUID()]: [mark] }; }, 400, 'Problem annotations must be for photos on this boulder.'],
     ['a grade over 40 characters', g => { find(g, problem.id).grade = 'x'.repeat(41); }, 400, 'A problem needs a name, grade, and description.'],
     ["attaching another boulder's photo to a problem", g => find(g, location.id).boulders.push({ id: crypto.randomUUID(), name: 'Other boulder', notes: 'Elsewhere.', otherNotes: '', images: [], videos: [],
       problems: [{ id: crypto.randomUUID(), name: 'Borrower', grade: 'V1 (5)', description: 'Uses a photo from elsewhere.', imageIds: [image.id], videoIds: [] }] }), 400, 'Problem attachments must belong to this boulder.'],
@@ -248,4 +251,18 @@ test('the Add Photo menu closes with Escape or a click elsewhere', async () => {
   await page.locator('.notes-block').first().click();
   await expect(menu).toHaveCount(0);
   await expect(button).toHaveAttribute('aria-expanded', 'false');
+});
+
+test('annotations already stored for a removed photo do not block other saves', async () => {
+  const { boulder, problem } = await seedLocation(user.current.request, prefix);
+  // Older data: annotations for a photo that has since gone, written straight to the database.
+  const gone = crypto.randomUUID();
+  const marks = JSON.stringify({ [gone]: [{ type: 'line', color: 'red', x: 1, y: 1, x2: 50, y2: 50 }] });
+  runSql(`UPDATE public.problems SET photo_annotations = '${marks}'::jsonb WHERE id = '${uuid(problem.id)}'`);
+  // Unrelated saves still work, including edits to that problem.
+  expect((await editGuide(user.current.request, g => { find(g, boulder.id).name = 'Renamed boulder'; })).status(), 'Boulder renamed').toBe(200);
+  expect((await editGuide(user.current.request, g => { find(g, problem.id).grade = 'V3 (6A/6A+)'; })).status(), 'Problem edited').toBe(200);
+  // A save can drop the old annotations.
+  expect((await editGuide(user.current.request, g => { find(g, problem.id).photoAnnotations = {}; })).status(), 'Old annotations removed').toBe(200);
+  expect(find(await guide(user.current.page), problem.id).photoAnnotations, 'API/DB: cleaned up').toEqual({});
 });
