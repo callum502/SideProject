@@ -100,11 +100,13 @@ test('erase, undo and clear change the drawing, and cancelling saves nothing', a
   await expect(shapes).toHaveCount(0);
   await undo.click();
   await expect(shapes).toHaveCount(2);
-  // Cancel closes without saving.
-  let saves = 0;
+  // Cancel asks before discarding the unsaved drawing, then closes without saving.
+  let saves = 0, asked = '';
   page.on('request', request => { if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++; });
+  page.once('dialog', confirm => { asked = confirm.message(); confirm.accept(); });
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   await expect(dialog).toHaveCount(0);
+  expect(asked, 'Asked before discarding').toBe('Discard your unsaved annotations?');
   expect(saves, 'No guide save was sent').toBe(0);
   expect(find(await guide(page), problem.id).photoAnnotations[image.id], 'API/DB: annotations unchanged').toHaveLength(1);
 });
@@ -124,4 +126,88 @@ test("each problem keeps its own annotations on a shared photo", async () => {
   const current = await guide(page);
   expect(find(current, second.id).photoAnnotations[seed.image.id].map((m: any) => m.type), 'API/DB: second problem').toEqual(['line']);
   expect(find(current, seed.problem.id).photoAnnotations[seed.image.id].map((m: any) => m.type), 'API/DB: first problem unchanged').toEqual(['box']);
+});
+
+test('closing the editor with unsaved changes asks first; with none, it just closes', async () => {
+  const { page, dialog, canvas, shapes, problem, image } = await openEditor();
+  // Record each "Discard your unsaved annotations?" prompt, answering with `discard`.
+  const asked: string[] = [];
+  let discard = false;
+  page.on('dialog', confirm => { asked.push(confirm.message()); discard ? confirm.accept() : confirm.dismiss(); });
+  const reopen = () => page.locator('.problem-photo').filter({ hasText: 'Seed photo' }).getByRole('button', { name: 'Annotate', exact: true }).click();
+  const drawLine = async () => {
+    await dialog.getByRole('button', { name: '╱ Line', exact: true }).click();
+    await drag(page, canvas, [0.1, 0.5], [0.9, 0.5]);
+    await expect(shapes).toHaveCount(2);
+  };
+
+  await test.step('no changes: Escape closes without asking', async () => {
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    expect(asked, 'Not asked').toEqual([]);
+  });
+
+  await test.step('unsaved drawing: Escape and ✕ ask, and keeping it leaves the drawing', async () => {
+    await reopen();
+    await drawLine();
+    await page.keyboard.press('Escape');
+    await expect.poll(() => asked.length, { message: 'Escape asked' }).toBe(1);
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect.poll(() => asked.length, { message: '✕ asked' }).toBe(2);
+    expect(asked, 'The warning').toEqual(Array(2).fill('Discard your unsaved annotations?'));
+    await expect(dialog, 'Still open').toBeVisible();
+    await expect(shapes, 'Drawing kept').toHaveCount(2);
+  });
+
+  await test.step('undoing back to the saved drawing: closes without asking', async () => {
+    await dialog.getByRole('button', { name: '↶ Undo', exact: true }).click();
+    await expect(shapes).toHaveCount(1);
+    await page.keyboard.press('Escape');
+    await expect(dialog).toHaveCount(0);
+    expect(asked.length, 'Not asked again').toBe(2);
+  });
+
+  await test.step('choosing to discard: closes and saves nothing', async () => {
+    await reopen();
+    await drawLine();
+    discard = true;
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    expect(asked.length, 'Asked once more').toBe(3);
+    expect(find(await guide(page), problem.id).photoAnnotations[image.id], 'API/DB: annotations unchanged').toHaveLength(1);
+  });
+
+  await test.step('saving: closes without asking', async () => {
+    discard = false;
+    await reopen();
+    await drawLine();
+    await save(page, dialog);
+    expect(asked.length, 'Not asked when saving').toBe(3);
+    expect(find(await guide(page), problem.id).photoAnnotations[image.id], 'API/DB: new line saved').toHaveLength(2);
+  });
+});
+
+test('the editor stays open while saving, then closes', async () => {
+  const { page, dialog, canvas, shapes, problem, image } = await openEditor();
+  await dialog.getByRole('button', { name: '╱ Line', exact: true }).click();
+  await drag(page, canvas, [0.1, 0.5], [0.9, 0.5]);
+  await expect(shapes).toHaveCount(2);
+  // Hold the save so the editor stays busy.
+  let release = () => {};
+  const held = new Promise<void>(resolve => release = resolve);
+  await page.route('**/api/guide', async route => { if (route.request().method() !== 'PUT') return route.fallback(); await held; await route.continue(); });
+  let asked = 0;
+  page.on('dialog', confirm => { asked++; confirm.dismiss(); });
+  await dialog.getByRole('button', { name: 'Save annotations', exact: true }).click();
+  await expect(dialog.getByRole('button', { name: 'Saving…', exact: true })).toBeDisabled();
+  try {
+    // Escape, ✕ and Cancel all leave it open, without asking about unsaved changes.
+    await page.keyboard.press('Escape');
+    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Cancel', exact: true })).toBeDisabled();
+    await expect(dialog, 'Still open while saving').toBeVisible();
+    expect(asked, 'No discard warning while saving').toBe(0);
+  } finally { release(); }
+  await expect(dialog).toHaveCount(0);
+  expect(find(await guide(page), problem.id).photoAnnotations[image.id], 'API/DB: saved').toHaveLength(2);
 });
