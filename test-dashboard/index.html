@@ -1081,7 +1081,7 @@ async function loadRuns() { S.runs = await api('/api/runs').catch(() => []); upd
 function renderResultsList() {
   const el = $('#resRows'); if (!el) return;
   if (!S.runs.length) { el.innerHTML = `<div class="empty">${S.loading ? 'Loading…' : 'No runs yet. Pick tests on the <a href="#tests">Tests</a> page and run them.'}</div>`; return; }
-  el.innerHTML = `<table><thead><tr><th>Status</th><th>Started</th><th>Results</th><th></th><th class="num">Workers</th><th class="num">Duration</th></tr></thead><tbody>${S.runs.map(r => {
+  el.innerHTML = `<table><thead><tr><th>Status</th><th>Started</th><th>Results</th><th></th><th class="num">Workers</th><th class="num" title="Attempts each failing test gets automatically: the first run plus retries">Auto attempts</th><th class="num">Duration</th></tr></thead><tbody>${S.runs.map(r => {
     const c = r.counts, parts = [c.passed && `${c.passed} passed`, c.investigate && `<span style="color:var(--warn)">${c.investigate} triage needed</span>`, c.bugged && `<span style="color:var(--fail)">${c.bugged} bugged</span>`, (c.skipped || c.stopped) && `${(c.skipped || 0) + (c.stopped || 0)} skipped`].filter(Boolean).join(' · ') || `${r.total} tests`;
     return `<tr data-run="${esc(r.id)}" class="${r.id === S.liveId ? 'live' : ''}">
       <td><span class="pill ${esc(runState(r.status, c))}"><span class="dot ${esc(runState(r.status, c))}"></span>${esc(LABEL[runState(r.status, c)])}</span></td>
@@ -1089,6 +1089,7 @@ function renderResultsList() {
       <td>${parts}</td>
       <td><div class="bar hist-bar">${barHtml(c, r.total)}</div></td>
       <td class="num">${r.workers}</td>
+      <td class="num">${(r.retries || 0) + 1}</td>
       <td class="num">${r.endedAt ? fmtDur(r.endedAt - r.startedAt) : '…'}</td>
     </tr>`;
   }).join('')}</tbody></table>`;
