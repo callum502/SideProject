@@ -163,8 +163,8 @@ test("a new account reusing a deleted account's display name inherits none of it
   }
 });
 
-// Fails until fixed: the profile page (src/PublicProfile.jsx) uploads the image first and sets it as the profile
-// photo second, so if the second step fails the uploaded file is left in Storage, counting towards the allowance.
+// Regression: the profile page uploads the image first and sets it as the profile photo second. If the second step
+// failed, the uploaded file used to stay in Storage, counting towards the allowance; it is now discarded.
 test('a profile photo that fails to save leaves no file behind', async () => {
   const { id, name } = owner.current.account;
   const page = await openProfile(owner.current.context, id, name);
@@ -174,7 +174,8 @@ test('a profile photo that fails to save leaves no file behind', async () => {
   await page.locator('label', { hasText: 'Upload profile photo' }).locator('input[type="file"]').setInputFiles([mediaFile('png')]);
   await expect(page.getByRole('alert')).toHaveText('Could not save photo.');
   expect(await photoStatus(id), 'No profile photo set').toBe(404);
-  expect(await usedBytes(), 'No file was left behind').toBe(before);
+  // The upload is discarded just after the error is shown.
+  await expect.poll(usedBytes, { message: 'No file was left behind', timeout: 5000 }).toBe(before);
 });
 
 /** Every object key in a JSON value, at any depth. */

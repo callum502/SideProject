@@ -25,13 +25,19 @@ export default function PublicProfile({id,user,onLogsChange}) {
   setError('');
   if(!['image/jpeg','image/png','image/webp'].includes(file.type) || file.size>8*1024*1024){setError('Choose a JPEG, PNG or WebP image up to 8 MB.');return;}
   setUploading(true);
+  let uploaded=null;
   try{
-   const data=await api('/api/images',{method:'POST',headers:{'Content-Type':file.type},body:file},'Upload failed.');
-   await api('/api/profile-photo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:data.url})},'Could not save photo.');
+   uploaded=(await api('/api/images',{method:'POST',headers:{'Content-Type':file.type},body:file},'Upload failed.')).url;
+   await api('/api/profile-photo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:uploaded})},'Could not save photo.');
+   uploaded=null;
    setProfile(previous=>({...previous,hasPhoto:true}));
    setPhotoVersion(Date.now());
    fetch('/api/storage/usage').then(r=>r.ok?r.json():null).then(setStorageUsage).catch(()=>{});
-  }catch(e){setError(e.message);}finally{setUploading(false);}
+  }catch(e){
+   // An upload that didn't become the profile photo would otherwise stay stored, using the allowance (best effort).
+   if(uploaded)api('/api/uploads/discard',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({urls:[uploaded]})}).catch(()=>{});
+   setError(e.message);
+  }finally{setUploading(false);}
  }
  const [removing,setRemoving]=useState(false);
  async function removePhoto() {
