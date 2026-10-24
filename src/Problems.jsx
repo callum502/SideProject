@@ -129,7 +129,7 @@ export function ProblemForm({ boulder, problem, save, busy, error, cancel }) {
           required
           maxLength={800}
           rows={5}
-          placeholder="Describe the start, the line, key moves, and finish..."
+          placeholder="Describe the start, the holds, the moves and any other details such as overall style..."
           defaultValue={problem?.description || ''}
         />
       </label>

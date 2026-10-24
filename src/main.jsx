@@ -984,7 +984,7 @@ function App() {
               </>
             )}
             <footer>
-              SideProj <span>A better way to share our love for climbing.</span>
+              SideProj <span>Makes the planning easier, so you can climb harder.</span>
             </footer>
           </main>
         )}
@@ -1778,7 +1778,7 @@ function LocationLinksForm({ links, busy, error, cancel, save }) {
         save(items.map(({ label, url }) => ({ label: label.trim(), url: url.trim() })));
       }}
     >
-      <p>Link to UKC, a local tide chart, YouTube beta, a relevant book or other useful resources.</p>
+      <p>Link to UKC, a local tide chart, YouTube beta, a relevant book or any other useful resources.</p>
       {items.map(item => (
         <fieldset className="media-picker" key={item.key} disabled={busy}>
           <label>
