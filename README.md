@@ -21,4 +21,3 @@ If the AI analysis determines that a test failure is likely to be due to a genui
 The video below showcases an example run of a group of tests using the dashboard. It highlights a UI update for one failing test along with a genuine bug for another:
 
 https://github.com/user-attachments/assets/874ddd98-3fb9-4120-add3-b6291f953939
-

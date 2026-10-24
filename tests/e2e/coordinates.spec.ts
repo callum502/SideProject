@@ -28,7 +28,14 @@ async function pickerIn(page: Page, title: string) {
   await expect(dialog.getByRole('heading', { name: title, exact: true })).toBeVisible();
   const map = dialog.locator('.coordinate-map');
   await expect(map.locator('.leaflet-tile-pane')).toBeAttached();
-  return { page, dialog, map, latitude: dialog.getByLabel('Latitude'), longitude: dialog.getByLabel('Longitude'), marker: map.locator('.leaflet-marker-icon[title="Selected location"]') };
+  return {
+    page,
+    dialog,
+    map,
+    latitude: dialog.getByLabel('Latitude'),
+    longitude: dialog.getByLabel('Longitude'),
+    marker: map.locator('.leaflet-marker-icon[title="Selected location"]'),
+  };
 }
 
 /** Pixel distance between the centres of two elements. */
@@ -56,7 +63,9 @@ test('clicking the map fills in the coordinates', async () => {
   // Clicking further east increases the longitude and moves the marker there.
   const before = Number(await longitude.inputValue());
   await clickMap(page, map, 100, 0);
-  await expect.poll(async () => Number(await longitude.inputValue()), { message: 'Longitude moved east' }).toBeGreaterThan(before + 5);
+  await expect
+    .poll(async () => Number(await longitude.inputValue()), { message: 'Longitude moved east' })
+    .toBeGreaterThan(before + 5);
 });
 
 test('typed coordinates place the marker, which follows later changes', async () => {
@@ -79,16 +88,25 @@ test('invalid coordinates remove the marker and cannot be saved', async () => {
   await longitude.fill('-0.12');
   await expect(marker).toBeVisible();
   let saves = 0;
-  page.on('request', request => { if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++; });
+  page.on('request', request => {
+    if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++;
+  });
   // Out-of-range and missing coordinates each remove the marker and block saving.
-  for (const [field, value] of [[latitude, '91'], [longitude, '-181'], [longitude, '']] as const) {
+  for (const [field, value] of [
+    [latitude, '91'],
+    [longitude, '-181'],
+    [longitude, ''],
+  ] as const) {
     await latitude.fill('51.5');
     await longitude.fill('-0.12');
     await expect(marker).toBeVisible();
     await field.fill(value);
     await expect(marker).toHaveCount(0);
     await dialog.getByRole('button', { name: 'Save location', exact: true }).click();
-    expect(await field.evaluate((input: HTMLInputElement) => input.validity.valid), `${value || 'blank'} is invalid`).toBe(false);
+    expect(
+      await field.evaluate((input: HTMLInputElement) => input.validity.valid),
+      `${value || 'blank'} is invalid`
+    ).toBe(false);
     await expect(dialog).toBeVisible();
   }
   expect(saves, 'No guide save was sent').toBe(0);
@@ -107,9 +125,15 @@ test('a new location shows its coordinates, a maps link and a map marker', async
   // The location page shows the coordinates to 5 places and links them to Google Maps.
   await expect(page.locator('.detail-banner').getByRole('heading', { name, exact: true })).toBeVisible();
   await expect(page.locator('.coordinates')).toHaveText('51.50000, -0.12000');
-  await expect(page.getByRole('link', { name: 'Open in maps ↗' })).toHaveAttribute('href', 'https://www.google.com/maps/search/?api=1&query=51.5%2C-0.12');
+  await expect(page.getByRole('link', { name: 'Open in maps ↗' })).toHaveAttribute(
+    'href',
+    'https://www.google.com/maps/search/?api=1&query=51.5%2C-0.12'
+  );
   // API/DB check: the coordinates were saved as entered.
-  expect((await guide(page)).locations.find((l: any) => l.name === name), 'API/DB: coordinates saved').toMatchObject({ latitude: '51.5', longitude: '-0.12' });
+  expect(
+    (await guide(page)).locations.find((l: any) => l.name === name),
+    'API/DB: coordinates saved'
+  ).toMatchObject({ latitude: '51.5', longitude: '-0.12' });
   // Explore shows a marker for it.
   await page.goto('/#explore');
   await page.reload();
@@ -117,7 +141,11 @@ test('a new location shows its coordinates, a maps link and a map marker', async
 });
 
 test('editing a location starts the map at its saved point and saves a new one', async () => {
-  const { location } = await seedLocation(user.current.request, prefix, { media: false, latitude: '56.8', longitude: '-3.2' });
+  const { location } = await seedLocation(user.current.request, prefix, {
+    media: false,
+    latitude: '56.8',
+    longitude: '-3.2',
+  });
   const page = await openPage(user.current.context, { location: location.id }, location.name);
   await page.getByRole('button', { name: /^Edit location/ }).click();
   const { dialog, map, latitude, longitude, marker } = await pickerIn(page, 'Edit location');
@@ -128,7 +156,9 @@ test('editing a location starts the map at its saved point and saves a new one',
   await expect.poll(() => distance(marker, map), { message: 'Marker starts centred' }).toBeLessThan(3);
   // Pick a point to the north-east on the map and save it.
   await clickMap(page, map, 60, -40);
-  await expect.poll(async () => Number(await longitude.inputValue()), { message: 'Longitude moved east' }).toBeGreaterThan(-3.2);
+  await expect
+    .poll(async () => Number(await longitude.inputValue()), { message: 'Longitude moved east' })
+    .toBeGreaterThan(-3.2);
   expect(Number(await latitude.inputValue()), 'Latitude moved north').toBeGreaterThan(56.8);
   const [lat, lng] = [await latitude.inputValue(), await longitude.inputValue()];
   const saved = page.waitForResponse(r => r.url().endsWith('/api/guide') && r.request().method() === 'PUT');
@@ -147,9 +177,16 @@ test('coordinates at the exact limits save, and just past them are refused', asy
   await dialog.getByLabel(/^Location name/).fill(name);
   await dialog.getByLabel(/^Approach notes/).fill('At the edge of the map.');
   let saves = 0;
-  page.on('request', request => { if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++; });
+  page.on('request', request => {
+    if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++;
+  });
   // Just past each limit is refused by the browser, and nothing is sent.
-  for (const [field, value] of [[latitude, '90.000001'], [latitude, '-90.000001'], [longitude, '180.000001'], [longitude, '-180.000001']] as const) {
+  for (const [field, value] of [
+    [latitude, '90.000001'],
+    [latitude, '-90.000001'],
+    [longitude, '180.000001'],
+    [longitude, '-180.000001'],
+  ] as const) {
     await latitude.fill('0');
     await longitude.fill('0');
     await field.fill(value);
@@ -165,6 +202,8 @@ test('coordinates at the exact limits save, and just past them are refused', asy
   expect((await saved).status(), 'Boundary coordinates saved').toBe(200);
   await expect(page.locator('.coordinates')).toHaveText('-90.00000, 180.00000');
   // API check: the server refuses values past the limits from any client.
-  const response = await editGuide(user.current.request, g => { g.locations.find((l: any) => l.name === name).latitude = '90.000001'; });
+  const response = await editGuide(user.current.request, g => {
+    g.locations.find((l: any) => l.name === name).latitude = '90.000001';
+  });
   expect(response.status(), 'API: latitude past 90 refused').toBe(400);
 });

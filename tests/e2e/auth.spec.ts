@@ -6,7 +6,9 @@ import { createApiAccount, signIn, seedLocation, openPage, editGuide } from './s
 
 // Accounts here are created per test (some deliberately unconfirmed or incomplete) and removed afterwards.
 const prefix = 'test_auth_user_';
-test.afterAll(async ({}, info) => { await deleteAccountsWithPrefix(prefix, info); });
+test.afterAll(async ({}, info) => {
+  await deleteAccountsWithPrefix(prefix, info);
+});
 
 /** Open the login page, optionally switching to another screen by its link. */
 async function loginPage(page: Page, link?: string) {
@@ -21,9 +23,11 @@ async function loginPage(page: Page, link?: string) {
  * @param kind - Which code the screen asks for.
  */
 async function expectCodeError(page: Page, kind: 'recovery' | 'confirmation') {
-  await expect(page.getByRole('alert')).toHaveText(kind === 'recovery'
-    ? 'That recovery code is wrong or has expired. Check your latest email, or request a new code.'
-    : 'That confirmation code is wrong or has expired. Check your latest email, or sign up again to get a new code.');
+  await expect(page.getByRole('alert')).toHaveText(
+    kind === 'recovery'
+      ? 'That recovery code is wrong or has expired. Check your latest email, or request a new code.'
+      : 'That confirmation code is wrong or has expired. Check your latest email, or sign up again to get a new code.'
+  );
 }
 
 /** Fill the email and password fields and submit the current screen. */
@@ -55,7 +59,10 @@ test('sign-up refuses a display name that is already taken and a short password'
   await page.locator('select[name="heightInches"]').selectOption('10');
   // A 5-character password fails the browser's minimum length check, so nothing is sent.
   await submitCredentials(page, details.email, '12345', 'Send verification code');
-  expect(await page.locator('#auth-password').evaluate((input: HTMLInputElement) => input.validity.tooShort), 'Password is too short').toBe(true);
+  expect(
+    await page.locator('#auth-password').evaluate((input: HTMLInputElement) => input.validity.tooShort),
+    'Password is too short'
+  ).toBe(true);
   // With a valid password, the taken display name (in any case) is refused.
   await submitCredentials(page, details.email, details.password, 'Send verification code');
   await expect(page.getByRole('alert')).toHaveText('That display name is already taken. Choose a different name.');
@@ -111,7 +118,10 @@ test('an incomplete profile must be completed before contributing', async ({ bro
     // The app asks for the missing details instead of showing the guide.
     await expect(page.getByRole('heading', { name: 'Complete your profile', exact: true })).toBeVisible();
     // API check: saving to the guide is refused until then.
-    expect((await user.request.put('/api/guide', { data: { changes: [] } })).status(), 'API: contributing refused').toBe(403);
+    expect(
+      (await user.request.put('/api/guide', { data: { changes: [] } })).status(),
+      'API: contributing refused'
+    ).toBe(403);
     // Completing it opens Explore.
     await page.locator('select[name="heightFeet"]').selectOption('6');
     await page.locator('select[name="heightInches"]').selectOption('0');
@@ -120,8 +130,13 @@ test('an incomplete profile must be completed before contributing', async ({ bro
     expect((await saved).status(), 'Profile saved').toBe(200);
     await expect(page).toHaveURL(/#explore$/);
     await expect(page.getByRole('button', { name: /Create location/ })).toBeVisible();
-    expect((await user.request.put('/api/guide', { data: { changes: [] } })).status(), 'API: contributing allowed').toBe(200);
-  } finally { await user.context.close(); }
+    expect(
+      (await user.request.put('/api/guide', { data: { changes: [] } })).status(),
+      'API: contributing allowed'
+    ).toBe(200);
+  } finally {
+    await user.context.close();
+  }
 });
 
 test('the account menu opens, closes and links to Friends, Profile and Log Out', async ({ page }) => {
@@ -190,22 +205,35 @@ async function accountsWithEmail(email: string) {
 /** Emails Mailpit has received for the address since the given time, after giving any email time to arrive. */
 async function emailsSince(page: Page, email: string, after: Date) {
   await page.waitForTimeout(3000);
-  const search = await (await fetch('http://127.0.0.1:54324/api/v1/search?query=' + encodeURIComponent('to:"' + email + '"'))).json();
-  return (search.messages || []).filter((m: { Created: string }) => new Date(m.Created) >= new Date(after.getTime() - 1000)).length;
+  const search = await (
+    await fetch('http://127.0.0.1:54324/api/v1/search?query=' + encodeURIComponent('to:"' + email + '"'))
+  ).json();
+  return (search.messages || []).filter(
+    (m: { Created: string }) => new Date(m.Created) >= new Date(after.getTime() - 1000)
+  ).length;
 }
 
-test("login gives the same answer for an unknown email as a wrong password, and ignores the email's case", async ({ page }) => {
+test("login gives the same answer for an unknown email as a wrong password, and ignores the email's case", async ({
+  page,
+}) => {
   const account = await createApiAccount(prefix);
   await loginPage(page);
   // An unknown email doesn't reveal that no account exists.
-  await submitCredentials(page, prefix + 'nobody_' + crypto.randomUUID().slice(0, 8) + '@example.com', 'pw-anything', 'Log in');
+  await submitCredentials(
+    page,
+    prefix + 'nobody_' + crypto.randomUUID().slice(0, 8) + '@example.com',
+    'pw-anything',
+    'Log in'
+  );
   await expect(page.getByRole('alert')).toHaveText('Invalid login credentials');
   // The email works in any case, with surrounding spaces.
   await login(page, { email: '  ' + account.email.toUpperCase() + ' ', password: account.password });
 });
 
 // Regression: this used to show Supabase's "User already registered", telling anyone whether an email has an account.
-test('sign-up with an already registered email looks like any sign-up, and creates and sends nothing', async ({ page }) => {
+test('sign-up with an already registered email looks like any sign-up, and creates and sends nothing', async ({
+  page,
+}) => {
   const existing = await createApiAccount(prefix);
   const details = accountDetails(prefix);
   await loginPage(page, 'Sign up');
@@ -214,7 +242,9 @@ test('sign-up with an already registered email looks like any sign-up, and creat
   await submitCredentials(page, existing.email, details.password, 'Send verification code');
   // The reply is the same as for a new email, so it doesn't reveal the account exists.
   await expect(page.getByRole('heading', { name: 'Check your inbox', exact: true })).toBeVisible();
-  await expect(page.getByRole('status')).toHaveText('Check your email for a confirmation code. If you already have an account, log in instead.');
+  await expect(page.getByRole('status')).toHaveText(
+    'Check your email for a confirmation code. If you already have an account, log in instead.'
+  );
   expect(await accountsWithEmail(existing.email), 'No second account').toHaveLength(1);
   expect(await emailsSince(page, existing.email, sent), 'No email sent').toBe(0);
   // The existing account still logs in with its own password.
@@ -228,7 +258,10 @@ test('sign-up refuses a display name of only spaces and an invalid email', async
   await fillSignupProfile(page, details.name);
   // The browser refuses an email without an @.
   await submitCredentials(page, 'not-an-email', details.password, 'Send verification code');
-  expect(await page.locator('input[name="email"]').evaluate((input: HTMLInputElement) => input.validity.typeMismatch), 'Invalid email refused').toBe(true);
+  expect(
+    await page.locator('input[name="email"]').evaluate((input: HTMLInputElement) => input.validity.typeMismatch),
+    'Invalid email refused'
+  ).toBe(true);
   // A display name of only spaces passes the browser but not the server.
   await page.locator('input[name="name"]').fill('   ');
   await submitCredentials(page, details.email, details.password, 'Send verification code');
@@ -308,22 +341,35 @@ test('deleting an account needs DELETE typed exactly, and can be cancelled', asy
     const dialog = page.getByRole('dialog');
     // Anything but DELETE, including lower case, is blocked by the browser, so no request is sent...
     let deletes = 0;
-    page.on('request', request => { if (request.url().endsWith('/api/account') && request.method() === 'DELETE') deletes++; });
+    page.on('request', request => {
+      if (request.url().endsWith('/api/account') && request.method() === 'DELETE') deletes++;
+    });
     const confirmation = dialog.getByLabel('Type DELETE to confirm');
     await confirmation.fill('delete');
     await dialog.getByRole('button', { name: 'Permanently delete account', exact: true }).click();
-    expect(await confirmation.evaluate((input: HTMLInputElement) => input.validity.patternMismatch), 'Lower case refused').toBe(true);
+    expect(
+      await confirmation.evaluate((input: HTMLInputElement) => input.validity.patternMismatch),
+      'Lower case refused'
+    ).toBe(true);
     expect(deletes, 'No deletion request sent').toBe(0);
     // ...and the server refuses it from any client.
-    const response = await user.request.delete('/api/account', { headers: { Origin: test.info().project.use.baseURL! }, data: { confirmation: 'delete' } });
-    expect({ status: response.status(), error: (await response.json()).error }, 'API: lower case refused').toEqual({ status: 400, error: 'Type DELETE to confirm.' });
+    const response = await user.request.delete('/api/account', {
+      headers: { Origin: test.info().project.use.baseURL! },
+      data: { confirmation: 'delete' },
+    });
+    expect({ status: response.status(), error: (await response.json()).error }, 'API: lower case refused').toEqual({
+      status: 400,
+      error: 'Type DELETE to confirm.',
+    });
     // Cancelling keeps the account.
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     await expect(dialog).toHaveCount(0);
     await page.reload();
     await expect(page.getByRole('button', { name: 'Account menu for ' + account.name, exact: true })).toBeVisible();
     expect(await accountsWithEmail(account.email), 'Account kept').toHaveLength(1);
-  } finally { await user.context.close(); }
+  } finally {
+    await user.context.close();
+  }
 });
 
 test('saving after the session ended elsewhere asks you to log in again', async ({ browser }) => {
@@ -333,16 +379,23 @@ test('saving after the session ended elsewhere asks you to log in again', async 
     const { location } = await seedLocation(user.request, 'test_auth_loc_', { media: false });
     const page = await openPage(user.context, { location: location.id }, location.name);
     await page.getByRole('button', { name: /^Edit location/ }).click();
-    await page.getByRole('dialog').getByLabel(/^Location name/).fill(location.name + '_edited');
+    await page
+      .getByRole('dialog')
+      .getByLabel(/^Location name/)
+      .fill(location.name + '_edited');
     // The session ends in another tab.
     expect((await user.request.post('/api/logout')).status(), 'Logged out elsewhere').toBe(200);
     await page.getByRole('dialog').getByRole('button', { name: 'Save location', exact: true }).click();
     await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Log in');
-    expect(findRecord(await (await user.request.get('/api/guide')).json(), location.id).name, 'Nothing saved').toBe(location.name);
+    expect(findRecord(await (await user.request.get('/api/guide')).json(), location.id).name, 'Nothing saved').toBe(
+      location.name
+    );
   } finally {
     // The account is signed out, so remove its location as it before deleting the account.
     const owner = await signIn(browser, account);
-    await editGuide(owner.request, g => { g.locations = g.locations.filter((l: any) => !l.name.startsWith('test_auth_loc_') || l.createdBy !== account.id); });
+    await editGuide(owner.request, g => {
+      g.locations = g.locations.filter((l: any) => !l.name.startsWith('test_auth_loc_') || l.createdBy !== account.id);
+    });
     await owner.context.close();
     await user.context.close();
   }
@@ -359,19 +412,31 @@ test('deleting an account signs it out in every browser', async ({ browser }) =>
   const account = await createApiAccount(prefix);
   const [first, second] = [await signIn(browser, account), await signIn(browser, account)];
   try {
-    expect(await stillSignedIn(second.request), 'Signed in elsewhere beforehand').toEqual({ user: account.id, saveStatus: 200 });
+    expect(await stillSignedIn(second.request), 'Signed in elsewhere beforehand').toEqual({
+      user: account.id,
+      saveStatus: 200,
+    });
     const page = await first.context.newPage();
     await page.goto('/#user=' + account.id);
     await deleteAccount(page);
-    expect(await stillSignedIn(second.request), 'The other browser is signed out').toEqual({ user: null, saveStatus: 401 });
-  } finally { await first.context.close(); await second.context.close(); }
+    expect(await stillSignedIn(second.request), 'The other browser is signed out').toEqual({
+      user: null,
+      saveStatus: 401,
+    });
+  } finally {
+    await first.context.close();
+    await second.context.close();
+  }
 });
 
 test('resetting the password signs the account out in every browser', async ({ browser, page }) => {
   const account = await createApiAccount(prefix);
   const other = await signIn(browser, account);
   try {
-    expect(await stillSignedIn(other.request), 'Signed in elsewhere beforehand').toEqual({ user: account.id, saveStatus: 200 });
+    expect(await stillSignedIn(other.request), 'Signed in elsewhere beforehand').toEqual({
+      user: account.id,
+      saveStatus: 200,
+    });
     // Someone resets the password from the login page.
     await loginPage(page, 'Forgot password?');
     const sent = new Date();
@@ -383,6 +448,11 @@ test('resetting the password signs the account out in every browser', async ({ b
     await page.getByRole('button', { name: 'Update password', exact: true }).click();
     await expect(page.getByRole('status')).toHaveText('Password updated. Log in with your new password.');
     // A session that knew the old password must not carry on.
-    expect(await stillSignedIn(other.request), 'The other browser is signed out').toEqual({ user: null, saveStatus: 401 });
-  } finally { await other.context.close(); }
+    expect(await stillSignedIn(other.request), 'The other browser is signed out').toEqual({
+      user: null,
+      saveStatus: 401,
+    });
+  } finally {
+    await other.context.close();
+  }
 });

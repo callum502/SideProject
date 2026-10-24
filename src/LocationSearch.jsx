@@ -1,8 +1,11 @@
 import React, { useRef, useState } from 'react';
 
 export default function LocationSearch({ locations, loaded, canCreate, busy, onCreate }) {
-  const [query, setQuery] = useState(''), [open, setOpen] = useState(false);
-  const wrapper = useRef(null), input = useRef(null), refocusing = useRef(false);
+  const [query, setQuery] = useState(''),
+    [open, setOpen] = useState(false);
+  const wrapper = useRef(null),
+    input = useRef(null),
+    refocusing = useRef(false);
   const matches = locations.filter(l => l.name.toLowerCase().includes(query.trim().toLowerCase()));
   function keys(e) {
     if (e.key === 'Escape') {
@@ -10,23 +13,92 @@ export default function LocationSearch({ locations, loaded, canCreate, busy, onC
       e.preventDefault();
       setOpen(false);
       // Returning focus from a result must not reopen the results through onFocus.
-      if (document.activeElement !== input.current) { refocusing.current = true; input.current.focus(); }
+      if (document.activeElement !== input.current) {
+        refocusing.current = true;
+        input.current.focus();
+      }
       return;
     }
     if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
     e.preventDefault();
-    if (!open) { setOpen(true); return; }
+    if (!open) {
+      setOpen(true);
+      return;
+    }
     const links = [...wrapper.current.querySelectorAll('.location-result')];
     if (!links.length) return;
     const current = links.indexOf(document.activeElement);
-    const next = current < 0 ? (e.key === 'ArrowDown' ? 0 : links.length - 1) : (current + (e.key === 'ArrowDown' ? 1 : -1) + links.length) % links.length;
+    const next =
+      current < 0
+        ? e.key === 'ArrowDown'
+          ? 0
+          : links.length - 1
+        : (current + (e.key === 'ArrowDown' ? 1 : -1) + links.length) % links.length;
     links[next].focus();
   }
-  return <section className="location-search" ref={wrapper} onKeyDown={keys} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false); }} aria-label="Find a climbing location">
-    <div className="search-heading"><label htmlFor="location-search-input">Find a location</label>{canCreate && <button className="primary small" disabled={!loaded || busy} onClick={onCreate}>+ Create location</button>}</div>
-    <div className="location-search-input"><span aria-hidden="true">⌕</span><input ref={input} id="location-search-input" type="search" maxLength={120} placeholder="Search by location..." autoComplete="off" value={query} aria-controls={open ? 'location-search-results' : undefined} onFocus={() => { if (refocusing.current) refocusing.current = false; else setOpen(true); }} onChange={e => { setQuery(e.target.value); setOpen(true); }}/></div>
-    {open && <div className="location-search-results" id="location-search-results">
-      {!loaded ? <p role="status">Loading locations...</p> : matches.length ? <ul>{matches.map(l => <li key={l.id}><a className="location-result" href={`#${new URLSearchParams({ location: l.id })}`}><span><strong>{l.name}</strong></span><span aria-hidden="true">↗</span></a></li>)}</ul> : <p role="status">{locations.length ? 'No matching locations.' : 'No locations yet. Create a location to get started.'}</p>}
-    </div>}
-  </section>;
+  return (
+    <section
+      className="location-search"
+      ref={wrapper}
+      onKeyDown={keys}
+      onBlur={e => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false);
+      }}
+      aria-label="Find a climbing location"
+    >
+      <div className="search-heading">
+        <label htmlFor="location-search-input">Find a location</label>
+        {canCreate && (
+          <button className="primary small" disabled={!loaded || busy} onClick={onCreate}>
+            + Create location
+          </button>
+        )}
+      </div>
+      <div className="location-search-input">
+        <span aria-hidden="true">⌕</span>
+        <input
+          ref={input}
+          id="location-search-input"
+          type="search"
+          maxLength={120}
+          placeholder="Search by location..."
+          autoComplete="off"
+          value={query}
+          aria-controls={open ? 'location-search-results' : undefined}
+          onFocus={() => {
+            if (refocusing.current) refocusing.current = false;
+            else setOpen(true);
+          }}
+          onChange={e => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+        />
+      </div>
+      {open && (
+        <div className="location-search-results" id="location-search-results">
+          {!loaded ? (
+            <p role="status">Loading locations...</p>
+          ) : matches.length ? (
+            <ul>
+              {matches.map(l => (
+                <li key={l.id}>
+                  <a className="location-result" href={`#${new URLSearchParams({ location: l.id })}`}>
+                    <span>
+                      <strong>{l.name}</strong>
+                    </span>
+                    <span aria-hidden="true">↗</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p role="status">
+              {locations.length ? 'No matching locations.' : 'No locations yet. Create a location to get started.'}
+            </p>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }

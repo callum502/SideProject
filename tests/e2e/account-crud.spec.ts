@@ -1,6 +1,12 @@
 import { test, expect } from './fixtures';
 import { createAccount, openProfile, editProfile, deleteAccount } from './testHelpers';
-import { deleteAccountsWithPrefix, savedProfile, assertAccountExistsDB, assertAccountOldDetailsRemovedFromDB, assertAccountRemovedFromDB } from './apiTestHelpers';
+import {
+  deleteAccountsWithPrefix,
+  savedProfile,
+  assertAccountExistsDB,
+  assertAccountOldDetailsRemovedFromDB,
+  assertAccountRemovedFromDB,
+} from './apiTestHelpers';
 
 test('account CRUD', async ({ page }, info) => {
   // Keep cleanup scoped to the accounts created by this test.

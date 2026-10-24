@@ -65,6 +65,7 @@ Each of these specs uses its own account (`testUser` in `seedHelpers.ts`), creat
 - `failures.spec.ts`: simulated network and server failures. A failed save keeps the dialog and what was typed and can be retried; server messages such as rate limiting are shown; a guide that fails to load shows an error; and dropped connections or HTML error pages must get a readable message.
 
 Unhappy paths are also covered in the existing specs:
+
 - coordinates and links at their limits
 - the profile's display name rules, and profile photo contents and replacement
 - a new account reusing a deleted account's display name inheriting none of its data

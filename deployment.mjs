@@ -1,3 +1,5 @@
+// Where the server listens and which hosts and origins it accepts. In production (Render) that is only the configured
+// HTTPS origins, with Secure cookies; locally it is only localhost, listening on 127.0.0.1.
 export function deploymentConfig(env = process.env) {
   const production = env.NODE_ENV === 'production' || env.RENDER === 'true';
   const origins = new Set();
@@ -8,7 +10,8 @@ export function deploymentConfig(env = process.env) {
     }
     origins.add(url.origin);
   }
-  if (production && !origins.size) throw new Error('Set APP_ORIGINS to your public HTTPS URL before starting in production.');
+  if (production && !origins.size)
+    throw new Error('Set APP_ORIGINS to your public HTTPS URL before starting in production.');
   return {
     renderProxy: env.RENDER === 'true',
     host: production ? '0.0.0.0' : '127.0.0.1',

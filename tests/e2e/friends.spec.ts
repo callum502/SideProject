@@ -1,6 +1,17 @@
 import { test, expect } from './fixtures';
 import type { Page } from '@playwright/test';
-import { testUser, seedLocation, logProblem, befriend, friendsAction, editGuide, createApiAccount, signIn, type User, type TestAccount } from './seedHelpers';
+import {
+  testUser,
+  seedLocation,
+  logProblem,
+  befriend,
+  friendsAction,
+  editGuide,
+  createApiAccount,
+  signIn,
+  type User,
+  type TestAccount,
+} from './seedHelpers';
 import { findRecord as find, deleteAccountsWithPrefix } from './apiTestHelpers';
 
 // Each test uses its own pair of accounts, so friendships from one test can't affect another.
@@ -26,7 +37,8 @@ async function friendsPage(user: User) {
 }
 
 /** A section of the Friends page, by its heading. */
-const section = (page: Page, heading: RegExp) => page.locator('section').filter({ has: page.getByRole('heading', { name: heading }) });
+const section = (page: Page, heading: RegExp) =>
+  page.locator('section').filter({ has: page.getByRole('heading', { name: heading }) });
 
 test('an invite found by display name can be accepted, making both users friends', async () => {
   const [a, b] = [ana.current, ben.current];
@@ -49,11 +61,19 @@ test('an invite found by display name can be accepted, making both users friends
   await page.reload();
   await expect(section(page, /^Your friends/)).toContainText(b.account.name);
   await page.getByLabel('Display name').fill(b.account.name);
-  await expect(page.getByLabel('Matching climbers').locator('li').filter({ hasText: b.account.name })).toContainText('Friends');
+  await expect(page.getByLabel('Matching climbers').locator('li').filter({ hasText: b.account.name })).toContainText(
+    'Friends'
+  );
   // API check: both lists show the accepted friendship.
-  for (const [user, other] of [[a, b], [b, a]]) {
+  for (const [user, other] of [
+    [a, b],
+    [b, a],
+  ]) {
     const list = await (await friendsAction(user.request, 'list')).json();
-    expect(list.find((p: any) => p.id === other.account.id), 'API: friendship accepted').toMatchObject({ status: 'accepted' });
+    expect(
+      list.find((p: any) => p.id === other.account.id),
+      'API: friendship accepted'
+    ).toMatchObject({ status: 'accepted' });
   }
 });
 
@@ -62,13 +82,17 @@ test('invites can be cancelled by the sender and declined by the recipient', asy
   // Cancel: the inviter withdraws, and the recipient no longer sees it.
   expect((await friendsAction(c.request, 'request', { target: d.account.id })).status(), 'Invite sent').toBe(200);
   const sender = await friendsPage(c);
-  await section(sender, /^Invites sent/).getByRole('button', { name: 'Cancel invite', exact: true }).click();
+  await section(sender, /^Invites sent/)
+    .getByRole('button', { name: 'Cancel invite', exact: true })
+    .click();
   await expect(section(sender, /^Invites sent/)).toContainText('No outstanding invites.');
   await expect(section(await friendsPage(d), /^Invites received/)).toContainText('No pending invites.');
   // Decline: the recipient refuses, and neither is left with an invite or friendship.
   expect((await friendsAction(c.request, 'request', { target: d.account.id })).status(), 'Invite sent again').toBe(200);
   const recipient = await friendsPage(d);
-  await section(recipient, /^Invites received/).getByRole('button', { name: 'Decline', exact: true }).click();
+  await section(recipient, /^Invites received/)
+    .getByRole('button', { name: 'Decline', exact: true })
+    .click();
   await expect(section(recipient, /^Invites received/)).toContainText('No pending invites.');
   expect(await (await friendsAction(c.request, 'list')).json(), 'API: nothing left for the sender').toEqual([]);
 });
@@ -80,7 +104,10 @@ test('a friend can be removed after confirming', async () => {
   const friends = section(page, /^Your friends/);
   await expect(friends).toContainText(f.account.name);
   // Removal asks for confirmation first.
-  page.once('dialog', dialog => { expect(dialog.message()).toContain('Remove ' + f.account.name + ' as a friend?'); dialog.accept(); });
+  page.once('dialog', dialog => {
+    expect(dialog.message()).toContain('Remove ' + f.account.name + ' as a friend?');
+    dialog.accept();
+  });
   await friends.getByRole('button', { name: 'Remove friend', exact: true }).click();
   await expect(friends).not.toContainText(f.account.name);
   // API check: the friendship is gone for both users.
@@ -93,7 +120,12 @@ test('searching for an unknown name says so', async () => {
   await page.getByLabel('Display name').fill(name);
   await expect(page.getByLabel('Matching climbers').getByRole('status')).toHaveText('No user with that name.');
   await page.getByRole('button', { name: 'Send invite', exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: /^No user with that name\.$/ }).last()).toBeVisible();
+  await expect(
+    page
+      .getByRole('status')
+      .filter({ hasText: /^No user with that name\.$/ })
+      .last()
+  ).toBeVisible();
 });
 
 test("a friend's logbook shows all their sends, or only those you share", async () => {
@@ -102,15 +134,29 @@ test("a friend's logbook shows all their sends, or only those you share", async 
   await befriend(b, c);
   // Ben owns three problems; Ben logs two of them and Cal logs one of those.
   const { boulder, problem } = await seedLocation(b.request, 'test_friends_ben_loc_', { media: false });
-  const extra = (name: string) => ({ id: crypto.randomUUID(), name, grade: 'V3 (6A/6A+)', description: 'Another line.', imageIds: [], videoIds: [] });
+  const extra = (name: string) => ({
+    id: crypto.randomUUID(),
+    name,
+    grade: 'V3 (6A/6A+)',
+    description: 'Another line.',
+    imageIds: [],
+    videoIds: [],
+  });
   const [shared, solo] = [extra('Shared send'), extra('Solo send')];
-  expect((await editGuide(b.request, g => find(g, boulder.id).problems.push(shared, solo))).status(), 'Problems added').toBe(200);
+  expect(
+    (await editGuide(b.request, g => find(g, boulder.id).problems.push(shared, solo))).status(),
+    'Problems added'
+  ).toBe(200);
   await logProblem(b.request, shared.id);
   await logProblem(b.request, solo.id);
   await logProblem(c.request, shared.id);
   // Cal opens Ben's logbook from the Friends page.
   const page = await friendsPage(c);
-  await section(page, /^Your friends/).locator('.problem-row').filter({ hasText: b.account.name }).getByRole('button', { name: 'View logbook', exact: true }).click();
+  await section(page, /^Your friends/)
+    .locator('.problem-row')
+    .filter({ hasText: b.account.name })
+    .getByRole('button', { name: 'View logbook', exact: true })
+    .click();
   await expect(page.getByRole('heading', { level: 1, name: `${b.account.name}'s logbook`, exact: true })).toBeVisible();
   await expect(page.getByText('2 problems completed', { exact: true })).toBeVisible();
   const entries = page.locator('.problem-list .problem-row');
@@ -127,12 +173,16 @@ test("a friend's logbook shows all their sends, or only those you share", async 
 test("invites can't go to yourself, and repeated or out-of-date actions change nothing", async () => {
   const [g, h] = [gil.current, hal.current];
   const page = await friendsPage(g);
-  const nameBox = page.getByLabel('Display name'), send = page.getByRole('button', { name: 'Send invite', exact: true });
+  const nameBox = page.getByLabel('Display name'),
+    send = page.getByRole('button', { name: 'Send invite', exact: true });
   await test.step('yourself', async () => {
     // Your own name isn't offered, and the API refuses an invite to yourself.
     await nameBox.fill(g.account.name);
     await expect(page.getByLabel('Matching climbers').getByRole('status')).toHaveText('No user with that name.');
-    expect((await friendsAction(g.request, 'request', { target: g.account.id })).status(), 'API: inviting yourself refused').toBeGreaterThanOrEqual(400);
+    expect(
+      (await friendsAction(g.request, 'request', { target: g.account.id })).status(),
+      'API: inviting yourself refused'
+    ).toBeGreaterThanOrEqual(400);
     expect(await (await friendsAction(g.request, 'list')).json(), 'No self-friendship').toEqual([]);
   });
   await test.step('inviting twice', async () => {
@@ -141,7 +191,9 @@ test("invites can't go to yourself, and repeated or out-of-date actions change n
       await send.click();
       await expect(page.getByRole('status').filter({ hasText: /^Invite sent\.$/ })).toBeVisible();
     }
-    expect(await (await friendsAction(h.request, 'list')).json(), 'One invite received').toEqual([expect.objectContaining({ id: g.account.id, status: 'pending', incoming: true })]);
+    expect(await (await friendsAction(h.request, 'list')).json(), 'One invite received').toEqual([
+      expect.objectContaining({ id: g.account.id, status: 'pending', incoming: true }),
+    ]);
   });
   await test.step('accepting an invite that was cancelled', async () => {
     const theirs = await friendsPage(h);
@@ -161,19 +213,23 @@ test("invites can't go to yourself, and repeated or out-of-date actions change n
     await nameBox.fill(h.account.name);
     await send.click();
     await expect(page.getByRole('status').filter({ hasText: 'You are already friends.' })).toBeVisible();
-    expect(await (await friendsAction(g.request, 'list')).json(), 'Still one friendship, no extra invite').toEqual([expect.objectContaining({ id: h.account.id, status: 'accepted' })]);
+    expect(await (await friendsAction(g.request, 'list')).json(), 'Still one friendship, no extra invite').toEqual([
+      expect.objectContaining({ id: h.account.id, status: 'accepted' }),
+    ]);
   });
 });
 
 // Regression: the /api/friends route used to replace every refusal with one message, "Friends request failed. Check
 // that the Friends migration is applied...", so a user couldn't tell what went wrong.
 const bulkPrefix = 'test_friends_bulk_';
-test.afterAll(async ({}, info) => { await deleteAccountsWithPrefix(bulkPrefix, info); });
+test.afterAll(async ({}, info) => {
+  await deleteAccountsWithPrefix(bulkPrefix, info);
+});
 
 /** Send a friends action and return its status and error message. */
-async function refused(user: User, action: string, values: { target?: string, name?: string }) {
+async function refused(user: User, action: string, values: { target?: string; name?: string }) {
   const response = await friendsAction(user.request, action, values);
-  return { status: response.status(), error: response.ok() ? '' : (await response.json()).error as string };
+  return { status: response.status(), error: response.ok() ? '' : ((await response.json()).error as string) };
 }
 
 test('refused friend actions explain why', async () => {
@@ -195,16 +251,24 @@ test('the 50 pending invite limit is explained', async () => {
   const k = kim.current;
   // Fifty other accounts to invite.
   const targets: TestAccount[] = [];
-  for (let n = 0; n < 51; n += 10) targets.push(...await Promise.all(Array.from({ length: Math.min(10, 51 - n) }, () => createApiAccount(bulkPrefix))));
-  for (const target of targets.slice(0, 50)) expect((await friendsAction(k.request, 'request', { target: target.id })).status(), 'Invite sent').toBe(200);
+  for (let n = 0; n < 51; n += 10)
+    targets.push(
+      ...(await Promise.all(Array.from({ length: Math.min(10, 51 - n) }, () => createApiAccount(bulkPrefix))))
+    );
+  for (const target of targets.slice(0, 50))
+    expect((await friendsAction(k.request, 'request', { target: target.id })).status(), 'Invite sent').toBe(200);
   // The 51st is refused, through the API and the Friends page.
   const result = await refused(k, 'request', { target: targets[50].id });
   expect(result.status, 'Refused').toBe(400);
-  expect(result.error, 'Explains the limit').toBe('You can have up to 50 pending invites. Cancel one before sending another.');
+  expect(result.error, 'Explains the limit').toBe(
+    'You can have up to 50 pending invites. Cancel one before sending another.'
+  );
   const page = await friendsPage(k);
   await page.getByLabel('Display name').fill(targets[50].name);
   await page.getByRole('button', { name: 'Send invite', exact: true }).click();
-  await expect(page.getByRole('alert')).toHaveText('You can have up to 50 pending invites. Cancel one before sending another.');
+  await expect(page.getByRole('alert')).toHaveText(
+    'You can have up to 50 pending invites. Cancel one before sending another.'
+  );
 });
 
 test('friend actions after the session ended ask you to log in', async ({ browser }) => {
@@ -212,6 +276,11 @@ test('friend actions after the session ended ask you to log in', async ({ browse
   const other = await signIn(browser, ivy.current.account);
   try {
     expect((await other.request.post('/api/logout')).status(), 'Logged out').toBe(200);
-    expect(await refused({ ...ivy.current, ...other }, 'list', {}), 'API: asked to log in').toEqual({ status: 401, error: 'Log in to use Friends.' });
-  } finally { await other.context.close(); }
+    expect(await refused({ ...ivy.current, ...other }, 'list', {}), 'API: asked to log in').toEqual({
+      status: 401,
+      error: 'Log in to use Friends.',
+    });
+  } finally {
+    await other.context.close();
+  }
 });

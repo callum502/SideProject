@@ -66,7 +66,9 @@ export function findRecord(saved: any, id: string): any {
   for (const location of saved.locations) {
     if (location.id === id) return location;
     for (const item of [...(location.photos || []), ...location.boulders]) if (item.id === id) return item;
-    for (const boulder of location.boulders) for (const item of [...boulder.images, ...(boulder.videos || []), ...(boulder.problems || [])]) if (item.id === id) return item;
+    for (const boulder of location.boulders)
+      for (const item of [...boulder.images, ...(boulder.videos || []), ...(boulder.problems || [])])
+        if (item.id === id) return item;
   }
 }
 
@@ -86,7 +88,10 @@ export async function cleanup(page: Page, prefix: string) {
   const locations = current.locations.filter((l: any) => !l.name.startsWith(prefix));
   if (locations.length === current.locations.length) return;
   // Persist cleanup through the authenticated app API, sending only the removed records.
-  const response = await page.request.put('/api/guide', { data: { changes: guideChanges(current, { locations }) }, timeout: 10000 });
+  const response = await page.request.put('/api/guide', {
+    data: { changes: guideChanges(current, { locations }) },
+    timeout: 10000,
+  });
   if (!response.ok()) throw new Error('Cleanup failed: HTTP ' + response.status());
 }
 
@@ -99,7 +104,10 @@ export async function cleanup(page: Page, prefix: string) {
  */
 function skipCleanupForHeadedRetry(prefix: string, info: TestInfo) {
   if (process.env.PW_KEEP_OPEN !== '1') return false;
-  info.annotations.push({ type: 'cleanup skipped', description: `Headed retry: ${prefix} data was kept so the open browser still shows it. The next normal run removes it.` });
+  info.annotations.push({
+    type: 'cleanup skipped',
+    description: `Headed retry: ${prefix} data was kept so the open browser still shows it. The next normal run removes it.`,
+  });
   return true;
 }
 
@@ -113,8 +121,9 @@ function skipCleanupForHeadedRetry(prefix: string, info: TestInfo) {
 export async function deleteLocationsWithPrefix(page: Page, prefix: string, info: TestInfo) {
   if (skipCleanupForHeadedRetry(prefix, info)) return;
   // Catch cleanup failures so they do not replace the actual test result.
-  try { await cleanup(page, prefix); }
-  catch (error) {
+  try {
+    await cleanup(page, prefix);
+  } catch (error) {
     const warning = 'Cleanup warning for ' + prefix + ': ' + String(error);
     console.warn(warning);
     info.annotations.push({ type: 'cleanup warning', description: warning });
@@ -159,7 +168,12 @@ export async function assertLocationRemovedFromDB(page: Page, locationId: string
  * @param boulderId - ID of the boulder to locate.
  * @param expectedFields - Submitted values to verify against persisted data.
  */
-export async function assertBoulderExistsDB(page: Page, locationId: string, boulderId: string, expectedFields: Record<string, string>) {
+export async function assertBoulderExistsDB(
+  page: Page,
+  locationId: string,
+  boulderId: string,
+  expectedFields: Record<string, string>
+) {
   // Fetch fresh persisted data, independently of the current page UI.
   const savedGuide = await guide(page);
   const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
@@ -198,7 +212,13 @@ export async function assertBoulderRemovedFromDB(page: Page, locationId: string,
  * @param problemId - ID of the problem to locate.
  * @param expectedFields - Submitted values to verify against persisted data.
  */
-export async function assertProblemExistsDB(page: Page, locationId: string, boulderId: string, problemId: string, expectedFields: Record<string, string>) {
+export async function assertProblemExistsDB(
+  page: Page,
+  locationId: string,
+  boulderId: string,
+  problemId: string,
+  expectedFields: Record<string, string>
+) {
   // Fetch fresh persisted data, independently of the current page UI.
   const savedGuide = await guide(page);
   const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
@@ -243,7 +263,11 @@ export async function assertProblemRemovedFromDB(page: Page, locationId: string,
  * @param locationId - ID of the location to locate.
  * @param oldFields - Field names mapped to their values before the edit.
  */
-export async function assertLocationOldDetailsRemovedFromDB(page: Page, locationId: string, oldFields: Record<string, string>) {
+export async function assertLocationOldDetailsRemovedFromDB(
+  page: Page,
+  locationId: string,
+  oldFields: Record<string, string>
+) {
   // Fetch fresh persisted data, independently of the current page UI.
   const savedGuide = await guide(page);
   const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
@@ -266,7 +290,12 @@ export async function assertLocationOldDetailsRemovedFromDB(page: Page, location
  * @param boulderId - ID of the boulder to locate.
  * @param oldFields - Field names mapped to their values before the edit.
  */
-export async function assertBoulderOldDetailsRemovedFromDB(page: Page, locationId: string, boulderId: string, oldFields: Record<string, string>) {
+export async function assertBoulderOldDetailsRemovedFromDB(
+  page: Page,
+  locationId: string,
+  boulderId: string,
+  oldFields: Record<string, string>
+) {
   // Fetch fresh persisted data, independently of the current page UI.
   const savedGuide = await guide(page);
   const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
@@ -293,7 +322,13 @@ export async function assertBoulderOldDetailsRemovedFromDB(page: Page, locationI
  * @param problemId - ID of the problem to locate.
  * @param oldFields - Field names mapped to their values before the edit.
  */
-export async function assertProblemOldDetailsRemovedFromDB(page: Page, locationId: string, boulderId: string, problemId: string, oldFields: Record<string, string>) {
+export async function assertProblemOldDetailsRemovedFromDB(
+  page: Page,
+  locationId: string,
+  boulderId: string,
+  problemId: string,
+  oldFields: Record<string, string>
+) {
   // Fetch fresh persisted data, independently of the current page UI.
   const savedGuide = await guide(page);
   const savedLocation = savedGuide.locations.find((item: { id: string }) => item.id === locationId);
@@ -314,7 +349,7 @@ export async function assertProblemOldDetailsRemovedFromDB(page: Page, locationI
 }
 
 /** Profile form values as entered on the sign-up and Your profile forms. */
-export type ProfileFormFields = { name: string, heightFeet: string, heightInches: string, apeIndex: string };
+export type ProfileFormFields = { name: string; heightFeet: string; heightInches: string; apeIndex: string };
 
 /**
  * Convert profile form values to the values stored and returned by the API.
@@ -351,12 +386,19 @@ export async function sessionUser(page: Page) {
  * @throws If the admin key is missing, Supabase is not local or the request fails.
  */
 export async function adminRequest(route: string, init: RequestInit = {}) {
-  const base = process.env.E2E_SUPABASE_URL, key = process.env.E2E_ADMIN_KEY;
+  const base = process.env.E2E_SUPABASE_URL,
+    key = process.env.E2E_ADMIN_KEY;
   if (!base || !key) throw new Error('Account cleanup requires SUPABASE_URL and SUPABASE_SECRET_KEY in .env.local.');
   // Cleanup deletes accounts, so never send it anywhere but local Supabase.
-  if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname)) throw new Error('Account cleanup requires local Supabase.');
-  const response = await fetch(base.replace(/\/$/, '') + route, { ...init, headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10000) });
-  if (!response.ok) throw new Error('Supabase admin request ' + route.split('?')[0] + ' failed: HTTP ' + response.status);
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname))
+    throw new Error('Account cleanup requires local Supabase.');
+  const response = await fetch(base.replace(/\/$/, '') + route, {
+    ...init,
+    headers: { apikey: key, Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!response.ok)
+    throw new Error('Supabase admin request ' + route.split('?')[0] + ' failed: HTTP ' + response.status);
   return response;
 }
 
@@ -373,7 +415,10 @@ export async function cleanupAccounts(prefix: string) {
   const { users } = await (await adminRequest('/auth/v1/admin/users?page=1&per_page=1000')).json();
   for (const user of users.filter((u: { email?: string }) => u.email?.startsWith(prefix))) {
     // Release owned records and files, then delete the auth user and its profile.
-    await adminRequest('/rest/v1/rpc/prepare_account_deletion', { method: 'POST', body: JSON.stringify({ target_user: user.id }) });
+    await adminRequest('/rest/v1/rpc/prepare_account_deletion', {
+      method: 'POST',
+      body: JSON.stringify({ target_user: user.id }),
+    });
     await adminRequest('/auth/v1/admin/users/' + encodeURIComponent(user.id), { method: 'DELETE' });
   }
 }
@@ -387,8 +432,9 @@ export async function cleanupAccounts(prefix: string) {
 export async function deleteAccountsWithPrefix(prefix: string, info: TestInfo) {
   if (skipCleanupForHeadedRetry(prefix, info)) return;
   // Catch cleanup failures so they do not replace the actual test result.
-  try { await cleanupAccounts(prefix); }
-  catch (error) {
+  try {
+    await cleanupAccounts(prefix);
+  } catch (error) {
     const warning = 'Cleanup warning for ' + prefix + ': ' + String(error);
     console.warn(warning);
     info.annotations.push({ type: 'cleanup warning', description: warning });
@@ -407,11 +453,19 @@ export async function assertAccountExistsDB(page: Page, accountId: string, expec
   const user = await sessionUser(page);
   expect(user, 'API/DB: account is signed in').not.toBeNull();
   expect(user.id, 'API/DB: session belongs to this account').toBe(accountId);
-  expect(user, 'API/DB: account has the expected saved fields').toMatchObject({ ...expectedFields, profileComplete: true });
+  expect(user, 'API/DB: account has the expected saved fields').toMatchObject({
+    ...expectedFields,
+    profileComplete: true,
+  });
   // Fetch the public profile other users see.
-  const response = await page.request.get('/api/public-profile?id=' + encodeURIComponent(accountId), { timeout: 10000 });
+  const response = await page.request.get('/api/public-profile?id=' + encodeURIComponent(accountId), {
+    timeout: 10000,
+  });
   expect(response.status(), 'API/DB: public profile exists').toBe(200);
-  expect(await response.json(), 'API/DB: public profile has the expected saved fields').toMatchObject({ id: accountId, ...expectedFields });
+  expect(await response.json(), 'API/DB: public profile has the expected saved fields').toMatchObject({
+    id: accountId,
+    ...expectedFields,
+  });
 }
 
 /**
@@ -422,11 +476,17 @@ export async function assertAccountExistsDB(page: Page, accountId: string, expec
  * @param accountId - ID of the edited account.
  * @param oldFields - Saved field names mapped to their values before the edit.
  */
-export async function assertAccountOldDetailsRemovedFromDB(page: Page, accountId: string, oldFields: Record<string, unknown>) {
+export async function assertAccountOldDetailsRemovedFromDB(
+  page: Page,
+  accountId: string,
+  oldFields: Record<string, unknown>
+) {
   // Fetch fresh session and public profile data.
   const user = await sessionUser(page);
   expect(user?.id, 'API/DB: edited account is still signed in').toBe(accountId);
-  const response = await page.request.get('/api/public-profile?id=' + encodeURIComponent(accountId), { timeout: 10000 });
+  const response = await page.request.get('/api/public-profile?id=' + encodeURIComponent(accountId), {
+    timeout: 10000,
+  });
   expect(response.status(), 'API/DB: edited public profile still exists').toBe(200);
   const profile = await response.json();
   // Check every old value separately so one changed field cannot hide another unchanged field.
@@ -443,14 +503,19 @@ export async function assertAccountOldDetailsRemovedFromDB(page: Page, accountId
  * @param page - Page that was signed in as the deleted account.
  * @param account - The deleted account's ID, email and password.
  */
-export async function assertAccountRemovedFromDB(page: Page, account: { id: string, email: string, password: string }) {
+export async function assertAccountRemovedFromDB(page: Page, account: { id: string; email: string; password: string }) {
   // Verify the server session was ended.
   expect(await sessionUser(page), 'API/DB: deleted account session ended').toBeNull();
   // Verify the public profile is gone.
-  const profile = await page.request.get('/api/public-profile?id=' + encodeURIComponent(account.id), { timeout: 10000 });
+  const profile = await page.request.get('/api/public-profile?id=' + encodeURIComponent(account.id), {
+    timeout: 10000,
+  });
   expect(profile.status(), 'API/DB: public profile was removed').toBe(404);
   // Verify the credentials are rejected.
-  const login = await page.request.post('/api/login', { data: { email: account.email, password: account.password }, timeout: 10000 });
+  const login = await page.request.post('/api/login', {
+    data: { email: account.email, password: account.password },
+    timeout: 10000,
+  });
   expect(login.status(), 'API/DB: deleted account can no longer log in').toBe(401);
 }
 
@@ -464,14 +529,24 @@ export async function assertAccountRemovedFromDB(page: Page, account: { id: stri
  */
 export async function emailCode(email: string, after: Date) {
   const base = process.env.E2E_MAILPIT_URL || 'http://127.0.0.1:54324';
-  if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname)) throw new Error('Reading email requires local Mailpit.');
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(new URL(base).hostname))
+    throw new Error('Reading email requires local Mailpit.');
   let code: string | undefined;
-  await expect.poll(async () => {
-    const search = await (await fetch(base + '/api/v1/search?query=' + encodeURIComponent('to:"' + email + '"'))).json();
-    const message = search.messages?.find((m: { Created: string }) => new Date(m.Created) >= new Date(after.getTime() - 1000));
-    if (!message) return undefined;
-    const body = await (await fetch(base + '/api/v1/message/' + message.ID)).json();
-    return code = (body.Text || body.HTML || '').match(/\b\d{6}\b/)?.[0];
-  }, { message: 'Email with a code arrives for ' + email, timeout: 15000 }).toBeTruthy();
+  await expect
+    .poll(
+      async () => {
+        const search = await (
+          await fetch(base + '/api/v1/search?query=' + encodeURIComponent('to:"' + email + '"'))
+        ).json();
+        const message = search.messages?.find(
+          (m: { Created: string }) => new Date(m.Created) >= new Date(after.getTime() - 1000)
+        );
+        if (!message) return undefined;
+        const body = await (await fetch(base + '/api/v1/message/' + message.ID)).json();
+        return (code = (body.Text || body.HTML || '').match(/\b\d{6}\b/)?.[0]);
+      },
+      { message: 'Email with a code arrives for ' + email, timeout: 15000 }
+    )
+    .toBeTruthy();
   return code!;
 }

@@ -12,12 +12,25 @@ const TIMEOUT_MS = 6 * 60 * 1000;
 // Claude Code: CLAUDE_CODE_PATH, else `claude` on PATH, else the copy bundled with the VS Code extension.
 export async function findClaude() {
   if (process.env.CLAUDE_CODE_PATH) return process.env.CLAUDE_CODE_PATH;
-  const onPath = await new Promise(resolve => execFile(process.platform === 'win32' ? 'where' : 'which', ['claude'], (err, out) => resolve(err ? null : out.split(/\r?\n/)[0].trim() || null)));
+  const onPath = await new Promise(resolve =>
+    execFile(process.platform === 'win32' ? 'where' : 'which', ['claude'], (err, out) =>
+      resolve(err ? null : out.split(/\r?\n/)[0].trim() || null)
+    )
+  );
   if (onPath) return onPath;
   const extDir = path.join(os.homedir(), '.vscode', 'extensions');
-  const exts = (await readdir(extDir).catch(() => [])).filter(d => d.startsWith('anthropic.claude-code-')).sort().reverse();
+  const exts = (await readdir(extDir).catch(() => []))
+    .filter(d => d.startsWith('anthropic.claude-code-'))
+    .sort()
+    .reverse();
   for (const ext of exts) {
-    const bin = path.join(extDir, ext, 'resources', 'native-binary', process.platform === 'win32' ? 'claude.exe' : 'claude');
+    const bin = path.join(
+      extDir,
+      ext,
+      'resources',
+      'native-binary',
+      process.platform === 'win32' ? 'claude.exe' : 'claude'
+    );
     if (await stat(bin).catch(() => null)) return bin;
   }
   return null;
@@ -26,19 +39,41 @@ export async function findClaude() {
 export const RESULT_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['category', 'confidence', 'summary', 'cause', 'evidence', 'fix_description', 'edits', 'bug_title', 'bug_description', 'matching_bug_id', 'match_reason'],
+  required: [
+    'category',
+    'confidence',
+    'summary',
+    'cause',
+    'evidence',
+    'fix_description',
+    'edits',
+    'bug_title',
+    'bug_description',
+    'matching_bug_id',
+    'match_reason',
+  ],
   properties: {
     category: { type: 'string', enum: ['ui_change', 'timing', 'app_bug', 'unclear'] },
     confidence: { type: 'string', enum: ['low', 'medium', 'high'] },
     summary: { type: 'string', description: 'One or two sentences: what went wrong.' },
     cause: { type: 'string', description: 'The likely cause, in a short paragraph.' },
-    evidence: { type: 'array', items: { type: 'string' }, description: 'Specific observations that support the verdict.' },
-    fix_description: { type: 'string', description: 'For ui_change or timing: what the proposed test change does. Empty otherwise.' },
+    evidence: {
+      type: 'array',
+      items: { type: 'string' },
+      description: 'Specific observations that support the verdict.',
+    },
+    fix_description: {
+      type: 'string',
+      description: 'For ui_change or timing: what the proposed test change does. Empty otherwise.',
+    },
     edits: {
       type: 'array',
-      description: 'For ui_change or timing: exact find/replace edits to files under tests/. Empty for app_bug and unclear.',
+      description:
+        'For ui_change or timing: exact find/replace edits to files under tests/. Empty for app_bug and unclear.',
       items: {
-        type: 'object', additionalProperties: false, required: ['file', 'find', 'replace'],
+        type: 'object',
+        additionalProperties: false,
+        required: ['file', 'find', 'replace'],
         properties: {
           file: { type: 'string', description: 'Repo-relative path under tests/, e.g. tests/e2e/testHelpers.ts' },
           find: { type: 'string', description: 'Text copied exactly from the current file; must occur exactly once.' },
@@ -47,9 +82,21 @@ export const RESULT_SCHEMA = {
       },
     },
     bug_title: { type: 'string', description: 'For app_bug: a concise bug report title. Empty otherwise.' },
-    bug_description: { type: 'string', description: 'For app_bug: what happened, what was expected, steps to reproduce and the evidence. Empty otherwise.' },
-    matching_bug_id: { type: 'string', description: 'For app_bug: the id (e.g. bug-003) of an existing report with the same root cause, open or closed. Empty if none matches.' },
-    match_reason: { type: 'string', description: 'When matching_bug_id is set: why this failure is the same bug, and whether a closed report looks like a regression. Empty otherwise.' },
+    bug_description: {
+      type: 'string',
+      description:
+        'For app_bug: what happened, what was expected, steps to reproduce and the evidence. Empty otherwise.',
+    },
+    matching_bug_id: {
+      type: 'string',
+      description:
+        'For app_bug: the id (e.g. bug-003) of an existing report with the same root cause, open or closed. Empty if none matches.',
+    },
+    match_reason: {
+      type: 'string',
+      description:
+        'When matching_bug_id is set: why this failure is the same bug, and whether a closed report looks like a regression. Empty otherwise.',
+    },
   },
 };
 
@@ -67,44 +114,94 @@ For ui_change or timing, propose the smallest change to files under tests/ as ex
 
 For app_bug, also check the existing bug reports listed in the prompt before treating this as a new bug. If one has the same root cause, set matching_bug_id to its id and explain the match in match_reason. A report that already includes this test is the likeliest match. If that report is closed, say whether the bug looks like it has come back. Match on the cause, not just the same test or a similar error message; if unsure, leave matching_bug_id empty. Still write bug_title and bug_description, so a new report can be made if the match is rejected.`;
 
-const run = (cmd, args, cwd) => new Promise(resolve => execFile(cmd, args, { cwd, maxBuffer: 8 * 1024 * 1024 }, (err, out) => resolve(err ? '' : out)));
-const clip = (text, max) => text.length > max ? text.slice(0, max) + `\n… (${text.length - max} more characters not shown)` : text;
-const fmtMs = ms => ms == null ? '?' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
-const rel = (root, file) => file ? path.relative(root, file).split(path.sep).join('/') : '';
+const run = (cmd, args, cwd) =>
+  new Promise(resolve =>
+    execFile(cmd, args, { cwd, maxBuffer: 8 * 1024 * 1024 }, (err, out) => resolve(err ? '' : out))
+  );
+const clip = (text, max) =>
+  text.length > max ? text.slice(0, max) + `\n… (${text.length - max} more characters not shown)` : text;
+const fmtMs = ms => (ms == null ? '?' : ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`);
+const rel = (root, file) => (file ? path.relative(root, file).split(path.sep).join('/') : '');
 
 // Everything the model should know about one failed attempt, as plain text.
 export async function buildPrompt({ root, runsDir, run: testRun, test, attempt, bugs = [] }) {
   const dir = path.join(runsDir, testRun.id);
-  const attempts = [...(test.attempts?.length ? test.attempts : [test])].sort((a, b) => (a.retry ?? 0) - (b.retry ?? 0));
+  const attempts = [...(test.attempts?.length ? test.attempts : [test])].sort(
+    (a, b) => (a.retry ?? 0) - (b.retry ?? 0)
+  );
   const lines = [];
   lines.push(`# Failed test\n${test.titlePath.join(' › ')} (tests/e2e/${test.file}:${test.line})`);
-  lines.push(`Run started ${new Date(testRun.startedAt).toISOString()}; analysing attempt ${(attempt.retry ?? 0) + 1} of ${attempts.length}.`);
-  lines.push('\n## Attempts\n' + attempts.map(a => `- Attempt ${(a.retry ?? 0) + 1}: ${a.state}, ${fmtMs(a.duration)}${a.steps?.find(s => s.state === 'failed') ? `, failed in step "${a.steps.find(s => s.state === 'failed').title}"` : ''}`).join('\n'));
+  lines.push(
+    `Run started ${new Date(testRun.startedAt).toISOString()}; analysing attempt ${(attempt.retry ?? 0) + 1} of ${attempts.length}.`
+  );
+  lines.push(
+    '\n## Attempts\n' +
+      attempts
+        .map(a => {
+          const failedStep = a.steps?.find(s => s.state === 'failed');
+          const where = failedStep ? `, failed in step "${failedStep.title}"` : '';
+          return `- Attempt ${(a.retry ?? 0) + 1}: ${a.state}, ${fmtMs(a.duration)}${where}`;
+        })
+        .join('\n')
+  );
 
-  lines.push('\n## Steps (analysed attempt)\n' + ((attempt.steps || []).map(s => `- ${s.title}: ${s.state}${s.duration != null ? `, ${fmtMs(s.duration)}` : ''}`).join('\n') || 'none recorded'));
-  lines.push('\n## Errors (analysed attempt)\n' + ((attempt.errors || []).map(e => [
-    e.location ? `At ${rel(root, e.location.file)}:${e.location.line}:${e.location.column}` : '',
-    '```\n' + clip(String(e.message || e.value || ''), 6000) + '\n```',
-    e.snippet ? 'Code:\n```\n' + clip(String(e.snippet), 3000) + '\n```' : '',
-  ].filter(Boolean).join('\n')).join('\n\n') || 'none recorded'));
+  lines.push(
+    '\n## Steps (analysed attempt)\n' +
+      ((attempt.steps || [])
+        .map(s => `- ${s.title}: ${s.state}${s.duration != null ? `, ${fmtMs(s.duration)}` : ''}`)
+        .join('\n') || 'none recorded')
+  );
+  lines.push(
+    '\n## Errors (analysed attempt)\n' +
+      ((attempt.errors || [])
+        .map(e =>
+          [
+            e.location ? `At ${rel(root, e.location.file)}:${e.location.line}:${e.location.column}` : '',
+            '```\n' + clip(String(e.message || e.value || ''), 6000) + '\n```',
+            e.snippet ? 'Code:\n```\n' + clip(String(e.snippet), 3000) + '\n```' : '',
+          ]
+            .filter(Boolean)
+            .join('\n')
+        )
+        .join('\n\n') || 'none recorded')
+  );
 
   const actions = attempt.actions || [];
   if (actions.length) {
     const shown = actions.length > 160 ? [...actions.slice(0, 40), null, ...actions.slice(-120)] : actions;
-    lines.push('\n## Browser actions (time into the test, duration, code)\n' + shown.map(a => a === null ? '… (middle actions omitted)'
-      : a.kind === 'step' ? `### step: ${a.title}` : `- [${fmtMs(a.t)}] ${a.title} (${fmtMs(a.duration)})${a.failed ? ' FAILED' : ''}${a.code ? ` — ${a.code}` : ''}${a.location ? ` @ ${a.location.file}:${a.location.line}` : ''}`).join('\n'));
+    lines.push(
+      '\n## Browser actions (time into the test, duration, code)\n' +
+        shown
+          .map(a => {
+            if (a === null) return '… (middle actions omitted)';
+            if (a.kind === 'step') return `### step: ${a.title}`;
+            const failed = a.failed ? ' FAILED' : '';
+            const code = a.code ? ` — ${a.code}` : '';
+            const location = a.location ? ` @ ${a.location.file}:${a.location.line}` : '';
+            return `- [${fmtMs(a.t)}] ${a.title} (${fmtMs(a.duration)})${failed}${code}${location}`;
+          })
+          .join('\n')
+    );
   }
 
   // How long the same test and its steps took when they passed, to spot timing problems.
   const history = [];
   for (const id of (await readdir(runsDir).catch(() => [])).sort().reverse()) {
-    const other = id === testRun.id ? testRun : JSON.parse(await readFile(path.join(runsDir, id, 'run.json'), 'utf8').catch(() => 'null'));
+    const other =
+      id === testRun.id
+        ? testRun
+        : JSON.parse(await readFile(path.join(runsDir, id, 'run.json'), 'utf8').catch(() => 'null'));
     const t = other?.tests?.[test.id];
     for (const a of (t?.attempts || []).filter(a => a.state === 'passed')) {
-      history.push(`- ${new Date(other.startedAt).toISOString().slice(0, 16)}: passed in ${fmtMs(a.duration)} (${(a.steps || []).map(s => `${s.title} ${fmtMs(s.duration)}`).join(', ') || 'no steps'})`);
+      const steps = (a.steps || []).map(s => `${s.title} ${fmtMs(s.duration)}`).join(', ') || 'no steps';
+      const started = new Date(other.startedAt).toISOString().slice(0, 16);
+      history.push(`- ${started}: passed in ${fmtMs(a.duration)} (${steps})`);
     }
   }
-  lines.push('\n## Previous passes of this test (recent runs kept by the dashboard)\n' + (history.slice(0, 8).join('\n') || 'none kept'));
+  lines.push(
+    '\n## Previous passes of this test (recent runs kept by the dashboard)\n' +
+      (history.slice(0, 8).join('\n') || 'none kept')
+  );
 
   // Playwright's text snapshot of the page at the failure, and the screenshot (readable with the Read tool).
   const context = (attempt.attachments || []).find(a => a.name === 'error-context' && a.file);
@@ -113,13 +210,18 @@ export async function buildPrompt({ root, runsDir, run: testRun, test, attempt, 
     if (text) lines.push('\n## Page snapshot at the failure (accessibility tree)\n' + clip(text, 30000));
   }
   const shot = (attempt.attachments || []).find(a => a.file && a.contentType?.startsWith('image/'));
-  if (shot) lines.push(`\n## Screenshot at the failure\nRead this image with the Read tool: ${rel(root, path.join(dir, shot.file))}`);
+  if (shot)
+    lines.push(
+      `\n## Screenshot at the failure\nRead this image with the Read tool: ${rel(root, path.join(dir, shot.file))}`
+    );
 
   // Recent app changes: the main clue for a UI change.
   const log = await run('git', ['log', '-8', '--date=short', '--format=%h %ad %s', '--', 'src', 'server.mjs'], root);
   const uncommitted = await run('git', ['diff', 'HEAD', '--', 'src', 'server.mjs'], root);
   lines.push('\n## Recent commits to the app (src/, server.mjs)\n' + (log.trim() || 'none'));
-  lines.push('\n## Uncommitted app changes\n' + (uncommitted.trim() ? '```diff\n' + clip(uncommitted, 20000) + '\n```' : 'none'));
+  lines.push(
+    '\n## Uncommitted app changes\n' + (uncommitted.trim() ? '```diff\n' + clip(uncommitted, 20000) + '\n```' : 'none')
+  );
 
   lines.push('\n## Existing bug reports\n' + (describeBugs(bugs, test.id) || 'none'));
 
@@ -131,38 +233,100 @@ export async function buildPrompt({ root, runsDir, run: testRun, test, attempt, 
 // tests it covers and how its latest occurrence failed, so the model can compare causes.
 function describeBugs(bugs, testId) {
   const has = b => b.occurrences.some(o => o.testId === testId);
-  return [...bugs].sort((a, b) => (has(b) - has(a)) || b.number - a.number).slice(0, 30).map(b => {
-    const latest = b.occurrences.at(-1);
-    const tests = [...new Set(b.occurrences.map(o => o.title))];
-    return [`### ${b.id}: ${b.title} (${b.status}${has(b) ? ', already includes this test' : ''})`,
-      clip(String(b.description || ''), 800),
-      `Tests: ${tests.join('; ') || 'none'}`,
-      latest ? `Latest occurrence: ${new Date(latest.addedAt).toISOString().slice(0, 10)}${latest.step ? `, failed in step "${latest.step}"` : ''}: ${clip(String(latest.error || '').split('\n').find(l => l.trim()) || 'no error recorded', 300)}` : ''].filter(Boolean).join('\n');
-  }).join('\n\n');
+  return [...bugs]
+    .sort((a, b) => has(b) - has(a) || b.number - a.number)
+    .slice(0, 30)
+    .map(b => {
+      const latest = b.occurrences.at(-1);
+      const tests = [...new Set(b.occurrences.map(o => o.title))];
+      let occurrence = '';
+      if (latest) {
+        const date = new Date(latest.addedAt).toISOString().slice(0, 10);
+        const step = latest.step ? `, failed in step "${latest.step}"` : '';
+        const error = String(latest.error || '')
+          .split('\n')
+          .find(l => l.trim());
+        occurrence = `Latest occurrence: ${date}${step}: ${clip(error || 'no error recorded', 300)}`;
+      }
+      return [
+        `### ${b.id}: ${b.title} (${b.status}${has(b) ? ', already includes this test' : ''})`,
+        clip(String(b.description || ''), 800),
+        `Tests: ${tests.join('; ') || 'none'}`,
+        occurrence,
+      ]
+        .filter(Boolean)
+        .join('\n');
+    })
+    .join('\n\n');
 }
 
 // Run one analysis. Resolves with { result, model, durationMs } or rejects; returns a cancel function via onStart.
 export function analyse({ claudePath, cwd, prompt, onStart }) {
   return new Promise((resolve, reject) => {
-    const settings = JSON.stringify({ permissions: { deny: ['Read(./.env)', 'Read(./.env.*)', 'Read(./**/.env)', 'Read(./**/.env.*)'] } });
-    const args = ['-p', '--output-format', 'json', '--json-schema', JSON.stringify(RESULT_SCHEMA),
-      '--tools', 'Read,Grep,Glob', '--allowedTools', 'Read,Grep,Glob', '--settings', settings,
-      '--append-system-prompt', INSTRUCTIONS, '--no-session-persistence', '--strict-mcp-config', '--disable-slash-commands'];
+    const settings = JSON.stringify({
+      permissions: { deny: ['Read(./.env)', 'Read(./.env.*)', 'Read(./**/.env)', 'Read(./**/.env.*)'] },
+    });
+    const args = [
+      '-p',
+      '--output-format',
+      'json',
+      '--json-schema',
+      JSON.stringify(RESULT_SCHEMA),
+      '--tools',
+      'Read,Grep,Glob',
+      '--allowedTools',
+      'Read,Grep,Glob',
+      '--settings',
+      settings,
+      '--append-system-prompt',
+      INSTRUCTIONS,
+      '--no-session-persistence',
+      '--strict-mcp-config',
+      '--disable-slash-commands',
+    ];
     const child = spawn(claudePath, args, { cwd, env: process.env, windowsHide: true });
-    let out = '', err = '', done = false;
-    const timer = setTimeout(() => { if (!done) { child.kill(); reject(new Error('The analysis took longer than 6 minutes and was stopped.')); } }, TIMEOUT_MS);
-    onStart?.(() => { done = true; clearTimeout(timer); child.kill(); reject(new Error('Cancelled.')); });
-    child.stdout.on('data', d => out += d);
-    child.stderr.on('data', d => err += d);
-    child.on('error', e => { clearTimeout(timer); reject(new Error('Could not start Claude Code: ' + e.message)); });
+    let out = '',
+      err = '',
+      done = false;
+    const timer = setTimeout(() => {
+      if (!done) {
+        child.kill();
+        reject(new Error('The analysis took longer than 6 minutes and was stopped.'));
+      }
+    }, TIMEOUT_MS);
+    onStart?.(() => {
+      done = true;
+      clearTimeout(timer);
+      child.kill();
+      reject(new Error('Cancelled.'));
+    });
+    child.stdout.on('data', d => (out += d));
+    child.stderr.on('data', d => (err += d));
+    child.on('error', e => {
+      clearTimeout(timer);
+      reject(new Error('Could not start Claude Code: ' + e.message));
+    });
     child.on('close', () => {
       clearTimeout(timer);
       if (done) return;
       done = true;
       let json;
-      try { json = JSON.parse(out); } catch { return reject(new Error((err || out || 'Claude Code returned no result.').trim().slice(0, 600))); }
-      if (json.is_error || !json.structured_output) return reject(new Error(String(json.result || json.subtype || 'The analysis failed.').slice(0, 600)));
-      resolve({ result: json.structured_output, model: Object.keys(json.modelUsage || {}).find(m => /opus|sonnet|fable/.test(m)) || Object.keys(json.modelUsage || {})[0] || null, durationMs: json.duration_ms, turns: json.num_turns });
+      try {
+        json = JSON.parse(out);
+      } catch {
+        return reject(new Error((err || out || 'Claude Code returned no result.').trim().slice(0, 600)));
+      }
+      if (json.is_error || !json.structured_output)
+        return reject(new Error(String(json.result || json.subtype || 'The analysis failed.').slice(0, 600)));
+      resolve({
+        result: json.structured_output,
+        model:
+          Object.keys(json.modelUsage || {}).find(m => /opus|sonnet|fable/.test(m)) ||
+          Object.keys(json.modelUsage || {})[0] ||
+          null,
+        durationMs: json.duration_ms,
+        turns: json.num_turns,
+      });
     });
     child.stdin.end(prompt);
   });

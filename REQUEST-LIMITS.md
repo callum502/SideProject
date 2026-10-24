@@ -2,16 +2,16 @@
 
 Restart the local server or redeploy to Render to activate these changes. No new SQL migration, external service or environment variable is needed.
 
-| Limit | Scope |
-| --- | --- |
-| 300 requests per 60 seconds | Per IP, API requests, media redirects and Google callback combined |
-| 240 requests per 60 seconds | Per signed-in account, across sessions and IPs |
+| Limit                                     | Scope                                                                                                                               |
+| ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| 300 requests per 60 seconds               | Per IP, API requests, media redirects and Google callback combined                                                                  |
+| 240 requests per 60 seconds               | Per signed-in account, across sessions and IPs                                                                                      |
 | 20 authentication requests per 10 minutes | Per IP, login/signup/confirmation/recovery/password reset/Google start and callback combined; also per account if already signed in |
-| 60 write requests per 60 seconds | Per IP and per account; non-authentication POST/PUT/DELETE requests combined |
-| 20 upload attempts per 60 seconds | Per IP and per account; images and videos combined |
-| 1 simultaneous upload | Per account |
-| 2 simultaneous uploads | Per server process |
-| 32 simultaneous handled requests | Per process, across the protected routes |
+| 60 write requests per 60 seconds          | Per IP and per account; non-authentication POST/PUT/DELETE requests combined                                                        |
+| 20 upload attempts per 60 seconds         | Per IP and per account; images and videos combined                                                                                  |
+| 1 simultaneous upload                     | Per account                                                                                                                         |
+| 2 simultaneous uploads                    | Per server process                                                                                                                  |
+| 32 simultaneous handled requests          | Per process, across the protected routes                                                                                            |
 
 Limits overlap; an upload counts towards general, write and upload limits. Authentication attempts count whether they succeed or fail. Starting Google sign-in and its callback use two authentication requests. Fixed windows begin with the first request; their allowance resets when that window expires. People sharing a network also share its IP allowance. IPv6 addresses are grouped by /64 to reduce address-rotation bypasses.
 

@@ -7,7 +7,6 @@ import { mediaFile } from './media';
 const prefix = 'test_photos_loc_';
 const user = testUser('test_photos_user_', prefix);
 
-
 test('uploads JPEG, PNG and WebP photos to a boulder with chosen names', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
@@ -18,11 +17,17 @@ test('uploads JPEG, PNG and WebP photos to a boulder with chosen names', async (
   await expect(dialog.getByLabel('Photo 3 name')).toHaveValue('Photo 3');
   await completeUpload(page, { names: ['Crimp face'] });
   // All three are shown and counted.
-  for (const name of ['Crimp face', 'Photo 2', 'Photo 3']) await expect(page.locator('.photo-grid').getByRole('img', { name, exact: true })).toBeVisible();
-  await expect(page.locator('.detail-banner .banner-bottom span').first()).toHaveText('1 problem · 3 photos · 0 videos');
+  for (const name of ['Crimp face', 'Photo 2', 'Photo 3'])
+    await expect(page.locator('.photo-grid').getByRole('img', { name, exact: true })).toBeVisible();
+  await expect(page.locator('.detail-banner .banner-bottom span').first()).toHaveText(
+    '1 problem · 3 photos · 0 videos'
+  );
   // API/DB check: each was saved, in the chosen order, with its name, type and creator.
   const images = find(await guide(page), boulder.id).images;
-  expect(images.map((i: any) => i.name + '.' + i.url.split('.').pop()), 'API/DB: names and file types saved in order').toEqual(['Crimp face.jpg', 'Photo 2.png', 'Photo 3.webp']);
+  expect(
+    images.map((i: any) => i.name + '.' + i.url.split('.').pop()),
+    'API/DB: names and file types saved in order'
+  ).toEqual(['Crimp face.jpg', 'Photo 2.png', 'Photo 3.webp']);
   for (const image of images) expect(image.createdBy, 'API/DB: credited to the uploader').toBe(user.current.account.id);
   // Names are unique per boulder: the next upload's default skips the names in use.
   await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
@@ -33,10 +38,22 @@ test('rejects files that are not supported images, without saving anything', asy
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   const attempts: [string, any, string][] = [
-    ['an unsupported type', { name: 'climb.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') }, 'Choose JPEG, PNG, or WebP images.'],
-    ['a file over 8 MB', { name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(8 * 1024 * 1024 + 1) }, 'Each image must be smaller than 8 MB.'],
+    [
+      'an unsupported type',
+      { name: 'climb.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') },
+      'Choose JPEG, PNG, or WebP images.',
+    ],
+    [
+      'a file over 8 MB',
+      { name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(8 * 1024 * 1024 + 1) },
+      'Each image must be smaller than 8 MB.',
+    ],
     // The browser trusts the file's name, so the server checks the contents.
-    ['a PNG name with other contents', { name: 'fake.png', mimeType: 'image/png', buffer: Buffer.from('not really an image') }, 'The file is not a supported image.'],
+    [
+      'a PNG name with other contents',
+      { name: 'fake.png', mimeType: 'image/png', buffer: Buffer.from('not really an image') },
+      'The file is not a supported image.',
+    ],
   ];
   for (const [what, file, message] of attempts) {
     await test.step(what, async () => {
@@ -65,7 +82,10 @@ test('rejects blank names and names already used on the boulder', async () => {
   await dialog.getByLabel('Photo 2 name').fill('twin');
   await dialogError(page, 'Upload', /^A photo named ".+" already exists for this boulder\. Choose a different name\.$/);
   // API/DB check: only the seeded photo exists.
-  expect(find(await guide(page), boulder.id).images.map((i: any) => i.name), 'API/DB: no photos saved').toEqual(['Seed photo']);
+  expect(
+    find(await guide(page), boulder.id).images.map((i: any) => i.name),
+    'API/DB: no photos saved'
+  ).toEqual(['Seed photo']);
 });
 
 // The last check is a regression test: removing a photo used to leave its annotations in problems' photoAnnotations.
@@ -84,7 +104,10 @@ test('removing a boulder photo also removes it from its problems', async () => {
   const current = await guide(page);
   expect(find(current, image.id), 'API/DB: photo removed').toBeUndefined();
   expect(find(current, problem.id).imageIds, 'API/DB: problem link removed').toEqual([]);
-  expect(find(current, problem.id).photoAnnotations, "API/DB: the problem's annotations for the photo removed").not.toHaveProperty(image.id);
+  expect(
+    find(current, problem.id).photoAnnotations,
+    "API/DB: the problem's annotations for the photo removed"
+  ).not.toHaveProperty(image.id);
 });
 
 // Regression: photos saved together share a created_at and read_content used to break the tie by random ID,
@@ -96,7 +119,10 @@ test('photos uploaded together keep the order they were chosen in', async () => 
   await completeUpload(page);
   const order = ['Photo 1', 'Photo 2', 'Photo 3', 'Photo 4'];
   await expect(page.locator('.photo-grid .photo-card span')).toHaveText(order);
-  expect(find(await guide(page), boulder.id).images.map((i: any) => i.name), 'API/DB: saved in the chosen order').toEqual(order);
+  expect(
+    find(await guide(page), boulder.id).images.map((i: any) => i.name),
+    'API/DB: saved in the chosen order'
+  ).toEqual(order);
 });
 
 test('parking photos can be uploaded with a caption, recaptioned and removed', async () => {
@@ -115,7 +141,10 @@ test('parking photos can be uploaded with a caption, recaptioned and removed', a
   await dialog.getByRole('button', { name: 'Save caption', exact: true }).click();
   expect((await recaptioned).status(), 'Caption saved').toBe(200);
   await expect(photos.filter({ hasText: 'Lay-by' })).toContainText('Park on the verge.');
-  expect(find(await guide(page), location.id).photos[0], 'API/DB: caption saved').toMatchObject({ name: 'Lay-by', caption: 'Park on the verge.' });
+  expect(find(await guide(page), location.id).photos[0], 'API/DB: caption saved').toMatchObject({
+    name: 'Lay-by',
+    caption: 'Park on the verge.',
+  });
   // Remove it.
   await photos.filter({ hasText: 'Lay-by' }).getByRole('button', { name: 'Remove photo', exact: true }).click();
   const removed = page.waitForResponse(r => r.url().endsWith('/api/guide') && r.request().method() === 'PUT');
@@ -134,11 +163,21 @@ test('a batch with an unsupported file uploads nothing', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   let uploads = 0;
-  page.on('request', request => { if (request.url().endsWith('/api/images')) uploads++; });
+  page.on('request', request => {
+    if (request.url().endsWith('/api/images')) uploads++;
+  });
   const before = await usedBytes();
   for (const [what, bad, message] of [
-    ['a file of the wrong type', { name: 'climb.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') }, 'Choose JPEG, PNG, or WebP images.'],
-    ['a file over 8 MB', { name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(8 * 1024 * 1024 + 1) }, 'Each image must be smaller than 8 MB.'],
+    [
+      'a file of the wrong type',
+      { name: 'climb.gif', mimeType: 'image/gif', buffer: Buffer.from('GIF89a') },
+      'Choose JPEG, PNG, or WebP images.',
+    ],
+    [
+      'a file over 8 MB',
+      { name: 'huge.png', mimeType: 'image/png', buffer: Buffer.alloc(8 * 1024 * 1024 + 1) },
+      'Each image must be smaller than 8 MB.',
+    ],
   ] as const) {
     await test.step(what, async () => {
       // The bad file comes last, after valid ones.
@@ -157,18 +196,29 @@ test('a photo of exactly 8 MB uploads', async () => {
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   // A real PNG padded to the limit; data after the image's end marker is ignored by viewers.
   const png = mediaFile('png').buffer;
-  const file = { name: 'limit.png', mimeType: 'image/png', buffer: Buffer.concat([png, Buffer.alloc(8 * 1024 * 1024 - png.length)]) };
+  const file = {
+    name: 'limit.png',
+    mimeType: 'image/png',
+    buffer: Buffer.concat([png, Buffer.alloc(8 * 1024 * 1024 - png.length)]),
+  };
   expect(file.buffer.length).toBe(8 * 1024 * 1024);
   await chooseFiles(page, '+ Upload images', [file]);
   await completeUpload(page, { names: ['Exactly 8 MB'] });
-  expect(find(await guide(page), boulder.id).images.map((i: any) => i.name), 'API/DB: photo saved').toEqual(['Exactly 8 MB']);
+  expect(
+    find(await guide(page), boulder.id).images.map((i: any) => i.name),
+    'API/DB: photo saved'
+  ).toEqual(['Exactly 8 MB']);
 });
 
 test('a failed upload keeps the dialog open, saves nothing, and can be retried', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   for (const [what, fail] of [
-    ['the server fails', (route: any) => route.fulfill({ status: 500, json: { error: 'Could not save or load the guide. Please try again.' } })],
+    [
+      'the server fails',
+      (route: any) =>
+        route.fulfill({ status: 500, json: { error: 'Could not save or load the guide. Please try again.' } }),
+    ],
     ['the connection drops', (route: any) => route.abort('connectionreset')],
   ] as const) {
     await test.step(what, async () => {
@@ -187,7 +237,10 @@ test('a failed upload keeps the dialog open, saves nothing, and can be retried',
   // With the connection back, the same upload succeeds.
   await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
   await completeUpload(page, { names: ['Retried photo'] });
-  expect(find(await guide(page), boulder.id).images.map((i: any) => i.name), 'API/DB: saved on retry').toEqual(['Retried photo']);
+  expect(
+    find(await guide(page), boulder.id).images.map((i: any) => i.name),
+    'API/DB: saved on retry'
+  ).toEqual(['Retried photo']);
 });
 
 // Regression: removing a photo used to delete only its database record, leaving the file in Storage, still counting
@@ -202,7 +255,9 @@ test('removing a photo frees its storage, and its old link stops working', async
   await page.getByRole('dialog').getByRole('button', { name: 'Remove', exact: true }).click();
   expect((await removed).status(), 'Removal saved').toBe(200);
   await expect.poll(usedBytes, { message: 'Storage used went down', timeout: 5000 }).toBeLessThan(before);
-  expect((await user.current.request.get(image.url)).status(), 'The old link no longer works').toBeGreaterThanOrEqual(400);
+  expect((await user.current.request.get(image.url)).status(), 'The old link no longer works').toBeGreaterThanOrEqual(
+    400
+  );
 });
 
 // Regression: only the server can tell a file named and typed as an image isn't one, and by then the earlier files in
@@ -211,7 +266,10 @@ test('a batch with a disguised file stores nothing', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   const before = await usedBytes();
-  await chooseFiles(page, '+ Upload images', [mediaFile('png'), { name: 'fake.png', mimeType: 'image/png', buffer: Buffer.from('not really an image') }]);
+  await chooseFiles(page, '+ Upload images', [
+    mediaFile('png'),
+    { name: 'fake.png', mimeType: 'image/png', buffer: Buffer.from('not really an image') },
+  ]);
   await dialogError(page, 'Upload', 'The file is not a supported image.');
   expect(find(await guide(page), boulder.id).images, 'API/DB: no photos saved').toEqual([]);
   // The earlier file is discarded just after the error is shown.
@@ -222,7 +280,10 @@ test('a video batch with a disguised file stores nothing', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   const before = await usedBytes();
-  await chooseFiles(page, '+ Upload video', [mediaFile('mp4'), { name: 'fake.mp4', mimeType: 'video/mp4', buffer: Buffer.from('not really a video at all') }]);
+  await chooseFiles(page, '+ Upload video', [
+    mediaFile('mp4'),
+    { name: 'fake.mp4', mimeType: 'video/mp4', buffer: Buffer.from('not really a video at all') },
+  ]);
   await dialogError(page, 'Upload', 'The file is not a supported video.');
   expect(find(await guide(page), boulder.id).videos, 'API/DB: no videos saved').toEqual([]);
   await expect.poll(usedBytes, { message: 'No file was left stored', timeout: 5000 }).toBe(before);
@@ -233,14 +294,20 @@ test('uploads whose guide save fails are discarded', async () => {
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   const before = await usedBytes();
   // The files upload, then the save of the guide is refused (as if someone else had just changed it).
-  const refuseSave = (route: any) => route.request().method() === 'PUT'
-    ? route.fulfill({ status: 409, json: { error: 'Someone else changed this while you were editing. Reload before saving again.' } })
-    : route.fallback();
+  const refuseSave = (route: any) =>
+    route.request().method() === 'PUT'
+      ? route.fulfill({
+          status: 409,
+          json: { error: 'Someone else changed this while you were editing. Reload before saving again.' },
+        })
+      : route.fallback();
   await page.route('**/api/guide', refuseSave);
   await chooseFiles(page, '+ Upload images', [mediaFile('png'), mediaFile('jpg')]);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Upload', exact: true }).click();
-  await expect(dialog.getByRole('alert')).toHaveText('Someone else changed this while you were editing. Reload before saving again.');
+  await expect(dialog.getByRole('alert')).toHaveText(
+    'Someone else changed this while you were editing. Reload before saving again.'
+  );
   await expect(dialog, 'The naming dialog stays open').toBeVisible();
   await page.unroute('**/api/guide', refuseSave);
   await expect.poll(usedBytes, { message: 'The uploaded files were discarded', timeout: 5000 }).toBe(before);
@@ -257,7 +324,14 @@ test("discarding uploads only removes the user's own files that nothing uses", a
   const someoneElse = `/media/${crypto.randomUUID()}/${crypto.randomUUID()}.png`;
   expect((await discard([someoneElse])).status(), "Another user's upload refused").toBe(403);
   // An unused upload of the user's own is deleted.
-  const url = (await (await user.current.request.post('/api/images', { headers: { 'Content-Type': 'image/png' }, data: mediaFile('png').buffer })).json()).url;
+  const url = (
+    await (
+      await user.current.request.post('/api/images', {
+        headers: { 'Content-Type': 'image/png' },
+        data: mediaFile('png').buffer,
+      })
+    ).json()
+  ).url;
   expect(await (await discard([url])).json(), 'Unused upload removed').toEqual({ removed: 1 });
   expect((await user.current.request.get(url)).status(), 'Its link no longer works').toBeGreaterThanOrEqual(400);
 });
@@ -271,31 +345,58 @@ test('media links work for guests, and missing or malformed links are refused', 
     expect(photo.status(), 'Photo served to a guest').toBe(200);
     expect(photo.headers()['content-type'], 'Served as an image').toBe('image/png');
     // A download link passes the chosen file name on to Storage.
-    const download = await guest.request.get(video.url + '?download=' + encodeURIComponent('Sit start beta'), { maxRedirects: 0 });
+    const download = await guest.request.get(video.url + '?download=' + encodeURIComponent('Sit start beta'), {
+      maxRedirects: 0,
+    });
     expect(download.status(), 'Download redirects').toBe(302);
-    expect(new URL(download.headers().location).searchParams.get('download'), 'Download name kept').toBe('Sit start beta');
+    expect(new URL(download.headers().location).searchParams.get('download'), 'Download name kept').toBe(
+      'Sit start beta'
+    );
     // A well-formed link to a file that doesn't exist fails.
     const owner = user.current.account.id;
-    expect((await guest.request.get(`/media/${owner}/${crypto.randomUUID()}.png`)).status(), 'Missing file refused').toBeGreaterThanOrEqual(400);
+    expect(
+      (await guest.request.get(`/media/${owner}/${crypto.randomUUID()}.png`)).status(),
+      'Missing file refused'
+    ).toBeGreaterThanOrEqual(400);
     // Malformed links never reach Storage.
-    for (const path of ['/media/%2e%2e/%2e%2e/.env.local', `/media/${owner}/..%2f..%2fserver.mjs`, `/media/${owner}/x.exe`, '/media/not-a-user/x.png', `/media/${owner}/${crypto.randomUUID()}.png/extra`]) {
+    for (const path of [
+      '/media/%2e%2e/%2e%2e/.env.local',
+      `/media/${owner}/..%2f..%2fserver.mjs`,
+      `/media/${owner}/x.exe`,
+      '/media/not-a-user/x.png',
+      `/media/${owner}/${crypto.randomUUID()}.png/extra`,
+    ]) {
       const response = await guest.request.get(path, { maxRedirects: 0 });
       expect.soft(response.status(), path + ' refused').toBe(404);
     }
-  } finally { await guest.close(); }
+  } finally {
+    await guest.close();
+  }
 });
 
 test('a removed photo that is also a profile photo keeps its file', async () => {
   const { location, boulder, image } = await seedLocation(user.current.request, prefix);
   // The user's profile photo is the same file as the guide photo.
-  expect((await user.current.request.post('/api/profile-photo', { data: { url: image.url } })).status(), 'Profile photo set').toBe(200);
+  expect(
+    (await user.current.request.post('/api/profile-photo', { data: { url: image.url } })).status(),
+    'Profile photo set'
+  ).toBe(200);
   try {
     const before = await usedBytes();
-    const removed = await editGuide(user.current.request, g => { find(g, boulder.id).images = []; find(g, boulder.id).problems.forEach((p: any) => { p.imageIds = []; p.photoAnnotations = {}; }); });
+    const removed = await editGuide(user.current.request, g => {
+      find(g, boulder.id).images = [];
+      find(g, boulder.id).problems.forEach((p: any) => {
+        p.imageIds = [];
+        p.photoAnnotations = {};
+      });
+    });
     expect(removed.status(), 'Photo removed from the guide').toBe(200);
     // The file is still in use, so it stays: the profile photo still works and storage is unchanged.
     expect((await user.current.request.get(image.url)).status(), 'File still served').toBe(200);
-    expect((await user.current.request.get('/api/profile-photo?id=' + user.current.account.id)).status(), 'Profile photo still works').toBe(200);
+    expect(
+      (await user.current.request.get('/api/profile-photo?id=' + user.current.account.id)).status(),
+      'Profile photo still works'
+    ).toBe(200);
     expect(await usedBytes(), 'Storage unchanged').toBe(before);
     expect(find(await guide(user.current.page), location.id), 'API/DB: location still there').toBeDefined();
   } finally {
@@ -303,13 +404,21 @@ test('a removed photo that is also a profile photo keeps its file', async () => 
   }
 });
 
-test("removing a location deletes the files of all its photos and videos", async () => {
+test('removing a location deletes the files of all its photos and videos', async () => {
   const { location, image, video, parking } = await seedLocation(user.current.request, prefix);
   const before = await usedBytes();
-  const removed = await editGuide(user.current.request, g => { g.locations = g.locations.filter((l: any) => l.id !== location.id); });
+  const removed = await editGuide(user.current.request, g => {
+    g.locations = g.locations.filter((l: any) => l.id !== location.id);
+  });
   expect(removed.status(), 'Location removed').toBe(200);
-  for (const [what, url] of [['photo', image.url], ['video', video.url], ['parking photo', parking.url]]) {
-    expect.soft((await user.current.request.get(url)).status(), what + ' link no longer works').toBeGreaterThanOrEqual(400);
+  for (const [what, url] of [
+    ['photo', image.url],
+    ['video', video.url],
+    ['parking photo', parking.url],
+  ]) {
+    expect
+      .soft((await user.current.request.get(url)).status(), what + ' link no longer works')
+      .toBeGreaterThanOrEqual(400);
   }
   expect(await usedBytes(), 'Storage freed').toBeLessThan(before);
 });

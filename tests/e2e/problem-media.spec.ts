@@ -14,9 +14,15 @@ const user = testUser('test_attach_user_', prefix);
  */
 async function unattached() {
   const seed = await seedLocation(user.current.request, prefix);
-  const response = await editGuide(user.current.request, g => Object.assign(find(g, seed.problem.id), { imageIds: [], videoIds: [], photoAnnotations: {} }));
+  const response = await editGuide(user.current.request, g =>
+    Object.assign(find(g, seed.problem.id), { imageIds: [], videoIds: [], photoAnnotations: {} })
+  );
   expect(response.status(), 'Detached the seeded media').toBe(200);
-  const page = await openPage(user.current.context, { location: seed.location.id, boulder: seed.boulder.id, problem: seed.problem.id }, 'V2 (5+) - Seed Problem');
+  const page = await openPage(
+    user.current.context,
+    { location: seed.location.id, boulder: seed.boulder.id, problem: seed.problem.id },
+    'V2 (5+) - Seed Problem'
+  );
   return { ...seed, page };
 }
 
@@ -31,7 +37,9 @@ async function openAttach(page: Page, kind: 'Photo' | 'Video') {
   await page.getByRole('button', { name: '+ Add ' + kind }).click();
   await page.getByRole('button', { name: `Add ${kind.toLowerCase()} from the Seed Boulder page`, exact: true }).click();
   const dialog = page.getByRole('dialog');
-  await expect(dialog.getByRole('heading', { name: `Add ${kind.toLowerCase()} from Seed Boulder page`, exact: true })).toBeVisible();
+  await expect(
+    dialog.getByRole('heading', { name: `Add ${kind.toLowerCase()} from Seed Boulder page`, exact: true })
+  ).toBeVisible();
   return dialog;
 }
 
@@ -51,7 +59,9 @@ for (const kind of ['Photo', 'Video'] as const) {
     await expect(dialog).toHaveCount(0);
     await expect(counts(page)).toHaveText(kind === 'Photo' ? '1 photo · 0 videos' : '0 photos · 1 video');
     // API/DB check: the problem links the item.
-    expect(find(await guide(page), problem.id)[kind === 'Photo' ? 'imageIds' : 'videoIds'], 'API/DB: attached').toEqual([item.id]);
+    expect(find(await guide(page), problem.id)[kind === 'Photo' ? 'imageIds' : 'videoIds'], 'API/DB: attached').toEqual(
+      [item.id]
+    );
     // With everything attached, the dialog says there is nothing left and links to the boulder.
     const empty = await openAttach(page, kind);
     await expect(empty.getByText(`No ${kind.toLowerCase()}s available.`)).toBeVisible();
@@ -76,10 +86,28 @@ test('a photo uploaded from a problem is added to the boulder and attached to th
 test('removing a photo from a problem keeps it on the boulder and other problems', async () => {
   const seed = await seedLocation(user.current.request, prefix);
   // A second problem uses the same photo.
-  const second = { id: crypto.randomUUID(), name: 'Second line', grade: 'V4 (6B/6B+)', description: 'Shares the photo.', imageIds: [seed.image.id], videoIds: [] };
-  expect((await editGuide(user.current.request, g => find(g, seed.boulder.id).problems.push(second))).status(), 'Second problem added').toBe(200);
-  const page = await openPage(user.current.context, { location: seed.location.id, boulder: seed.boulder.id, problem: seed.problem.id }, 'V2 (5+) - Seed Problem');
-  await page.locator('.problem-photo').filter({ hasText: 'Seed photo' }).getByRole('button', { name: 'Remove photo', exact: true }).click();
+  const second = {
+    id: crypto.randomUUID(),
+    name: 'Second line',
+    grade: 'V4 (6B/6B+)',
+    description: 'Shares the photo.',
+    imageIds: [seed.image.id],
+    videoIds: [],
+  };
+  expect(
+    (await editGuide(user.current.request, g => find(g, seed.boulder.id).problems.push(second))).status(),
+    'Second problem added'
+  ).toBe(200);
+  const page = await openPage(
+    user.current.context,
+    { location: seed.location.id, boulder: seed.boulder.id, problem: seed.problem.id },
+    'V2 (5+) - Seed Problem'
+  );
+  await page
+    .locator('.problem-photo')
+    .filter({ hasText: 'Seed photo' })
+    .getByRole('button', { name: 'Remove photo', exact: true })
+    .click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'Remove photo from problem?', exact: true })).toBeVisible();
   const saved = page.waitForResponse(r => r.url().endsWith('/api/guide') && r.request().method() === 'PUT');
@@ -100,15 +128,24 @@ test('the Edit problem form links and unlinks photos and videos', async () => {
   async function setLinks(checked: boolean) {
     await page.getByRole('button', { name: 'Edit problem', exact: true }).click();
     const dialog = page.getByRole('dialog');
-    await dialog.getByRole('group', { name: 'Link photos from this boulder' }).getByRole('checkbox', { name: 'Seed photo' }).setChecked(checked);
-    await dialog.getByRole('group', { name: 'Link beta videos from this boulder' }).getByRole('checkbox', { name: 'Seed video' }).setChecked(checked);
+    await dialog
+      .getByRole('group', { name: 'Link photos from this boulder' })
+      .getByRole('checkbox', { name: 'Seed photo' })
+      .setChecked(checked);
+    await dialog
+      .getByRole('group', { name: 'Link beta videos from this boulder' })
+      .getByRole('checkbox', { name: 'Seed video' })
+      .setChecked(checked);
     const saved = page.waitForResponse(r => r.url().endsWith('/api/guide') && r.request().method() === 'PUT');
     await dialog.getByRole('button', { name: 'Save problem', exact: true }).click();
     expect((await saved).status(), 'Problem saved').toBe(200);
   }
   await setLinks(true);
   await expect(counts(page)).toHaveText('1 photo · 1 video');
-  expect(find(await guide(page), problem.id), 'API/DB: linked').toMatchObject({ imageIds: [image.id], videoIds: [video.id] });
+  expect(find(await guide(page), problem.id), 'API/DB: linked').toMatchObject({
+    imageIds: [image.id],
+    videoIds: [video.id],
+  });
   await setLinks(false);
   await expect(counts(page)).toHaveText('0 photos · 0 videos');
   expect(find(await guide(page), problem.id), 'API/DB: unlinked').toMatchObject({ imageIds: [], videoIds: [] });

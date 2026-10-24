@@ -1,8 +1,57 @@
 import BackLink from './BackLink';
-import React,{useState} from 'react';
+import React, { useState } from 'react';
 import ProfileFields from './ProfileFields';
-import {api} from './api';
-export default function CompleteProfile({user,onComplete,editing=false}) {
- const [busy,setBusy]=useState(false),[error,setError]=useState('');
- return <main className="login-page"><div className="login-layout"><section className="login-card"><div className="auth-heading">{editing && <BackLink className="auth-link"/>}<h1>{editing ? 'Your profile' : 'Complete your profile'}</h1><p>{editing ? 'Update your display name, height and ape index.' : 'Choose your display name and add your height before continuing.'}</p></div><form onSubmit={async e=>{e.preventDefault();const values=Object.fromEntries(new FormData(e.currentTarget));setBusy(true);setError('');try{const data=await api('/api/profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(values)},'Could not save your profile.');await onComplete(data.user);}catch(e){setError(e.message);}finally{setBusy(false);}}}><fieldset className="auth-fields" disabled={busy}><ProfileFields user={user}/>{error&&<p className="error" role="alert">{error}</p>}<button className="primary auth-submit">{busy?'Saving...':editing?'Save profile':'Continue'}</button></fieldset></form></section></div></main>;
+import { api } from './api';
+export default function CompleteProfile({ user, onComplete, editing = false }) {
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState('');
+  return (
+    <main className="login-page">
+      <div className="login-layout">
+        <section className="login-card">
+          <div className="auth-heading">
+            {editing && <BackLink className="auth-link" />}
+            <h1>{editing ? 'Your profile' : 'Complete your profile'}</h1>
+            <p>
+              {editing
+                ? 'Update your display name, height and ape index.'
+                : 'Choose your display name and add your height before continuing.'}
+            </p>
+          </div>
+          <form
+            onSubmit={async e => {
+              e.preventDefault();
+              const values = Object.fromEntries(new FormData(e.currentTarget));
+              setBusy(true);
+              setError('');
+              try {
+                const data = await api(
+                  '/api/profile',
+                  { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(values) },
+                  'Could not save your profile.'
+                );
+                await onComplete(data.user);
+              } catch (e) {
+                setError(e.message);
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <fieldset className="auth-fields" disabled={busy}>
+              <ProfileFields user={user} />
+              {error && (
+                <p className="error" role="alert">
+                  {error}
+                </p>
+              )}
+              <button className="primary auth-submit">
+                {busy ? 'Saving...' : editing ? 'Save profile' : 'Continue'}
+              </button>
+            </fieldset>
+          </form>
+        </section>
+      </div>
+    </main>
+  );
 }

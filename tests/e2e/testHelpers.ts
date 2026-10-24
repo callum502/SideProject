@@ -42,7 +42,7 @@ export const locationName = (prefix: string) => prefix + Date.now() + '_' + rand
  * @param credentials - Email and password to use; defaults to E2E_EMAIL and E2E_PASSWORD.
  * @throws If credentials are missing or login assertions fail.
  */
-export async function login(page: Page, credentials?: { email: string, password: string }) {
+export async function login(page: Page, credentials?: { email: string; password: string }) {
   // Read credentials without embedding them in test source.
   const { email, password } = credentials || { email: process.env.E2E_EMAIL, password: process.env.E2E_PASSWORD };
   if (!email || !password) throw new Error('Set E2E_EMAIL and E2E_PASSWORD in .env.local.');
@@ -126,7 +126,12 @@ export async function createLocation(page: Page, prefix: string) {
   // Open the location creation form.
   await page.getByRole('button', { name: /Create location/ }).click();
   // Provide valid example values for the new item.
-  const fields = { name: locationName(prefix), latitude: '56.8', longitude: '-3.2', approach: 'Follow the test path from the parking area.' };
+  const fields = {
+    name: locationName(prefix),
+    latitude: '56.8',
+    longitude: '-3.2',
+    approach: 'Follow the test path from the parking area.',
+  };
   // Fill the form with the supplied values.
   await fill(page, fields);
   // Save the form and verify the response and dialog state.
@@ -153,7 +158,11 @@ export async function createBoulder(page: Page, location: any) {
   // Open the boulder creation form.
   await page.getByRole('button', { name: /Add boulder/ }).click();
   // Provide valid example values for the new item.
-  const fields = { name: 'Test Boulder', notes: 'Walk ten metres past the gate.', otherNotes: 'Granite with a flat landing.' };
+  const fields = {
+    name: 'Test Boulder',
+    notes: 'Walk ten metres past the gate.',
+    otherNotes: 'Granite with a flat landing.',
+  };
   // Fill the form with the supplied values.
   await fill(page, fields);
   // Save the form and verify the response and dialog state.
@@ -164,7 +173,7 @@ export async function createBoulder(page: Page, location: any) {
   const savedGuide = await guide(page);
   const savedLocation = savedGuide.locations.find((item: any) => item.id === location.id);
   // Fail clearly if the parent is missing.
-  expect(savedLocation, "Parent location exists").toBeDefined();
+  expect(savedLocation, 'Parent location exists').toBeDefined();
   const boulder = savedLocation.boulders.find((item: any) => item.name === fields.name);
   // Verify all submitted fields were persisted.
   expect(boulder, 'boulder was created with the submitted values').toMatchObject(fields);
@@ -184,7 +193,11 @@ export async function createProblem(page: Page, location: any, boulder: any) {
   // Open the problem creation form.
   await page.getByRole('button', { name: /Add problem/ }).click();
   // Provide valid example values for the new item.
-  const fields = { name: 'Test Problem', grade: 'V1 (5)', description: 'Start on the low holds and climb straight up.' };
+  const fields = {
+    name: 'Test Problem',
+    grade: 'V1 (5)',
+    description: 'Start on the low holds and climb straight up.',
+  };
   // Fill the form with the supplied values.
   await fill(page, fields);
   // Save the form and verify the response and dialog state.
@@ -193,9 +206,9 @@ export async function createProblem(page: Page, location: any, boulder: any) {
   const savedGuide = await guide(page);
   const savedLocation = savedGuide.locations.find((item: any) => item.id === location.id);
   // Fail clearly if either parent is missing.
-  expect(savedLocation, "Parent location exists").toBeDefined();
+  expect(savedLocation, 'Parent location exists').toBeDefined();
   const savedBoulder = savedLocation.boulders.find((item: any) => item.id === boulder.id);
-  expect(savedBoulder, "Parent boulder exists").toBeDefined();
+  expect(savedBoulder, 'Parent boulder exists').toBeDefined();
   const problem = savedBoulder.problems.find((item: any) => item.name === fields.name);
   // Verify all submitted fields were persisted.
   expect(problem, 'problem was created with the submitted values').toMatchObject(fields);
@@ -245,7 +258,14 @@ export async function deleteItem(page: Page, kind: string) {
  */
 export function accountDetails(prefix: string) {
   const name = locationName(prefix);
-  return { email: name + '@example.com', password: 'pw-' + randomUUID(), name, heightFeet: '5', heightInches: '10', apeIndex: '2' };
+  return {
+    email: name + '@example.com',
+    password: 'pw-' + randomUUID(),
+    name,
+    heightFeet: '5',
+    heightInches: '10',
+    apeIndex: '2',
+  };
 }
 
 /**
@@ -356,7 +376,7 @@ export async function deleteAccount(page: Page) {
 }
 
 /** A file for setInputFiles: a path, or a name, type and contents. */
-type FileInput = string | { name: string, mimeType: string, buffer: Buffer };
+type FileInput = string | { name: string; mimeType: string; buffer: Buffer };
 
 /**
  * Choose files in an upload control, which opens the naming dialog.
@@ -374,12 +394,17 @@ export async function chooseFiles(page: Page, label: string, files: FileInput[])
  * @param options - Replacement names and captions by file position; omitted positions keep their defaults.
  *   Captions are only offered for parking photos.
  */
-export async function completeUpload(page: Page, { names = [], captions = [] }: { names?: string[], captions?: string[] } = {}) {
+export async function completeUpload(
+  page: Page,
+  { names = [], captions = [] }: { names?: string[]; captions?: string[] } = {}
+) {
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: /^Name your (photo|video)$/ })).toBeVisible();
   // Rename and caption the files that need it.
-  for (const [index, name] of names.entries()) if (name !== undefined) await dialog.getByLabel(new RegExp('^(Photo|Video) ' + (index + 1) + ' name$')).fill(name);
-  for (const [index, caption] of captions.entries()) if (caption !== undefined) await dialog.locator('textarea[name="caption"]').nth(index).fill(caption);
+  for (const [index, name] of names.entries())
+    if (name !== undefined) await dialog.getByLabel(new RegExp('^(Photo|Video) ' + (index + 1) + ' name$')).fill(name);
+  for (const [index, caption] of captions.entries())
+    if (caption !== undefined) await dialog.locator('textarea[name="caption"]').nth(index).fill(caption);
   // Upload, then verify the guide save and dialog closure.
   await submit(page, 'Upload');
 }
@@ -392,7 +417,9 @@ export async function completeUpload(page: Page, { names = [], captions = [] }: 
  */
 export async function dialogError(page: Page, label: string, message: string | RegExp) {
   let saves = 0;
-  const count = (request: { url(): string, method(): string }) => { if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++; };
+  const count = (request: { url(): string; method(): string }) => {
+    if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++;
+  };
   page.on('request', count);
   await page.getByRole('dialog').getByRole('button', { name: label, exact: true }).click();
   await expect(page.getByRole('dialog').getByRole('alert')).toHaveText(message);
@@ -410,7 +437,9 @@ export async function dialogError(page: Page, label: string, message: string | R
  */
 export async function cancelEditAndRemoval(page: Page, kind: string, heading: string) {
   let saves = 0;
-  const count = (request: { url(): string, method(): string }) => { if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++; };
+  const count = (request: { url(): string; method(): string }) => {
+    if (request.url().endsWith('/api/guide') && request.method() === 'PUT') saves++;
+  };
   page.on('request', count);
   const dialog = page.getByRole('dialog');
   // Edit, change the name, then cancel.

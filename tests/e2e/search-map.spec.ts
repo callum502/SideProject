@@ -2,7 +2,8 @@ import { test, expect } from './fixtures';
 import { randomUUID } from 'node:crypto';
 import { testUser, signIn, seedLocation } from './seedHelpers';
 
-// Two locations share a random token, so searches match only this run's data even with other workers creating locations.
+// Two locations share a random token, so searches match only this run's data
+// even with other workers creating locations.
 const prefix = 'test_search_loc_';
 const user = testUser('test_search_user_', prefix);
 const token = randomUUID().slice(0, 8);
@@ -10,8 +11,22 @@ let alpha: any, beta: any;
 
 test.beforeAll(async () => {
   // Distinct coordinates keep these markers apart from other tests' locations.
-  alpha = (await seedLocation(user.current.request, prefix, { media: false, name: `${prefix}${token}_Alpha_Crag`, latitude: '-33.9', longitude: '18.4' })).location;
-  beta = (await seedLocation(user.current.request, prefix, { media: false, name: `${prefix}${token}_Beta_Crag`, latitude: '-41.3', longitude: '174.8' })).location;
+  alpha = (
+    await seedLocation(user.current.request, prefix, {
+      media: false,
+      name: `${prefix}${token}_Alpha_Crag`,
+      latitude: '-33.9',
+      longitude: '18.4',
+    })
+  ).location;
+  beta = (
+    await seedLocation(user.current.request, prefix, {
+      media: false,
+      name: `${prefix}${token}_Beta_Crag`,
+      latitude: '-41.3',
+      longitude: '174.8',
+    })
+  ).location;
 });
 
 /**
@@ -38,7 +53,9 @@ test('search filters locations by name, ignoring case and surrounding spaces', a
   // A search with no matches says so.
   await search.fill(token + '_no_such_crag');
   await expect(results).toHaveCount(0);
-  await expect(page.getByRole('region', { name: 'Find a climbing location' }).getByRole('status')).toHaveText('No matching locations.');
+  await expect(page.getByRole('region', { name: 'Find a climbing location' }).getByRole('status')).toHaveText(
+    'No matching locations.'
+  );
 });
 
 test('a search result opens its location', async () => {
@@ -102,7 +119,9 @@ test('Create location is offered only to signed-in users', async ({ browser }) =
   try {
     const { page } = await explore(guest.context);
     await expect(page.getByRole('button', { name: /Create location/ })).toHaveCount(0);
-  } finally { await guest.context.close(); }
+  } finally {
+    await guest.context.close();
+  }
   // A signed-in user is, and it opens the creation form.
   const { page } = await explore();
   await page.getByRole('button', { name: /Create location/ }).click();
@@ -129,5 +148,10 @@ test('the map explains when its tiles cannot load', async () => {
   // Page routes take precedence over the context's blank tiles.
   await page.route('https://tile.openstreetmap.org/**', route => route.abort());
   await page.goto('/#explore');
-  await expect(page.getByText('Map tiles could not load. Check your connection; you can still select locations using the search above.', { exact: true })).toBeVisible();
+  await expect(
+    page.getByText(
+      'Map tiles could not load. Check your connection; you can still select locations using the search above.',
+      { exact: true }
+    )
+  ).toBeVisible();
 });

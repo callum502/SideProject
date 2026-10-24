@@ -5,7 +5,9 @@ test('logs in through the form, keeps the session on reload, and logs out', asyn
   const email = process.env.E2E_EMAIL;
   const password = process.env.E2E_PASSWORD;
   if (!email || !password) {
-    throw new Error('Set E2E_EMAIL and E2E_PASSWORD in .env.local to a confirmed local account with a completed profile.');
+    throw new Error(
+      'Set E2E_EMAIL and E2E_PASSWORD in .env.local to a confirmed local account with a completed profile.'
+    );
   }
 
   // Open the login page and locate its heading and account menu.

@@ -8,15 +8,24 @@ const fail = (message, status = 400) => Object.assign(new Error(message), { stat
 export function confirmBypassCode(env) {
   const code = env.E2E_CONFIRM_CODE;
   if (!code) return null;
-  if (env.NODE_ENV === 'production' || env.RENDER === 'true') throw new Error('E2E_CONFIRM_CODE must not be set in production.');
+  if (env.NODE_ENV === 'production' || env.RENDER === 'true')
+    throw new Error('E2E_CONFIRM_CODE must not be set in production.');
   let host;
-  try { host = new URL(env.SUPABASE_URL).hostname; } catch {}
-  if (!['localhost', '127.0.0.1', '[::1]'].includes(host)) throw new Error('E2E_CONFIRM_CODE requires SUPABASE_URL to point to local Supabase.');
+  try {
+    host = new URL(env.SUPABASE_URL).hostname;
+  } catch {}
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(host))
+    throw new Error('E2E_CONFIRM_CODE requires SUPABASE_URL to point to local Supabase.');
   return code;
 }
 
-// Only the publishable key is needed. Passwords and tokens are never written to disk.
-export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''), ...process.env }, fetchImpl = fetch } = {}) {
+// Accounts, sessions and profiles, through Supabase Auth and the database's RPC functions.
+// Only the publishable key is needed (the secret key only for account deletion and test confirmation codes).
+// Passwords and tokens are never written to disk.
+export function createAuth({
+  env = { ...loadEnv('development', process.cwd(), ''), ...process.env },
+  fetchImpl = fetch,
+} = {}) {
   const base = env.SUPABASE_URL?.replace(/\/$/, '');
   const key = env.SUPABASE_PUBLISHABLE_KEY;
   const testConfirmCode = confirmBypassCode(env);
@@ -24,149 +33,314 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
   async function testSignupCode(email) {
     const adminKey = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
     if (!adminKey) throw fail('E2E_CONFIRM_CODE requires SUPABASE_SECRET_KEY.', 503);
-    const response = await fetchImpl(base + '/auth/v1/admin/generate_link', { method: 'POST', headers: { apikey: adminKey, Authorization: 'Bearer ' + adminKey, 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'signup', email }), signal: AbortSignal.timeout(15000) });
+    const response = await fetchImpl(base + '/auth/v1/admin/generate_link', {
+      method: 'POST',
+      headers: { apikey: adminKey, Authorization: 'Bearer ' + adminKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'signup', email }),
+      signal: AbortSignal.timeout(15000),
+    });
     const data = await response.json().catch(() => ({}));
-    if (!response.ok || !data.email_otp) throw fail('Could not create a test confirmation code: ' + (data.msg || 'HTTP ' + response.status), 503);
+    if (!response.ok || !data.email_otp)
+      throw fail('Could not create a test confirmation code: ' + (data.msg || 'HTTP ' + response.status), 503);
     return data.email_otp;
   }
+  // Calls Supabase Auth or a database function, turning known errors into user-facing messages.
   async function request(route, values, token, method = 'POST') {
-    if (!base || !key) throw fail('Account service is not configured. Set the Supabase environment variables and restart.', 503);
+    if (!base || !key)
+      throw fail('Account service is not configured. Set the Supabase environment variables and restart.', 503);
     let response;
     try {
-      response = await fetchImpl(base + route, { method, headers: { apikey: key, 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, ...(method !== 'GET' ? { body: JSON.stringify(values || {}) } : {}), signal: AbortSignal.timeout(15000) });
-    } catch { throw fail('Account service is unavailable. Please try again.', 503); }
+      response = await fetchImpl(base + route, {
+        method,
+        headers: {
+          apikey: key,
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        ...(method !== 'GET' ? { body: JSON.stringify(values || {}) } : {}),
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch {
+      throw fail('Account service is unavailable. Please try again.', 503);
+    }
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      if (data.code === '23505' && (data.message || '').includes('profiles_display_name_unique')) throw fail('That display name is already taken. Choose a different name.',409);
+      if (data.code === '23505' && (data.message || '').includes('profiles_display_name_unique'))
+        throw fail('That display name is already taken. Choose a different name.', 409);
       if (route.endsWith('/complete_profile') && data.code === '23514') {
-        const field = /height/i.test(data.message || '') ? 'height' : /ape_index|ape index/i.test(data.message || '') ? 'ape index' : /display_name|display name/i.test(data.message || '') ? 'display name' : 'profile';
-        throw fail('The database rejected your ' + field + '. Apply 20260913000900_profile_validation.sql to align the database with the current form.',400);
+        const field = /height/i.test(data.message || '')
+          ? 'height'
+          : /ape_index|ape index/i.test(data.message || '')
+            ? 'ape index'
+            : /display_name|display name/i.test(data.message || '')
+              ? 'display name'
+              : 'profile';
+        throw fail(
+          'The database rejected your ' +
+            field +
+            '. Apply 20260913000900_profile_validation.sql to align the database with the current form.',
+          400
+        );
       }
       if (route.startsWith('/rest/')) {
         const rpc = route.split('/').pop();
-        const code = typeof data.code === 'string' && /^[A-Z0-9]{3,12}$/.test(data.code) ? data.code : 'HTTP ' + response.status;
-        if (response.status === 401 || code === 'PGRST301' || code === 'PGRST303') throw fail('Your session could not be verified. Please log in again. (' + code + ')',401);
+        const code =
+          typeof data.code === 'string' && /^[A-Z0-9]{3,12}$/.test(data.code) ? data.code : 'HTTP ' + response.status;
+        if (response.status === 401 || code === 'PGRST301' || code === 'PGRST303')
+          throw fail('Your session could not be verified. Please log in again. (' + code + ')', 401);
         // set_problem_log raises this when the problem was deleted after the page loaded.
-        if (rpc === 'set_problem_log' && data.message === 'Problem not found') throw fail('This problem no longer exists. It may have been removed; reload to see the latest guide.',404);
+        if (rpc === 'set_problem_log' && data.message === 'Problem not found')
+          throw fail('This problem no longer exists. It may have been removed; reload to see the latest guide.', 404);
         // friends_action's refusals, in the user's terms (inviting yourself is caught before the call; see friends()).
-        const refusal = rpc === 'friends_action' && {
-          'Choose another climber': ["That climber can't be found. They may have deleted their account.", 404],
-          'Too many pending invites': ['You can have up to 50 pending invites. Cancel one before sending another.', 400],
-          'Only accepted friends can view this logbook': ['Only accepted friends can view this logbook.', 403],
-        }[data.message];
+        const refusal =
+          rpc === 'friends_action' &&
+          {
+            'Choose another climber': ["That climber can't be found. They may have deleted their account.", 404],
+            'Too many pending invites': [
+              'You can have up to 50 pending invites. Cancel one before sending another.',
+              400,
+            ],
+            'Only accepted friends can view this logbook': ['Only accepted friends can view this logbook.', 403],
+          }[data.message];
         if (refusal) throw fail(...refusal);
-        const action = rpc === 'current_account' ? 'Could not load your account profile' : rpc === 'display_name_available' ? 'Could not check display-name availability' : rpc === 'complete_profile' ? 'Could not save your profile' : 'Database request failed';
-        throw fail(action + ' (' + rpc + ': ' + code + ').' + (code === 'PGRST202' ? ' The database function is missing or its schema cache needs refreshing.' : code === '42501' ? ' The database denied access.' : ' Please share this error so the database issue can be identified.'),503);
+        const action =
+          rpc === 'current_account'
+            ? 'Could not load your account profile'
+            : rpc === 'display_name_available'
+              ? 'Could not check display-name availability'
+              : rpc === 'complete_profile'
+                ? 'Could not save your profile'
+                : 'Database request failed';
+        throw fail(
+          action +
+            ' (' +
+            rpc +
+            ': ' +
+            code +
+            ').' +
+            (code === 'PGRST202'
+              ? ' The database function is missing or its schema cache needs refreshing.'
+              : code === '42501'
+                ? ' The database denied access.'
+                : ' Please share this error so the database issue can be identified.'),
+          503
+        );
       }
       // Supabase refuses password logins for unconfirmed emails before issuing a token, so identity() never sees them.
       if (data.error_code === 'email_not_confirmed') throw fail('Confirm your email before logging in.', 401);
       // Keep Supabase's error code so callers can handle specific cases (it isn't shown to users).
-      throw Object.assign(fail(response.status === 429 ? 'Too many attempts. Please wait before trying again.' : data.msg || data.message || data.error_description || 'Account request failed.', response.status === 429 ? 429 : 401), { code: data.error_code });
+      throw Object.assign(
+        fail(
+          response.status === 429
+            ? 'Too many attempts. Please wait before trying again.'
+            : data.msg || data.message || data.error_description || 'Account request failed.',
+          response.status === 429 ? 429 : 401
+        ),
+        { code: data.error_code }
+      );
     }
     return data;
   }
   // Supabase reports a wrong, used or expired email code as "Token has expired or is invalid" (otp_expired),
   // which talks about a token the user never saw; explain it in terms of the code instead.
   async function verifyCode(email, token, type) {
-    try { return await request('/auth/v1/verify', { email, token, type }); }
-    catch (error) {
-      if (error.code === 'otp_expired') throw fail(type === 'recovery'
-        ? 'That recovery code is wrong or has expired. Check your latest email, or request a new code.'
-        : 'That confirmation code is wrong or has expired. Check your latest email, or sign up again to get a new code.', 400);
+    try {
+      return await request('/auth/v1/verify', { email, token, type });
+    } catch (error) {
+      if (error.code === 'otp_expired')
+        throw fail(
+          type === 'recovery'
+            ? 'That recovery code is wrong or has expired. Check your latest email, or request a new code.'
+            : 'That confirmation code is wrong or has expired. Check your latest email, or sign up again to get a new code.',
+          400
+        );
       throw error;
     }
   }
   function validateAccountInputs(values) {
-    for (const [field,limit] of [['email',254],['password',256],['code',32]]) {
-      if (values[field] !== undefined && (typeof values[field] !== 'string' || values[field].length > limit)) throw fail(field[0].toUpperCase()+field.slice(1)+' must be no more than '+limit+' characters.');
+    for (const [field, limit] of [
+      ['email', 254],
+      ['password', 256],
+      ['code', 32],
+    ]) {
+      if (values[field] !== undefined && (typeof values[field] !== 'string' || values[field].length > limit))
+        throw fail(field[0].toUpperCase() + field.slice(1) + ' must be no more than ' + limit + ' characters.');
     }
   }
   async function checkName(name, token) {
-    if (await request('/rest/v1/rpc/display_name_available',{candidate:name},token) === false) throw fail('That display name is already taken. Choose a different name.',409);
+    if ((await request('/rest/v1/rpc/display_name_available', { candidate: name }, token)) === false)
+      throw fail('That display name is already taken. Choose a different name.', 409);
   }
+  // The signed-in user's account and profile. Unconfirmed emails and accounts without a profile are refused.
   async function identity(accessToken) {
     const account = await request('/auth/v1/user', null, accessToken, 'GET');
     if (!account.email_confirmed_at) throw fail('Confirm your email before logging in.', 401);
     const rows = await request('/rest/v1/rpc/current_account', {}, accessToken);
     const profile = rows[0];
-    if (!profile || profile.id !== account.id || !['admin', 'contributor'].includes(profile.role)) throw fail('Your account profile is missing.', 403);
-    return { id: account.id, email: account.email, name: profile.display_name, role: profile.role, height: profile.height_cm, apeIndex: profile.ape_index_inches, profileComplete: profile.profile_complete === true };
+    if (!profile || profile.id !== account.id || !['admin', 'contributor'].includes(profile.role))
+      throw fail('Your account profile is missing.', 403);
+    return {
+      id: account.id,
+      email: account.email,
+      name: profile.display_name,
+      role: profile.role,
+      height: profile.height_cm,
+      apeIndex: profile.ape_index_inches,
+      profileComplete: profile.profile_complete === true,
+    };
   }
   return {
     googleUrl(redirectTo, challenge) {
-      if (!base || !key) throw fail('Google sign-in is not configured.',503);
+      if (!base || !key) throw fail('Google sign-in is not configured.', 503);
       const url = new URL(base + '/auth/v1/authorize');
-      url.search = new URLSearchParams({provider:'google', redirect_to:redirectTo, code_challenge:challenge, code_challenge_method:'s256', scopes:'email profile'}).toString();
+      url.search = new URLSearchParams({
+        provider: 'google',
+        redirect_to: redirectTo,
+        code_challenge: challenge,
+        code_challenge_method: 's256',
+        scopes: 'email profile',
+      }).toString();
       return url.href;
     },
     async exchangeGoogle(code, verifier) {
-      const session = await request('/auth/v1/token?grant_type=pkce', {auth_code:code,code_verifier:verifier});
-      if (!session.access_token || !session.refresh_token) throw fail('Google sign-in did not return a session.',401);
-      return {accessToken:session.access_token,refreshToken:session.refresh_token,expires:Date.now()+session.expires_in*1000,user:await identity(session.access_token)};
+      const session = await request('/auth/v1/token?grant_type=pkce', { auth_code: code, code_verifier: verifier });
+      if (!session.access_token || !session.refresh_token) throw fail('Google sign-in did not return a session.', 401);
+      return {
+        accessToken: session.access_token,
+        refreshToken: session.refresh_token,
+        expires: Date.now() + session.expires_in * 1000,
+        user: await identity(session.access_token),
+      };
     },
     async login(values) {
       validateAccountInputs(values);
-      if (typeof values.email !== 'string' || typeof values.password !== 'string') throw fail('Enter your email and password.', 401);
-      const session = await request('/auth/v1/token?grant_type=password', { email: values.email.trim(), password: values.password });
-      return { accessToken: session.access_token, refreshToken: session.refresh_token, expires: Date.now() + session.expires_in * 1000, user: await identity(session.access_token) };
+      if (typeof values.email !== 'string' || typeof values.password !== 'string')
+        throw fail('Enter your email and password.', 401);
+      const session = await request('/auth/v1/token?grant_type=password', {
+        email: values.email.trim(),
+        password: values.password,
+      });
+      return {
+        accessToken: session.access_token,
+        refreshToken: session.refresh_token,
+        expires: Date.now() + session.expires_in * 1000,
+        user: await identity(session.access_token),
+      };
     },
+    // Refreshes the session's tokens shortly before they expire, then returns the current identity.
     async resolve(session) {
       // A shared promise prevents concurrent requests from reusing a rotated refresh token.
       if (session.expires < Date.now() + 30000) {
-        if (!session.refreshing) session.refreshing = request('/auth/v1/token?grant_type=refresh_token', { refresh_token: session.refreshToken }).then(next => {
-          session.accessToken = next.access_token; session.refreshToken = next.refresh_token; session.expires = Date.now() + next.expires_in * 1000;
-        }).finally(() => { delete session.refreshing; });
+        if (!session.refreshing)
+          session.refreshing = request('/auth/v1/token?grant_type=refresh_token', {
+            refresh_token: session.refreshToken,
+          })
+            .then(next => {
+              session.accessToken = next.access_token;
+              session.refreshToken = next.refresh_token;
+              session.expires = Date.now() + next.expires_in * 1000;
+            })
+            .finally(() => {
+              delete session.refreshing;
+            });
         await session.refreshing;
       }
       return identity(session.accessToken);
     },
-    async profilePhoto(id) { return request('/rest/v1/rpc/profile_photo',{target_user:id}); },
-    async setProfilePhoto(path,session) { return request('/rest/v1/rpc/set_profile_photo',{target_path:path},session.accessToken); },
+    async profilePhoto(id) {
+      return request('/rest/v1/rpc/profile_photo', { target_user: id });
+    },
+    async setProfilePhoto(path, session) {
+      return request('/rest/v1/rpc/set_profile_photo', { target_path: path }, session.accessToken);
+    },
+    // prepare_account_deletion releases the user's uploaded files so they stay in the guide. Deleting the Supabase
+    // user then removes their personal data, and the guide content they added is kept without an owner.
     async deleteAccount(session) {
-      const adminKey=env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
-      if(!adminKey)throw fail('Account deletion is not configured. Contact the site administrator.',503);
-      const account=await identity(session.accessToken);
-      const headers={apikey:adminKey,Authorization:'Bearer '+adminKey,'Content-Type':'application/json'};
-      const prepared=await fetchImpl(base+'/rest/v1/rpc/prepare_account_deletion',{method:'POST',headers,body:JSON.stringify({target_user:account.id}),signal:AbortSignal.timeout(15000)});
-      if(!prepared.ok)throw fail('Could not prepare account deletion. Check the account-deletion migration.',503);
-      const response=await fetchImpl(base+'/auth/v1/admin/users/'+encodeURIComponent(account.id),{method:'DELETE',headers,body:JSON.stringify({should_soft_delete:false}),signal:AbortSignal.timeout(15000)});
-      if(!response.ok)throw fail('Could not delete your account. Please retry or contact the site administrator.',503);
+      const adminKey = env.SUPABASE_SECRET_KEY || env.SUPABASE_SERVICE_ROLE_KEY;
+      if (!adminKey) throw fail('Account deletion is not configured. Contact the site administrator.', 503);
+      const account = await identity(session.accessToken);
+      const headers = { apikey: adminKey, Authorization: 'Bearer ' + adminKey, 'Content-Type': 'application/json' };
+      const prepared = await fetchImpl(base + '/rest/v1/rpc/prepare_account_deletion', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ target_user: account.id }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!prepared.ok) throw fail('Could not prepare account deletion. Check the account-deletion migration.', 503);
+      const response = await fetchImpl(base + '/auth/v1/admin/users/' + encodeURIComponent(account.id), {
+        method: 'DELETE',
+        headers,
+        body: JSON.stringify({ should_soft_delete: false }),
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!response.ok)
+        throw fail('Could not delete your account. Please retry or contact the site administrator.', 503);
     },
     async publicProfile(id) {
-      return request('/rest/v1/rpc/read_public_profile',{target_user:id});
+      return request('/rest/v1/rpc/read_public_profile', { target_user: id });
     },
     async friends(session, values) {
-      if(values.action==='request' && values.target===session.user?.id) throw fail("You can't invite yourself.",400);
-      if(values.action==='suggest')return request('/rest/v1/rpc/search_friend_profiles',{query_name:values.name},session.accessToken);
-      return request('/rest/v1/rpc/friends_action',{action:values.action,target:values.target || null,query_name:values.name || null},session.accessToken);
+      if (values.action === 'request' && values.target === session.user?.id)
+        throw fail("You can't invite yourself.", 400);
+      if (values.action === 'suggest')
+        return request('/rest/v1/rpc/search_friend_profiles', { query_name: values.name }, session.accessToken);
+      return request(
+        '/rest/v1/rpc/friends_action',
+        { action: values.action, target: values.target || null, query_name: values.name || null },
+        session.accessToken
+      );
     },
     async logbook(session, values) {
-      return request('/rest/v1/rpc/' + (values ? 'set_problem_log' : 'read_logbook'), values ? {target_problem:values.problemId,completed:values.completed} : {}, session.accessToken);
+      return request(
+        '/rest/v1/rpc/' + (values ? 'set_problem_log' : 'read_logbook'),
+        values ? { target_problem: values.problemId, completed: values.completed } : {},
+        session.accessToken
+      );
     },
     async completeProfile(values, session) {
-      const details=profileDetails(values);
-      await checkName(details.name,session.accessToken);
-      await request('/rest/v1/rpc/complete_profile',{display_name:details.name,height_cm:details.height,ape_index_inches:details.apeIndex},session.accessToken);
+      const details = profileDetails(values);
+      await checkName(details.name, session.accessToken);
+      await request(
+        '/rest/v1/rpc/complete_profile',
+        { display_name: details.name, height_cm: details.height, ape_index_inches: details.apeIndex },
+        session.accessToken
+      );
       return identity(session.accessToken);
     },
     async signup(values) {
       validateAccountInputs(values);
-      const details=profileDetails(values);
-      if (typeof values.name !== 'string' || !values.name.trim() || values.name.trim().length > 120 || typeof values.email !== 'string' || typeof values.password !== 'string' || values.password.length < 6) throw fail('Provide a display name, email and a password of at least 6 characters.');
+      const details = profileDetails(values);
+      if (
+        typeof values.name !== 'string' ||
+        !values.name.trim() ||
+        values.name.trim().length > 120 ||
+        typeof values.email !== 'string' ||
+        typeof values.password !== 'string' ||
+        values.password.length < 6
+      )
+        throw fail('Provide a display name, email and a password of at least 6 characters.');
       await checkName(details.name);
       const message = 'Check your email for a confirmation code. If you already have an account, log in instead.';
-      try { await request('/auth/v1/signup', { email: values.email.trim(), password: values.password, data: { display_name: details.name, height_cm:details.height, ape_index_inches:details.apeIndex } }); }
-      catch(error) {
+      try {
+        await request('/auth/v1/signup', {
+          email: values.email.trim(),
+          password: values.password,
+          data: { display_name: details.name, height_cm: details.height, ape_index_inches: details.apeIndex },
+        });
+      } catch (error) {
         // A registered email gets the same reply as a new one, so sign-up can't reveal which emails have accounts.
         if (['user_already_exists', 'email_exists'].includes(error.code)) return { message };
-        await checkName(details.name); throw error;
+        await checkName(details.name);
+        throw error;
       }
       return { message };
     },
     async confirm(values) {
       validateAccountInputs(values);
-      if (typeof values.email !== 'string' || typeof values.code !== 'string') throw fail('Enter your email and confirmation code.');
-      const email = values.email.trim(), code = values.code.trim();
+      if (typeof values.email !== 'string' || typeof values.code !== 'string')
+        throw fail('Enter your email and confirmation code.');
+      const email = values.email.trim(),
+        code = values.code.trim();
       const token = testConfirmCode && code === testConfirmCode ? await testSignupCode(email) : code;
       const session = await verifyCode(email, token, 'signup');
       // Confirmation is separate from logging in to the local app.
@@ -181,12 +355,21 @@ export function createAuth({ env = { ...loadEnv('development', process.cwd(), ''
     },
     async reset(values) {
       validateAccountInputs(values);
-      if (typeof values.password !== 'string' || values.password.length < 6 || typeof values.code !== 'string' || typeof values.email !== 'string') throw fail('Enter your email, recovery code and a password of at least 6 characters.');
+      if (
+        typeof values.password !== 'string' ||
+        values.password.length < 6 ||
+        typeof values.code !== 'string' ||
+        typeof values.email !== 'string'
+      )
+        throw fail('Enter your email, recovery code and a password of at least 6 characters.');
       const session = await verifyCode(values.email.trim(), values.code.trim(), 'recovery');
       await request('/auth/v1/user', { password: values.password }, session.access_token, 'PUT');
+      // Sign out every session, including any on other devices that used the old password.
       await request('/auth/v1/logout?scope=global', {}, session.access_token);
       return { message: 'Password updated. Log in with your new password.' };
     },
-    async logout(session) { if (session) await request('/auth/v1/logout?scope=local', {}, session.accessToken); },
+    async logout(session) {
+      if (session) await request('/auth/v1/logout?scope=local', {}, session.accessToken);
+    },
   };
 }

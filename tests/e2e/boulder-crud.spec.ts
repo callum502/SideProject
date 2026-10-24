@@ -1,7 +1,14 @@
 import { test, expect } from './fixtures';
 import { createLocation, createBoulder, editItem, deleteItem, cancelEditAndRemoval } from './testHelpers';
 import { testUser, openPage, seedLocation } from './seedHelpers';
-import { guide, findRecord as find, deleteLocationsWithPrefix, assertBoulderExistsDB, assertBoulderOldDetailsRemovedFromDB, assertBoulderRemovedFromDB } from './apiTestHelpers';
+import {
+  guide,
+  findRecord as find,
+  deleteLocationsWithPrefix,
+  assertBoulderExistsDB,
+  assertBoulderOldDetailsRemovedFromDB,
+  assertBoulderRemovedFromDB,
+} from './apiTestHelpers';
 
 // Each spec uses its own account (signed in through the API); the login form is covered by login-logout and auth.
 const prefix = 'test_boulder_';
@@ -18,18 +25,28 @@ test('boulder CRUD', async ({}, info) => {
       const boulder = await createBoulder(page, location);
       // Verify the displayed boulder name and both sets of notes.
       await expect(page.getByRole('heading', { name: 'Test Boulder', exact: true })).toBeVisible();
-      const findingNotes = page.locator('.notes-block').filter({
-        has: page.getByRole('heading', { name: 'Finding the Boulder', exact: true }),
-      }).locator('p');
+      const findingNotes = page
+        .locator('.notes-block')
+        .filter({
+          has: page.getByRole('heading', { name: 'Finding the Boulder', exact: true }),
+        })
+        .locator('p');
       await expect(findingNotes).toBeVisible();
       await expect(findingNotes).toHaveText('Walk ten metres past the gate.');
-      const otherNotes = page.locator('.notes-block').filter({
-        has: page.getByRole('heading', { name: 'Other Notes', exact: true }),
-      }).locator('p');
+      const otherNotes = page
+        .locator('.notes-block')
+        .filter({
+          has: page.getByRole('heading', { name: 'Other Notes', exact: true }),
+        })
+        .locator('p');
       await expect(otherNotes).toBeVisible();
       await expect(otherNotes).toHaveText('Granite with a flat landing.');
       // API/DB check: verify the created record and its saved details independently of the UI.
-      await assertBoulderExistsDB(page, location.id, boulder.id, { name: 'Test Boulder', notes: 'Walk ten metres past the gate.', otherNotes: 'Granite with a flat landing.' });
+      await assertBoulderExistsDB(page, location.id, boulder.id, {
+        name: 'Test Boulder',
+        notes: 'Walk ten metres past the gate.',
+        otherNotes: 'Granite with a flat landing.',
+      });
       return { location, boulder };
     });
 
@@ -41,19 +58,29 @@ test('boulder CRUD', async ({}, info) => {
         otherNotes: boulder.otherNotes,
       };
       // Set the replacement values for this item.
-      const fields = { name: 'Edited Boulder', notes: 'Updated directions past the stream.', otherNotes: 'Bring two mats.' };
+      const fields = {
+        name: 'Edited Boulder',
+        notes: 'Updated directions past the stream.',
+        otherNotes: 'Bring two mats.',
+      };
       // Save through the edit form and check the heading after reloading.
       await editItem(page, 'boulder', fields);
       // Verify the displayed boulder name and both sets of notes.
       await expect(page.getByRole('heading', { name: fields.name, exact: true })).toBeVisible();
-      const findingNotes = page.locator('.notes-block').filter({
-        has: page.getByRole('heading', { name: 'Finding the Boulder', exact: true }),
-      }).locator('p');
+      const findingNotes = page
+        .locator('.notes-block')
+        .filter({
+          has: page.getByRole('heading', { name: 'Finding the Boulder', exact: true }),
+        })
+        .locator('p');
       await expect(findingNotes).toBeVisible();
       await expect(findingNotes).toHaveText(fields.notes);
-      const otherNotes = page.locator('.notes-block').filter({
-        has: page.getByRole('heading', { name: 'Other Notes', exact: true }),
-      }).locator('p');
+      const otherNotes = page
+        .locator('.notes-block')
+        .filter({
+          has: page.getByRole('heading', { name: 'Other Notes', exact: true }),
+        })
+        .locator('p');
       await expect(otherNotes).toBeVisible();
       await expect(otherNotes).toHaveText(fields.otherNotes);
       // API/DB check: verify all edited fields were persisted.
@@ -70,7 +97,9 @@ test('boulder CRUD', async ({}, info) => {
       await expect(page.getByRole('heading', { name: location.name, exact: true })).toBeVisible();
       // Verify the boulder is absent and the location shows its empty boulder list.
       await expect(page.locator('.boulder-row')).toHaveCount(0);
-      await expect(page.getByText('Add the first boulder to start adding problems, photos and videos.', { exact: true })).toBeVisible();
+      await expect(
+        page.getByText('Add the first boulder to start adding problems, photos and videos.', { exact: true })
+      ).toBeVisible();
       // API/DB check: verify the deleted ID is absent from persisted data.
       await assertBoulderRemovedFromDB(page, location.id, boulder.id);
     });

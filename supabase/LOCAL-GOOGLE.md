@@ -21,7 +21,7 @@ SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.co
 SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET=your-client-secret
 ```
 
-Both come from the Google OAuth client, not Supabase API keys. `.env` is ignored by Git. Do not put the secret in config.toml or a VITE_ variable.
+Both come from the Google OAuth client, not Supabase API keys. `.env` is ignored by Git. Do not put the secret in config.toml or a VITE\_ variable.
 
 Keep `.env.local` pointing to local Supabase with its local API keys. Once Google credentials are filled in, start Docker Desktop and run:
 

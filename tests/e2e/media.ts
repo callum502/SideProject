@@ -13,13 +13,24 @@ import os from 'node:os';
 import path from 'node:path';
 
 export type MediaType = 'jpg' | 'png' | 'webp' | 'mp4' | 'webm' | 'mov';
-export const MIME: Record<MediaType, string> = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime' };
+export const MIME: Record<MediaType, string> = {
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  mp4: 'video/mp4',
+  webm: 'video/webm',
+  mov: 'video/quicktime',
+};
 const dir = path.join(os.tmpdir(), 'sideproj-e2e-media');
 const still = ['-f', 'lavfi', '-i', 'testsrc=size=320x240', '-frames:v', '1'];
 const clip = ['-f', 'lavfi', '-i', 'testsrc=duration=1:size=320x240:rate=10', '-pix_fmt', 'yuv420p'];
 const recipes: Record<MediaType, string[]> = {
-  jpg: still, png: still, webp: [...still, '-c:v', 'libwebp'],
-  mp4: [...clip, '-c:v', 'libx264'], webm: [...clip, '-c:v', 'libvpx'], mov: [...clip, '-c:v', 'libx264'],
+  jpg: still,
+  png: still,
+  webp: [...still, '-c:v', 'libwebp'],
+  mp4: [...clip, '-c:v', 'libx264'],
+  webm: [...clip, '-c:v', 'libvpx'],
+  mov: [...clip, '-c:v', 'libx264'],
 };
 
 /**
@@ -37,8 +48,12 @@ export function mediaFile(type: MediaType, name = 'sample.' + type) {
     const temporary = path.join(dir, `sample.${process.pid}.${Date.now()}.${type}`);
     execFileSync(ffmpeg, ['-hide_banner', '-loglevel', 'error', '-y', ...recipes[type], temporary]);
     // On Windows, renaming onto a file another worker has just created can fail; that worker's copy is identical.
-    try { renameSync(temporary, file); }
-    catch (error) { rmSync(temporary, { force: true }); if (!existsSync(file)) throw error; }
+    try {
+      renameSync(temporary, file);
+    } catch (error) {
+      rmSync(temporary, { force: true });
+      if (!existsSync(file)) throw error;
+    }
   }
   return { name, mimeType: MIME[type], buffer: readFileSync(file) };
 }
@@ -53,6 +68,10 @@ export function oversizedFile(megabytes: number, type: MediaType) {
   mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `oversized-${megabytes}mb.${type}`);
   const handle = openSync(file, 'w');
-  try { ftruncateSync(handle, megabytes * 1024 * 1024 + 1); } finally { closeSync(handle); }
+  try {
+    ftruncateSync(handle, megabytes * 1024 * 1024 + 1);
+  } finally {
+    closeSync(handle);
+  }
   return file;
 }

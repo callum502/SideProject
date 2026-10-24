@@ -4,8 +4,11 @@ import { loadEnv } from 'vite';
 const env = { ...loadEnv('development', process.cwd(), ''), ...process.env };
 const baseURL = 'http://127.0.0.1:5174';
 function isLocal(value: string | undefined) {
-  try { return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value!).hostname); }
-  catch { return false; }
+  try {
+    return ['localhost', '127.0.0.1', '[::1]'].includes(new URL(value!).hostname);
+  } catch {
+    return false;
+  }
 }
 if (!isLocal(env.SUPABASE_URL)) {
   throw new Error('Browser tests require SUPABASE_URL to point to local Supabase. Check .env.local.');
@@ -38,27 +41,40 @@ export default defineConfig({
     // The dashboard's Record video option sets PW_VIDEO=1: record every test and draw each action
     // onto the video (red dot at the click point, outline on the target element, action title).
     // Playwright holds each annotation for `duration` before the next action, so recorded runs are slower.
-    video: process.env.PW_VIDEO === '1' ? {
-      mode: 'on',
-      show: {
-        actions: {
-          duration: 600,
-          style: {
-            point: 'width: 22px; height: 22px; border-radius: 50%; background: rgba(239, 68, 68, .45); box-shadow: 0 0 0 3px rgba(239, 68, 68, .9)',
-            highlight: 'outline: 3px solid rgba(239, 68, 68, .9); outline-offset: 2px; background: rgba(239, 68, 68, .1)',
-            title: 'font-size: 16px',
-          },
-        },
-        test: { level: 'step', position: 'top-left', fontSize: 14 },
-      },
-    } : 'off',
+    video:
+      process.env.PW_VIDEO === '1'
+        ? {
+            mode: 'on',
+            show: {
+              actions: {
+                duration: 600,
+                style: {
+                  point:
+                    'width: 22px; height: 22px; border-radius: 50%; background: rgba(239, 68, 68, .45); box-shadow: 0 0 0 3px rgba(239, 68, 68, .9)',
+                  highlight:
+                    'outline: 3px solid rgba(239, 68, 68, .9); outline-offset: 2px; background: rgba(239, 68, 68, .1)',
+                  title: 'font-size: 16px',
+                },
+              },
+              test: { level: 'step', position: 'top-left', fontSize: 14 },
+            },
+          }
+        : 'off',
   },
   webServer: {
     command: 'npm run dev',
     url: `${baseURL}/healthz`,
     reuseExistingServer: false,
     timeout: 60000,
-    // All workers share 127.0.0.1, so raise the per-IP rate limits for this local test server only (see request-limits.mjs).
-    env: { ...env, PORT: '5174', HOST: '127.0.0.1', NODE_ENV: 'development', E2E_CONFIRM_CODE: process.env.E2E_CONFIRM_CODE, E2E_RELAX_LIMITS: '1' },
+    // All workers share 127.0.0.1, so raise the per-IP rate limits for this local test server only
+    // (see request-limits.mjs).
+    env: {
+      ...env,
+      PORT: '5174',
+      HOST: '127.0.0.1',
+      NODE_ENV: 'development',
+      E2E_CONFIRM_CODE: process.env.E2E_CONFIRM_CODE,
+      E2E_RELAX_LIMITS: '1',
+    },
   },
 });

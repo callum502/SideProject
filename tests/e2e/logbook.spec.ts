@@ -18,20 +18,31 @@ async function openProfile(context: any, id: string, name: string) {
 
 test('logging a problem marks it done and adds it to the logbook; unlogging reverses both', async () => {
   const { location, boulder, problem } = await seedLocation(climber.current.request, prefix, { media: false });
-  const page = await openPage(climber.current.context, { location: location.id, boulder: boulder.id, problem: problem.id }, entryName);
+  const page = await openPage(
+    climber.current.context,
+    { location: location.id, boulder: boulder.id, problem: problem.id },
+    entryName
+  );
   // Log the problem.
   await page.getByRole('button', { name: '+ Log problem', exact: true }).click();
   const unlog = page.getByRole('button', { name: '− Remove from logbook', exact: true });
   await expect(unlog).toBeVisible();
   // The boulder's problem list marks it done.
   await page.getByRole('link', { name: /^Boulder/ }).click();
-  await expect(page.locator('.problem-row').filter({ hasText: 'Seed Problem' }).locator('.logged-badge')).toHaveText('Done');
+  await expect(page.locator('.problem-row').filter({ hasText: 'Seed Problem' }).locator('.logged-badge')).toHaveText(
+    'Done'
+  );
   // The profile's logbook lists it, linking back to the problem.
   const profile = await openProfile(climber.current.context, climber.current.account.id, climber.current.account.name);
   await expect(profile.getByRole('heading', { name: /^Logged climbs/ })).toContainText('1');
   const entry = profile.getByRole('link', { name: entryName, exact: true });
-  await expect(entry).toHaveAttribute('href', '#' + new URLSearchParams({ location: location.id, boulder: boulder.id, problem: problem.id }));
-  await expect(profile.locator('.problem-row').filter({ hasText: entryName })).toContainText(`${location.name} · Seed Boulder`);
+  await expect(entry).toHaveAttribute(
+    'href',
+    '#' + new URLSearchParams({ location: location.id, boulder: boulder.id, problem: problem.id })
+  );
+  await expect(profile.locator('.problem-row').filter({ hasText: entryName })).toContainText(
+    `${location.name} · Seed Boulder`
+  );
   // Unlog from the problem page.
   await page.goBack();
   await unlog.click();
@@ -40,7 +51,7 @@ test('logging a problem marks it done and adds it to the logbook; unlogging reve
   expect(await (await climber.current.request.get('/api/logbook')).json(), 'API/DB: logbook empty').toEqual([]);
 });
 
-test('climbs can be removed from your own logbook, but not from someone else\'s', async () => {
+test("climbs can be removed from your own logbook, but not from someone else's", async () => {
   const { problem } = await seedLocation(climber.current.request, prefix, { media: false });
   await logProblem(climber.current.request, problem.id);
   // Someone else sees the climb on the climber's public profile, without a Remove button.
@@ -57,7 +68,14 @@ test('climbs can be removed from your own logbook, but not from someone else\'s'
 test('a logged problem that is later deleted stays in the logbook, marked deleted', async () => {
   const { boulder, problem } = await seedLocation(climber.current.request, prefix, { media: false });
   await logProblem(climber.current.request, problem.id);
-  expect((await editGuide(climber.current.request, g => { find(g, boulder.id).problems = []; })).status(), 'Problem deleted').toBe(200);
+  expect(
+    (
+      await editGuide(climber.current.request, g => {
+        find(g, boulder.id).problems = [];
+      })
+    ).status(),
+    'Problem deleted'
+  ).toBe(200);
   const profile = await openProfile(climber.current.context, climber.current.account.id, climber.current.account.name);
   await expect(profile.getByText(entryName + ' (deleted)', { exact: true })).toBeVisible();
   await expect(profile.getByRole('link', { name: entryName })).toHaveCount(0);
@@ -71,21 +89,39 @@ test('a guest is asked to sign up instead of logging problems', async ({ browser
     const log = page.getByRole('button', { name: '+ Log problem', exact: true });
     await expect(log).toHaveAttribute('aria-disabled', 'true');
     // API check: the logbook refuses signed-out requests.
-    expect((await guest.request.post('/api/logbook', { data: { problemId: problem.id, completed: true } })).status(), 'Guest logging is refused').toBe(401);
-  } finally { await guest.close(); }
+    expect(
+      (await guest.request.post('/api/logbook', { data: { problemId: problem.id, completed: true } })).status(),
+      'Guest logging is refused'
+    ).toBe(401);
+  } finally {
+    await guest.close();
+  }
 });
 
 // Regression: this used to show "Could not load or save your logbook. Check your connection and that the logbook SQL
 // migration has been applied.", blaming the connection or setup instead of saying the problem was removed.
 test('logging a problem that was deleted meanwhile gives a clear message', async () => {
   const { location, boulder, problem } = await seedLocation(climber.current.request, prefix, { media: false });
-  const page = await openPage(climber.current.context, { location: location.id, boulder: boulder.id, problem: problem.id }, entryName);
+  const page = await openPage(
+    climber.current.context,
+    { location: location.id, boulder: boulder.id, problem: problem.id },
+    entryName
+  );
   const before = await (await climber.current.request.get('/api/logbook')).json();
   // The problem is deleted after the page loaded.
-  expect((await editGuide(climber.current.request, g => { find(g, boulder.id).problems = []; })).status(), 'Problem deleted').toBe(200);
+  expect(
+    (
+      await editGuide(climber.current.request, g => {
+        find(g, boulder.id).problems = [];
+      })
+    ).status(),
+    'Problem deleted'
+  ).toBe(200);
   await page.getByRole('button', { name: '+ Log problem', exact: true }).click();
   const alert = page.locator('.problem-log-action').getByRole('alert');
   await expect(alert).toBeVisible();
   expect(await (await climber.current.request.get('/api/logbook')).json(), 'API/DB: nothing logged').toEqual(before);
-  await expect(alert, 'Says the problem no longer exists').toHaveText('This problem no longer exists. It may have been removed; reload to see the latest guide.');
+  await expect(alert, 'Says the problem no longer exists').toHaveText(
+    'This problem no longer exists. It may have been removed; reload to see the latest guide.'
+  );
 });

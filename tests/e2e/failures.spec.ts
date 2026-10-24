@@ -21,7 +21,9 @@ async function editLocationName() {
 
 /** Make the next guide save fail with the given handler. */
 const failNextSave = (page: Page, handler: (route: any) => Promise<void>) =>
-  page.route('**/api/guide', route => isSave(route.request().method()) ? handler(route) : route.fallback(), { times: 1 });
+  page.route('**/api/guide', route => (isSave(route.request().method()) ? handler(route) : route.fallback()), {
+    times: 1,
+  });
 
 test('a failed save keeps the dialog and what was typed, and can be retried', async () => {
   const { page, dialog, location } = await editLocationName();
@@ -34,21 +36,34 @@ test('a failed save keeps the dialog and what was typed, and can be retried', as
   const saved = page.waitForResponse(r => r.url().endsWith('/api/guide') && isSave(r.request().method()));
   await dialog.getByRole('button', { name: 'Save location', exact: true }).click();
   expect((await saved).status(), 'Retry saved').toBe(200);
-  await expect(page.locator('.detail-banner').getByRole('heading', { name: location.name + '_edited', exact: true })).toBeVisible();
+  await expect(
+    page.locator('.detail-banner').getByRole('heading', { name: location.name + '_edited', exact: true })
+  ).toBeVisible();
 });
 
 test("the server's own error messages are shown, such as being rate limited", async () => {
   const { page, dialog } = await editLocationName();
-  await failNextSave(page, route => route.fulfill({ status: 429, headers: { 'Retry-After': '60' }, json: { error: 'Too many requests. Please wait before trying again.' } }));
+  await failNextSave(page, route =>
+    route.fulfill({
+      status: 429,
+      headers: { 'Retry-After': '60' },
+      json: { error: 'Too many requests. Please wait before trying again.' },
+    })
+  );
   await dialog.getByRole('button', { name: 'Save location', exact: true }).click();
   await expect(dialog.getByRole('alert')).toHaveText('Too many requests. Please wait before trying again.');
 });
 
 test('a guide that fails to load shows an error instead of an empty page', async () => {
   const page = await user.current.context.newPage();
-  await page.route('**/api/guide', route => route.request().method() === 'GET'
-    ? route.fulfill({ status: 503, json: { error: 'Database is unavailable. Your changes were not confirmed; reload before retrying.' } })
-    : route.fallback());
+  await page.route('**/api/guide', route =>
+    route.request().method() === 'GET'
+      ? route.fulfill({
+          status: 503,
+          json: { error: 'Database is unavailable. Your changes were not confirmed; reload before retrying.' },
+        })
+      : route.fallback()
+  );
   await page.goto('/#explore');
   await expect(page.getByRole('alert')).toContainText('Database is unavailable.');
 });
@@ -57,9 +72,14 @@ test('a guide that fails to load shows an error instead of an empty page', async
 // (such as a proxy's 502 while the server restarts).
 test('network failures and non-JSON error pages get a readable message', async () => {
   const { page, dialog, location } = await editLocationName();
-  const html = (status: number) => (route: any) => route.fulfill({ status, contentType: 'text/html', body: `<html><body>${status}</body></html>` });
+  const html = (status: number) => (route: any) =>
+    route.fulfill({ status, contentType: 'text/html', body: `<html><body>${status}</body></html>` });
   for (const [what, handler, message] of [
-    ['a dropped connection', (route: any) => route.abort('connectionreset'), "Couldn't reach SideProj. Check your connection and try again."],
+    [
+      'a dropped connection',
+      (route: any) => route.abort('connectionreset'),
+      "Couldn't reach SideProj. Check your connection and try again.",
+    ],
     ['an HTML server error page', html(502), 'SideProj is having trouble right now. Please try again in a moment.'],
     ['an HTML client error page', html(404), 'Something went wrong. Please try again.'],
   ] as const) {
@@ -77,7 +97,9 @@ test('network failures and non-JSON error pages get a readable message', async (
 // "Failed to fetch". Every screen now uses the shared api() in src/api.js.
 const offline = "Couldn't reach SideProj. Check your connection and try again.";
 const dropConnection = (page: Page, path: string, when: (body: string) => boolean = () => true) =>
-  page.route('**' + path, route => when(route.request().postData() || '') ? route.abort('connectionreset') : route.fallback());
+  page.route('**' + path, route =>
+    when(route.request().postData() || '') ? route.abort('connectionreset') : route.fallback()
+  );
 
 test('a dropped connection while logging in gets a readable message', async ({ browser }) => {
   const guest = await browser.newContext({ baseURL: test.info().project.use.baseURL });
@@ -89,7 +111,9 @@ test('a dropped connection while logging in gets a readable message', async ({ b
     await page.locator('input[name="password"]').fill('pw-anything');
     await page.getByRole('button', { name: 'Log in', exact: true }).click();
     await expect(page.getByRole('alert')).toHaveText(offline);
-  } finally { await guest.close(); }
+  } finally {
+    await guest.close();
+  }
 });
 
 test('a dropped connection while saving the profile gets a readable message', async () => {
@@ -117,6 +141,9 @@ test('a dropped connection while uploading a profile photo gets a readable messa
   await page.goto('/#user=' + user.current.account.id);
   await expect(page.getByRole('heading', { level: 1, name: user.current.account.name, exact: true })).toBeVisible();
   await dropConnection(page, '/api/images');
-  await page.locator('label', { hasText: 'Upload profile photo' }).locator('input[type="file"]').setInputFiles([mediaFile('png')]);
+  await page
+    .locator('label', { hasText: 'Upload profile photo' })
+    .locator('input[type="file"]')
+    .setInputFiles([mediaFile('png')]);
   await expect(page.getByRole('alert')).toHaveText(offline);
 });
