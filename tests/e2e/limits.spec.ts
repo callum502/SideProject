@@ -150,7 +150,7 @@ test('a location can hold at most 50 photos and videos', async () => {
   ).toEqual({ status: 400, error: message });
   // ...and the page refuses before uploading.
   const page = await openPage(user.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
-  await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
+  await chooseFiles(page, '+ Upload boulder photos', [mediaFile('png')]);
   await expect(page.getByRole('alert')).toContainText(message);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   // Removing a photo frees a slot, and the next upload succeeds.
@@ -159,7 +159,7 @@ test('a location can hold at most 50 photos and videos', async () => {
   const removed = page.waitForResponse(r => r.url().endsWith('/api/guide') && r.request().method() === 'PUT');
   await page.getByRole('dialog').getByRole('button', { name: 'Remove', exact: true }).click();
   expect((await removed).status(), 'Photo removed').toBe(200);
-  await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
+  await chooseFiles(page, '+ Upload boulder photos', [mediaFile('png')]);
   await completeUpload(page, { names: ['Freed slot'] });
   expect(
     find(await guide(page), boulder.id).images.map((i: any) => i.name),
@@ -186,7 +186,7 @@ test('uploads stop at the 10 GB storage allowance', async () => {
     });
     // ...the upload dialog explains it...
     const page = await openPage(user.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
-    await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
+    await chooseFiles(page, '+ Upload boulder photos', [mediaFile('png')]);
     await dialogError(page, 'Upload', message);
     // ...and the profile shows the allowance as full.
     await page.goto('/#user=' + user.account.id);

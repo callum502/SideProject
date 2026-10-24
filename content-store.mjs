@@ -35,6 +35,7 @@ export function toGuide(snapshot) {
       url: mediaUrl(row.storage_bucket, row.storage_path),
       ...owner(row),
       ...(row.kind === 'image' ? { annotations: row.annotations } : {}),
+      ...(row.kind === 'image' && row.boulder_id ? { onBoulderPage: row.on_boulder_page !== false } : {}),
     };
   };
   return {
@@ -136,6 +137,7 @@ export async function toRows(guide, previousMedia = [], storage = null, token) {
             mime_type: mime,
             size_bytes: size,
             annotations: kind === 'image' ? m.annotations : [],
+            on_boulder_page: m.onBoulderPage !== false,
             created_by: m.createdBy,
           });
         }

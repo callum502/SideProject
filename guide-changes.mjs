@@ -4,7 +4,7 @@ const FIELDS = {
   location: ['name', 'latitude', 'longitude', 'approach', 'links', 'createdBy'],
   photo: ['name', 'caption', 'url', 'annotations', 'createdBy'],
   boulder: ['name', 'notes', 'otherNotes', 'createdBy'],
-  image: ['name', 'caption', 'url', 'annotations', 'createdBy'],
+  image: ['name', 'caption', 'url', 'annotations', 'onBoulderPage', 'createdBy'],
   video: ['name', 'caption', 'url', 'createdBy'],
   problem: ['name', 'grade', 'description', 'photoAnnotations', 'imageIds', 'videoIds', 'createdBy'],
 };

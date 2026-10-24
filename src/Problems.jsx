@@ -55,6 +55,7 @@ export function ProblemList({ loggedIds = new Set(), place, boulder, add, busy, 
                 {loggedIds.has(p.id) && <span className="logged-badge">Done</span>}
                 <p>{p.description}</p>
               </span>
+              <MediaCounts problem={p} />
               <span aria-hidden="true">↗</span>
             </a>
           ))}
@@ -66,7 +67,35 @@ export function ProblemList({ loggedIds = new Set(), place, boulder, add, busy, 
   );
 }
 
-export function ProblemForm({ boulder, problem, save, busy, error, cancel }) {
+// Small photo and video counts on a problem row, so climbers can see which problems have topos or beta.
+function MediaCounts({ problem }) {
+  const photos = problem.imageIds.length,
+    videos = problem.videoIds.length;
+  if (!photos && !videos) return <span />;
+  const label = (count, noun) => `${count} ${noun}${count === 1 ? '' : 's'}`;
+  return (
+    <span className="problem-media-counts">
+      {photos > 0 && (
+        <span title={label(photos, 'photo')}>
+          <span aria-hidden="true">▧ {photos}</span>
+          <span className="sr-only">{label(photos, 'photo')}</span>
+        </span>
+      )}
+      {videos > 0 && (
+        <span title={label(videos, 'video')}>
+          <span aria-hidden="true">▶︎ {videos}</span>
+          <span className="sr-only">{label(videos, 'video')}</span>
+        </span>
+      )}
+    </span>
+  );
+}
+
+// Problems on the boulder, other than `problem`, that use a photo or video.
+export const otherProblemsUsing = (boulder, problem, item) =>
+  (boulder.problems || []).filter(p => p.id !== problem?.id && [...p.imageIds, ...p.videoIds].includes(item.id));
+
+export function ProblemForm({ problem, save, busy, error, cancel }) {
   // Text of only spaces passes the browser's required check, so say which field is missing.
   const [missing, setMissing] = React.useState('');
   async function submit(e) {
@@ -76,8 +105,8 @@ export function ProblemForm({ boulder, problem, save, busy, error, cancel }) {
       name: form.get('name').trim(),
       grade: form.get('grade').trim(),
       description: form.get('description').trim(),
-      imageIds: form.getAll('imageIds'),
-      videoIds: form.getAll('videoIds'),
+      // Photos and videos are added on the problem page; editing keeps the ones already there.
+      ...(problem ? {} : { imageIds: [], videoIds: [] }),
     };
     const empty = !fields.name
       ? ['name', 'Please enter a name.']
@@ -133,47 +162,6 @@ export function ProblemForm({ boulder, problem, save, busy, error, cancel }) {
           defaultValue={problem?.description || ''}
         />
       </label>
-      {problem && (
-        <>
-          <fieldset className="media-picker">
-            <legend>Link photos from this boulder</legend>
-            {boulder.images.length ? (
-              boulder.images.map(image => (
-                <label key={image.id}>
-                  <input
-                    type="checkbox"
-                    name="imageIds"
-                    value={image.id}
-                    defaultChecked={problem?.imageIds.includes(image.id)}
-                  />
-                  <img src={image.url} alt="" />
-                  <span>{image.name}</span>
-                </label>
-              ))
-            ) : (
-              <p>Upload photos on the boulder page to link them here.</p>
-            )}
-          </fieldset>
-          <fieldset className="media-picker">
-            <legend>Link beta videos from this boulder</legend>
-            {boulder.videos?.length ? (
-              boulder.videos.map(video => (
-                <label key={video.id}>
-                  <input
-                    type="checkbox"
-                    name="videoIds"
-                    value={video.id}
-                    defaultChecked={problem?.videoIds.includes(video.id)}
-                  />
-                  <span>{video.name}</span>
-                </label>
-              ))
-            ) : (
-              <p>Upload videos on the boulder page to link them here.</p>
-            )}
-          </fieldset>
-        </>
-      )}
       <div className="form-actions">
         <button type="button" className="secondary" disabled={busy} onClick={cancel}>
           Cancel
@@ -204,6 +192,7 @@ export function ProblemPage({
   uploadVideos,
   attach,
   removePhoto,
+  removeVideo,
   guest,
 }) {
   if (!problem)
@@ -216,6 +205,8 @@ export function ProblemPage({
     );
   const images = boulder.images.filter(i => problem.imageIds.includes(i.id));
   const videos = (boulder.videos || []).filter(v => problem.videoIds.includes(v.id));
+  // Videos from before videos moved to problem pages may not be on any problem; they can still be added to one.
+  const unassignedVideos = (boulder.videos || []).filter(v => !otherProblemsUsing(boulder, null, v).length);
   return (
     <article className="problem-page">
       <div className="detail-banner problem-banner">
@@ -253,7 +244,7 @@ export function ProblemPage({
             if (!guest && !logBusy) logProblem();
           }}
         >
-          {guest ? '+ Log problem' : logBusy ? 'Loading...' : logged ? '\u2212 Remove from logbook' : '+ Log problem'}
+          {guest ? '+ Log problem' : logBusy ? 'Loading...' : logged ? '− Remove from logbook' : '+ Log problem'}
         </button>
         {logError && (
           <p className="error" role="alert">
@@ -268,17 +259,30 @@ export function ProblemPage({
       <div className="section-heading photos-heading">
         <div>
           <h3>Photos & Topos</h3>
-          <p>JPEG, PNG, WebP · up to 8 MB each</p>
+          <p>
+            Annotate photos to show the holds and line. Photos of {boulder.name} can be reused by several problems, each
+            with its own markings.
+          </p>
         </div>
         {(canEdit || guest) && (
           <MediaDropdown
             guest={guest}
-            kind="photo"
+            label="+ Add Photo"
             busy={busy}
+            accept="image/jpeg,image/png,image/webp"
             upload={upload}
+            uploadText={
+              <>
+                Upload a new photo<small>JPEG, PNG, WebP · up to 8 MB each</small>
+              </>
+            }
             attach={() => attach('photo')}
-            boulder={boulder}
-            problem={problem}
+            attachText={
+              <>
+                Reuse a photo from {boulder.name}
+                <small>From the boulder page or its other problems</small>
+              </>
+            }
           />
         )}
       </div>
@@ -309,22 +313,25 @@ export function ProblemPage({
           ))}
         </div>
       ) : (
-        <p className="problem-empty">No photos yet. Add photos to annotate them for {problem.name}.</p>
+        <p className="problem-empty">
+          No photos yet. Upload a photo or reuse one from {boulder.name}, then annotate it for {problem.name}.
+        </p>
       )}
       <div className="section-heading photos-heading">
         <div>
           <h3>Beta videos</h3>
-          <p>MP4, WebM, or MOV · up to 100 MB each</p>
+          <p>Steal beta to become a better climber. MP4, WebM, or MOV · up to 100 MB each</p>
         </div>
         {(canEdit || guest) && (
           <MediaDropdown
             guest={guest}
-            kind="video"
+            label={unassignedVideos.length ? '+ Add Video' : '+ Upload video'}
             busy={busy}
+            accept="video/mp4,video/webm,video/quicktime,.mov"
             upload={uploadVideos}
-            attach={() => attach('video')}
-            boulder={boulder}
-            problem={problem}
+            uploadText="Upload a new video"
+            attach={unassignedVideos.length ? () => attach('video') : null}
+            attachText={<>Add a video already on {boulder.name}</>}
           />
         )}
       </div>
@@ -335,25 +342,46 @@ export function ProblemPage({
               <video controls playsInline preload="metadata" src={video.url} aria-label={video.name} />
               <figcaption>
                 {video.name}
-                <a href={`${video.url}?download=${encodeURIComponent(video.name)}`} download={video.name}>
-                  Download
-                </a>
+                <div className="video-actions">
+                  <a href={`${video.url}?download=${encodeURIComponent(video.name)}`} download={video.name}>
+                    Download
+                  </a>
+                  {canEdit && (
+                    <button
+                      className="remove-media"
+                      disabled={busy}
+                      aria-label={`Remove video ${video.name}`}
+                      onClick={() => removeVideo(video)}
+                    >
+                      Remove video
+                    </button>
+                  )}
+                </div>
               </figcaption>
             </figure>
           ))}
         </div>
       ) : (
-        <p className="problem-empty">No videos yet. Upload videos here or add existing videos from {boulder.name}.</p>
+        <p className="problem-empty">No videos yet. Upload a video showing how to climb {problem.name}.</p>
       )}
     </article>
   );
 }
 
-// Attaches photos or videos already on the boulder to a problem.
+// Picks photos already on the boulder to reuse on a problem, grouped by where they came from. Videos can only be
+// picked from those not on any problem yet.
 export function AttachMediaForm({ locationId, boulder, problem, kind, busy, error, cancel, save }) {
   const photo = kind === 'photo',
     field = photo ? 'imageIds' : 'videoIds';
+  const usedBy = item => otherProblemsUsing(boulder, problem, item);
   const available = (photo ? boulder.images : boulder.videos || []).filter(item => !problem[field].includes(item.id));
+  const groups = photo
+    ? [
+        ['Boulder photos', available.filter(item => item.onBoulderPage !== false)],
+        ['From other problems', available.filter(item => item.onBoulderPage === false && usedBy(item).length)],
+        ['Not used anywhere', available.filter(item => item.onBoulderPage === false && !usedBy(item).length)],
+      ]
+    : [['Videos not on a problem yet', available.filter(item => !usedBy(item).length)]];
   const [selected, setSelected] = React.useState([]);
   return (
     <form
@@ -367,37 +395,56 @@ export function AttachMediaForm({ locationId, boulder, problem, kind, busy, erro
           {error}
         </p>
       )}
-      <fieldset className="media-picker">
-        <legend>
-          Choose {photo ? 'photos' : 'videos'} from {boulder.name}
-        </legend>
-        {available.map(item => (
-          <div key={item.id} className={photo ? undefined : 'video-picker-item'}>
-            <label>
-              <input
-                type="checkbox"
-                disabled={busy}
-                checked={selected.includes(item.id)}
-                onChange={e =>
-                  setSelected(old => (e.target.checked ? [...old, item.id] : old.filter(id => id !== item.id)))
-                }
-              />
-              {photo && <img src={item.url} alt="" />}
-              <span>{item.name}</span>
-            </label>
-            {!photo && <VideoPickerPreview item={item} />}
-          </div>
+      {photo && (
+        <p className="media-picker-intro">
+          The photo is shared, but your markings are saved for {problem.name} only. Other problems using it keep their
+          own.
+        </p>
+      )}
+      {groups
+        .filter(([, items]) => items.length)
+        .map(([legend, items]) => (
+          <fieldset className="media-picker" key={legend}>
+            <legend>{legend}</legend>
+            {items.map(item => {
+              const others = usedBy(item);
+              return (
+                <div key={item.id} className={photo ? undefined : 'video-picker-item'}>
+                  <label>
+                    <input
+                      type="checkbox"
+                      disabled={busy}
+                      aria-describedby={others.length ? `used-${item.id}` : undefined}
+                      checked={selected.includes(item.id)}
+                      onChange={e =>
+                        setSelected(old => (e.target.checked ? [...old, item.id] : old.filter(id => id !== item.id)))
+                      }
+                    />
+                    {photo && <img src={item.url} alt="" />}
+                    <span>
+                      {item.name}
+                      {others.length > 0 && (
+                        <small id={`used-${item.id}`} aria-hidden="true" className="media-picker-usage">
+                          Used on {others.map(p => p.name).join(', ')}
+                        </small>
+                      )}
+                    </span>
+                  </label>
+                  {!photo && <VideoPickerPreview item={item} />}
+                </div>
+              );
+            })}
+          </fieldset>
         ))}
-        {!available.length && (
-          <p>
-            No {photo ? 'photos' : 'videos'} available. Upload {photo ? 'an image' : 'a video'} to{' '}
-            <a href={problemHref(locationId, boulder.id)} onClick={cancel}>
-              {boulder.name}
-            </a>{' '}
-            so it can be attached to {problem.name}.
-          </p>
-        )}
-      </fieldset>
+      {!groups.some(([, items]) => items.length) && (
+        <p>
+          No other photos on {boulder.name} yet. Upload a new photo instead, or add photos of the boulder on the{' '}
+          <a href={problemHref(locationId, boulder.id)} onClick={cancel}>
+            {boulder.name}
+          </a>{' '}
+          page.
+        </p>
+      )}
       <div className="form-actions">
         <button type="button" className="secondary" disabled={busy} onClick={cancel}>
           Cancel
@@ -410,9 +457,8 @@ export function AttachMediaForm({ locationId, boulder, problem, kind, busy, erro
   );
 }
 
-// Menu to upload new media or attach existing boulder media to a problem.
-function MediaDropdown({ kind, busy, upload, attach, boulder, problem, guest }) {
-  const photo = kind === 'photo';
+// Button to upload new media to a problem. With `attach`, it opens a menu that can also add existing boulder media.
+function MediaDropdown({ label, busy, accept, upload, uploadText, attach, attachText, guest }) {
   const [open, setOpen] = React.useState(false);
   const ref = React.useRef(null);
   React.useEffect(() => {
@@ -433,6 +479,16 @@ function MediaDropdown({ kind, busy, upload, attach, boulder, problem, guest }) 
       document.removeEventListener('keydown', escape);
     };
   }, [open]);
+  if (!attach)
+    return (
+      <label
+        title={guest ? 'Create an account to contribute' : undefined}
+        className={`secondary small upload photo-dropdown ${busy || guest ? 'disabled' : ''}`}
+      >
+        {label}
+        <input type="file" accept={accept} multiple disabled={busy || guest} onChange={upload} />
+      </label>
+    );
   return (
     <div className="photo-dropdown" ref={ref}>
       <button
@@ -444,15 +500,15 @@ function MediaDropdown({ kind, busy, upload, attach, boulder, problem, guest }) 
           if (!busy && !guest) setOpen(!open);
         }}
       >
-        + Add {photo ? 'Photo' : 'Video'} <span aria-hidden="true">▾</span>
+        {label} <span aria-hidden="true">▾</span>
       </button>
       {open && (
         <div className="photo-dropdown-options">
           <label className="secondary upload">
-            Upload {kind} from files
+            {uploadText}
             <input
               type="file"
-              accept={photo ? 'image/jpeg,image/png,image/webp' : 'video/mp4,video/webm,video/quicktime,.mov'}
+              accept={accept}
               multiple
               disabled={busy}
               onChange={e => {
@@ -469,7 +525,7 @@ function MediaDropdown({ kind, busy, upload, attach, boulder, problem, guest }) 
               attach();
             }}
           >
-            {photo ? <>Add photo from the {boulder.name} page</> : <>Add video from the {boulder.name} page</>}
+            {attachText}
           </button>
         </div>
       )}

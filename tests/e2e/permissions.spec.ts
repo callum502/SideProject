@@ -254,7 +254,7 @@ test("another user cannot edit the owner's problem, annotations or attachments",
       'Annotate',
       'Remove photo',
       /^\+ Add Photo/,
-      /^\+ Add Video/,
+      'Remove video Seed video',
     ]);
   });
 
@@ -384,11 +384,10 @@ test('the owner can edit and remove their own records', async () => {
       'Edit boulder',
       'Remove boulder',
       'Remove image Seed photo',
-      'Remove video Seed video',
     ]);
     await expectButtons(
       await open(owner, { location: location.id, boulder: boulder.id, problem: problem.id }, 'V2 (5+) - Seed Problem'),
-      ['Edit problem', 'Remove problem', 'Annotate', 'Remove photo', /^\+ Add Photo/, /^\+ Add Video/]
+      ['Edit problem', 'Remove problem', 'Annotate', 'Remove photo', /^\+ Add Photo/, 'Remove video Seed video']
     );
   });
 
@@ -564,11 +563,10 @@ test("an admin can edit and remove other users' photos, videos, captions and ann
     await expectButtons(await open(admin, { location: location.id }, location.name), ['Edit caption', 'Remove photo']);
     await expectButtons(await open(admin, { location: location.id, boulder: boulder.id }, 'Seed Boulder'), [
       'Remove image Seed photo',
-      'Remove video Seed video',
     ]);
     await expectButtons(
       await open(admin, { location: location.id, boulder: boulder.id, problem: problem.id }, 'V2 (5+) - Seed Problem'),
-      ['Annotate', 'Remove photo']
+      ['Annotate', 'Remove photo', 'Remove video Seed video']
     );
   });
   await test.step('API: each change succeeds', async () => {

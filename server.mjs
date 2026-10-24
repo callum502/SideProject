@@ -199,7 +199,8 @@ function validate(data) {
           !mediaReference(image.url) ||
           !/\.(png|jpg|webp)$/.test(image.url) ||
           !Array.isArray(image.annotations) ||
-          image.annotations.length > 1000
+          image.annotations.length > 1000 ||
+          (image.onBoulderPage !== undefined && typeof image.onBoulderPage !== 'boolean')
         )
           throw fail('Invalid image.');
         validateAnnotations(image.annotations);

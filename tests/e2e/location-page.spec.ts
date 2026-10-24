@@ -36,11 +36,11 @@ test('the banners count boulders, problems, photos and videos', async () => {
     (await editGuide(user.current.request, g => find(g, seed.location.id).boulders.push(boulder))).status(),
     'Second boulder added'
   ).toBe(200);
-  // The location totals every boulder; each boulder counts its own.
+  // The location totals every boulder; each boulder counts its problems and the photos on its page.
   page = await openPage(user.current.context, { location: seed.location.id }, seed.location.name);
   await expect(banner(page)).toHaveText('2 boulders · 3 problems · 2 photos · 1 video');
   page = await openPage(user.current.context, { location: seed.location.id, boulder: boulder.id }, 'Second Boulder');
-  await expect(banner(page)).toHaveText('2 problems · 1 photo · 0 videos');
+  await expect(banner(page)).toHaveText('2 problems · 1 boulder photo');
 });
 
 test('additional links can be added, edited and removed, and must be valid', async () => {

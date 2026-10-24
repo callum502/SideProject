@@ -381,7 +381,7 @@ type FileInput = string | { name: string; mimeType: string; buffer: Buffer };
 /**
  * Choose files in an upload control, which opens the naming dialog.
  * @param page - Page showing the upload control.
- * @param label - Visible text of the control's label, such as `+ Upload images`.
+ * @param label - Visible text of the control's label, such as `+ Upload boulder photos`.
  * @param files - Files to choose.
  */
 export async function chooseFiles(page: Page, label: string, files: FileInput[]) {

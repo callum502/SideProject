@@ -1373,6 +1373,15 @@ form label textarea {
   font-size: 14px;
   color: var(--muted);
 }
+.media-picker-usage {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+.media-picker-intro {
+  font-size: 14px;
+  color: var(--muted);
+}
 
 .page-navigation {
   max-width: 1050px;
@@ -1840,6 +1849,17 @@ button:disabled {
   border-radius: 8px;
   box-shadow: 0 8px 24px #0005;
 }
+.photo-dropdown-options small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.75;
+}
+.photo-dropdown-options .secondary:has(small) {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
 .photo-dropdown-options .secondary {
   width: 100%;
   white-space: normal;
@@ -2265,7 +2285,21 @@ figcaption,
 }
 .problem-preview {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+/* Photo and video counts on a problem row. */
+.problem-media-counts {
+  display: flex;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4d5e52;
+  white-space: nowrap;
+}
+.problem-media-counts > span {
+  padding: 3px 9px;
+  border-radius: 12px;
+  background: #eef2ea;
 }
 .problem-preview > span:first-child {
   display: block;

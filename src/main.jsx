@@ -16,7 +16,7 @@ import CoordinatePicker from './CoordinatePicker';
 import LoginPage from './LoginPage';
 import LocationSearch from './LocationSearch';
 import PageNavigation from './PageNavigation';
-import { ProblemList, ProblemForm, ProblemPage, AttachMediaForm, problemHref } from './Problems';
+import { ProblemList, ProblemForm, ProblemPage, AttachMediaForm, otherProblemsUsing } from './Problems';
 
 const uid = () => crypto.randomUUID();
 const countLabel = (count, noun) => `${count} ${noun}${count === 1 ? '' : 's'}`;
@@ -189,6 +189,8 @@ function App() {
   const place = db.locations.find(l => l.id === locationId);
   const boulder = place?.boulders.find(b => b.id === boulderId);
   const problem = boulder?.problems?.find(p => p.id === problemId);
+  // Photos that show the boulder itself, as opposed to topos uploaded for one problem.
+  const boulderPhotos = (boulder?.images || []).filter(image => image.onBoulderPage !== false);
   const choose = (l, b = null, p = null) => {
     setLocationId(l);
     setBoulderId(b);
@@ -241,6 +243,24 @@ function App() {
     }));
     return updatePlace({ boulders: place.boulders.map(b => (b.id === boulder.id ? next : b)) });
   };
+  // Problem photos and videos are only reachable through problems. A change to `problems` that leaves one off the
+  // boulder page and on no problem also deletes it, when the user may, so it stops using storage.
+  const orphaned = (item, problems) => {
+    const uses = list => list.some(p => [...p.imageIds, ...p.videoIds].includes(item.id));
+    return item.onBoulderPage !== true && canEdit(item) && uses(boulder.problems) && !uses(problems);
+  };
+  const updateProblems = problems =>
+    updateBoulder({
+      problems,
+      images: boulder.images.filter(image => !orphaned(image, problems)),
+      videos: (boulder.videos || []).filter(video => !orphaned(video, problems)),
+    });
+  // Whether taking `item` off `problem` deletes it (see updateProblems).
+  const deletesWithProblem = (item, problem) =>
+    orphaned(
+      item,
+      boulder.problems.filter(p => p.id !== problem.id)
+    );
   // Submit handler shared by the add and edit forms for locations and boulders.
   async function submit(e) {
     e.preventDefault();
@@ -341,6 +361,8 @@ function App() {
           caption: captions[images.length] || '',
           url: result.url,
           annotations: [],
+          // Photos uploaded on a problem page are that problem's topos, so they stay off the boulder page.
+          ...(boulder ? { onBoulderPage: !problem } : {}),
         });
       }
       const saved = !boulder
@@ -567,8 +589,7 @@ function App() {
                           <div className="banner-bottom">
                             <span>
                               {countLabel((boulder.problems || []).length, 'problem')} ·{' '}
-                              {countLabel(boulder.images.length, 'photo')} ·{' '}
-                              {countLabel((boulder.videos || []).length, 'video')}
+                              {countLabel(boulderPhotos.length, 'boulder photo')}
                             </span>
                             <div className="location-actions">
                               {canEdit(boulder) && (
@@ -606,11 +627,15 @@ function App() {
                           guest={!user}
                           removePhoto={image => {
                             setError('');
-                            setModal({ unlinkPhoto: image });
+                            setModal({ removeFromProblem: image, field: 'imageIds' });
                           }}
                           attach={kind => {
                             setError('');
                             setModal({ attachMedia: kind });
+                          }}
+                          removeVideo={video => {
+                            setError('');
+                            setModal({ removeFromProblem: video, field: 'videoIds' });
                           }}
                           upload={upload}
                           uploadVideos={uploadVideos}
@@ -666,17 +691,17 @@ function App() {
                           />
                           <div className="section-heading photos-heading">
                             <div>
-                              <h3>Photos</h3>
+                              <h3>Boulder photos</h3>
                               <p>
-                                Photos of the boulder. Photos uploaded here can be annotated on problem pages to
-                                highlight the line and its holds.
+                                Show what {boulder.name} looks like so climbers can spot it. To mark a problem's holds
+                                or line, open the problem and add a topo there.
                               </p>
                             </div>
                             <label
                               title={!user ? 'Create an account to contribute' : undefined}
                               className={`secondary small upload ${busy || !user ? 'disabled' : ''}`}
                             >
-                              + Upload images
+                              + Upload boulder photos
                               <input
                                 type="file"
                                 accept="image/jpeg,image/png,image/webp"
@@ -686,16 +711,19 @@ function App() {
                               />
                             </label>
                           </div>
-                          {!boulder.images.length ? (
+                          {!boulderPhotos.length ? (
                             <div className="photo-empty">
                               <Icon name="photo" />
-                              <h3>Upload an image here.</h3>
-                              <p>Upload a boulder photo, then link and annotate it from a problem page.</p>
+                              <h3>Show climbers what this boulder looks like.</h3>
+                              <p>
+                                A wide shot of the boulder or a photo of each face helps climbers recognise it. Photos
+                                for a single problem belong on that problem's page.
+                              </p>
                               <span>JPEG, PNG, WebP · up to 8 MB each</span>
                             </div>
                           ) : (
                             <div className="photo-grid">
-                              {boulder.images.map(img => (
+                              {boulderPhotos.map(img => (
                                 <div className="photo-item" key={img.id}>
                                   <div className="photo-card">
                                     <div className="photo-thumb">
@@ -712,7 +740,7 @@ function App() {
                                       aria-label={`Remove image ${img.name}`}
                                       onClick={() => {
                                         setError('');
-                                        setModal({ remove: img, collection: 'images' });
+                                        setModal({ remove: img });
                                       }}
                                     >
                                       Remove image
@@ -722,76 +750,6 @@ function App() {
                               ))}
                             </div>
                           )}
-                          <section aria-labelledby="beta-videos-heading">
-                            <div className="section-heading photos-heading">
-                              <div>
-                                <h3 id="beta-videos-heading">Beta videos</h3>
-                                <p>Steal beta to become a better climber.</p>
-                              </div>
-                              <label
-                                title={!user ? 'Create an account to contribute' : undefined}
-                                className={`secondary small upload ${busy || !user ? 'disabled' : ''}`}
-                              >
-                                {busy ? 'Please wait...' : '+ Upload video'}
-                                <input
-                                  type="file"
-                                  accept="video/mp4,video/webm,video/quicktime,.mov"
-                                  multiple
-                                  disabled={busy || !user}
-                                  onChange={uploadVideos}
-                                />
-                              </label>
-                            </div>
-
-                            {!(boulder.videos || []).length ? (
-                              <div className="photo-empty">
-                                <h3>Spray beta here.</h3>
-                                <p>Upload a video showing your beta for a problem at this boulder.</p>
-                                <span>MP4, WebM, or MOV · up to {videoMaxMB} MB each</span>
-                              </div>
-                            ) : (
-                              <div className="video-grid">
-                                {boulder.videos.map(video => (
-                                  <figure className="video-card" key={video.id}>
-                                    <video
-                                      controls
-                                      playsInline
-                                      preload="metadata"
-                                      src={video.url}
-                                      aria-label={video.name}
-                                    >
-                                      Your browser does not support this video.
-                                    </video>
-                                    <figcaption>
-                                      {video.name}
-                                      <div className="video-actions">
-                                        <a
-                                          href={`${video.url}?download=${encodeURIComponent(video.name)}`}
-                                          download={video.name}
-                                        >
-                                          Download
-                                        </a>
-                                        {canEdit(video) && (
-                                          <button
-                                            className="remove-media"
-                                            disabled={busy || !canEdit(video)}
-                                            aria-label={`Remove video ${video.name}`}
-                                            onClick={() => {
-                                              setError('');
-                                              setModal({ remove: video, collection: 'videos' });
-                                            }}
-                                          >
-                                            Remove video
-                                          </button>
-                                        )}
-                                      </div>
-                                    </figcaption>
-                                    <p>If playback is unavailable, download the original video.</p>
-                                  </figure>
-                                ))}
-                              </div>
-                            )}
-                          </section>
                         </>
                       ) : (
                         <>
@@ -924,7 +882,14 @@ function App() {
                               {place.boulders.map((b, i) => (
                                 <button className="boulder-row" key={b.id} onClick={() => choose(place.id, b.id)}>
                                   <span className="boulder-avatar">
-                                    {b.images[0] ? <img src={b.images[0].url} alt="" /> : <Icon name="mountain" />}
+                                    {b.images[0] ? (
+                                      <img
+                                        src={(b.images.find(image => image.onBoulderPage !== false) || b.images[0]).url}
+                                        alt=""
+                                      />
+                                    ) : (
+                                      <Icon name="mountain" />
+                                    )}
                                   </span>
                                   <div>
                                     <span className="eyebrow">BOULDER {String(i + 1).padStart(2, '0')}</span>
@@ -1179,48 +1144,57 @@ function App() {
           </form>
         </Modal>
       )}
-      {modal?.unlinkPhoto && (
-        <Modal
-          title="Remove photo from problem?"
-          close={() => {
-            if (!busy) setModal(null);
-          }}
-        >
-          <p>
-            Remove <strong>{modal.unlinkPhoto.name}</strong> from this problem? The original photo will remain on the
-            boulder and any other problems using it.
-          </p>
-          {error && (
-            <p className="error" role="alert">
-              {error}
-            </p>
-          )}
-          <div className="form-actions">
-            <button className="secondary" disabled={busy} onClick={() => setModal(null)}>
-              Cancel
-            </button>
-            <button
-              className="danger-button"
-              disabled={busy || !canEdit(problem)}
-              onClick={async () => {
-                const id = modal.unlinkPhoto.id;
-                if (
-                  await updateBoulder({
-                    problems: boulder.problems.map(p =>
-                      p.id === problem.id ? { ...p, imageIds: p.imageIds.filter(imageId => imageId !== id) } : p
-                    ),
-                  })
-                ) {
-                  setModal(null);
-                  setToast('Photo removed from problem');
-                }
+      {modal?.removeFromProblem &&
+        (() => {
+          const { removeFromProblem: item, field } = modal;
+          const noun = field === 'imageIds' ? 'photo' : 'video';
+          const deletes = deletesWithProblem(item, problem);
+          return (
+            <Modal
+              title={deletes ? `Remove ${noun}?` : `Remove ${noun} from problem?`}
+              close={() => {
+                if (!busy) setModal(null);
               }}
             >
-              {busy ? 'Removing...' : 'Remove photo'}
-            </button>
-          </div>
-        </Modal>
-      )}
+              <p>
+                Remove <strong>{item.name}</strong> from this problem?{' '}
+                {deletes
+                  ? `No other problem${noun === 'photo' ? ' or the boulder page' : ''} uses it, so it will be deleted. This cannot be undone.`
+                  : `The ${noun} stays on ${boulder.name} for other problems to use.`}
+              </p>
+              {error && (
+                <p className="error" role="alert">
+                  {error}
+                </p>
+              )}
+              <div className="form-actions">
+                <button className="secondary" disabled={busy} onClick={() => setModal(null)}>
+                  Cancel
+                </button>
+                <button
+                  className="danger-button"
+                  disabled={busy || !canEdit(problem)}
+                  onClick={async () => {
+                    if (
+                      await updateProblems(
+                        boulder.problems.map(p =>
+                          p.id === problem.id ? { ...p, [field]: p[field].filter(id => id !== item.id) } : p
+                        )
+                      )
+                    ) {
+                      setModal(null);
+                      setToast(
+                        (noun === 'photo' ? 'Photo' : 'Video') + (deletes ? ' removed' : ' removed from problem')
+                      );
+                    }
+                  }}
+                >
+                  {busy ? 'Removing...' : `Remove ${noun}`}
+                </button>
+              </div>
+            </Modal>
+          );
+        })()}
       {modal?.removeBoulder && (
         <Modal
           title="Remove boulder?"
@@ -1267,8 +1241,10 @@ function App() {
           }}
         >
           <p className="preserve">
-            Remove <strong>{modal.removeProblem.name}</strong> from this boulder? This cannot be undone. Its linked
-            photos and videos will remain on the boulder.
+            Remove <strong>{modal.removeProblem.name}</strong> from this boulder? This cannot be undone.{' '}
+            {[...boulder.images, ...(boulder.videos || [])].some(item => deletesWithProblem(item, modal.removeProblem))
+              ? 'Its videos and photos that no other problem or the boulder page uses will be deleted too.'
+              : ''}
           </p>
           {error && (
             <p className="error" role="alert">
@@ -1284,7 +1260,7 @@ function App() {
               disabled={busy}
               onClick={async () => {
                 const id = modal.removeProblem.id;
-                if (await updateBoulder({ problems: (boulder.problems || []).filter(p => p.id !== id) })) {
+                if (await updateProblems((boulder.problems || []).filter(p => p.id !== id))) {
                   setModal(null);
                   choose(place.id, boulder.id);
                   setToast('Problem removed');
@@ -1298,7 +1274,9 @@ function App() {
       )}
       {modal?.attachMedia && (
         <Modal
-          title={`Add ${modal.attachMedia} from ${boulder.name} page`}
+          title={
+            modal.attachMedia === 'photo' ? `Reuse a photo from ${boulder.name}` : `Add a video from ${boulder.name}`
+          }
           close={() => {
             if (!busy) setModal(null);
           }}
@@ -1332,7 +1310,6 @@ function App() {
           }}
         >
           <ProblemForm
-            boulder={boulder}
             problem={modal.problem}
             busy={busy}
             error={error}
@@ -1485,14 +1462,25 @@ function App() {
       )}
       {modal?.remove && (
         <Modal
-          title={modal.collection === 'images' ? 'Remove image?' : 'Remove video?'}
+          title="Remove image?"
           close={() => {
             if (!busy) setModal(null);
           }}
         >
           <p className="preserve">
-            Remove <strong>{modal.remove.name}</strong> from this boulder?
-            {modal.collection === 'images' ? ' Its annotations will also be removed.' : ''}
+            {otherProblemsUsing(boulder, null, modal.remove).length ? (
+              <>
+                Remove <strong>{modal.remove.name}</strong> from the boulder page? It stays on{' '}
+                {otherProblemsUsing(boulder, null, modal.remove)
+                  .map(p => p.name)
+                  .join(', ')}{' '}
+                with its markings.
+              </>
+            ) : (
+              <>
+                Remove <strong>{modal.remove.name}</strong> from this boulder? This cannot be undone.
+              </>
+            )}
           </p>
           {error && (
             <p className="error" role="alert">
@@ -1507,14 +1495,18 @@ function App() {
               className="danger-button"
               disabled={busy}
               onClick={async () => {
-                const { collection, remove } = modal;
+                // A photo problems still use only leaves the boulder page, so their topos keep working.
+                const id = modal.remove.id;
+                const used = otherProblemsUsing(boulder, null, modal.remove).length;
                 if (
                   await updateBoulder({
-                    [collection]: (boulder[collection] || []).filter(item => item.id !== remove.id),
+                    images: used
+                      ? boulder.images.map(image => (image.id === id ? { ...image, onBoulderPage: false } : image))
+                      : boulder.images.filter(image => image.id !== id),
                   })
                 ) {
                   setModal(null);
-                  setToast(collection === 'images' ? 'Image removed' : 'Video removed');
+                  setToast('Image removed');
                 }
               }}
             >

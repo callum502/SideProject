@@ -11,7 +11,7 @@ test('uploads JPEG, PNG and WebP photos to a boulder with chosen names', async (
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   // Choose three photos at once; each gets a default name, and the first is renamed.
-  await chooseFiles(page, '+ Upload images', [mediaFile('jpg'), mediaFile('png'), mediaFile('webp')]);
+  await chooseFiles(page, '+ Upload boulder photos', [mediaFile('jpg'), mediaFile('png'), mediaFile('webp')]);
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByLabel('Photo 1 name')).toHaveValue('Photo 1');
   await expect(dialog.getByLabel('Photo 3 name')).toHaveValue('Photo 3');
@@ -19,9 +19,7 @@ test('uploads JPEG, PNG and WebP photos to a boulder with chosen names', async (
   // All three are shown and counted.
   for (const name of ['Crimp face', 'Photo 2', 'Photo 3'])
     await expect(page.locator('.photo-grid').getByRole('img', { name, exact: true })).toBeVisible();
-  await expect(page.locator('.detail-banner .banner-bottom span').first()).toHaveText(
-    '1 problem · 3 photos · 0 videos'
-  );
+  await expect(page.locator('.detail-banner .banner-bottom span').first()).toHaveText('1 problem · 3 boulder photos');
   // API/DB check: each was saved, in the chosen order, with its name, type and creator.
   const images = find(await guide(page), boulder.id).images;
   expect(
@@ -30,7 +28,7 @@ test('uploads JPEG, PNG and WebP photos to a boulder with chosen names', async (
   ).toEqual(['Crimp face.jpg', 'Photo 2.png', 'Photo 3.webp']);
   for (const image of images) expect(image.createdBy, 'API/DB: credited to the uploader').toBe(user.current.account.id);
   // Names are unique per boulder: the next upload's default skips the names in use.
-  await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
+  await chooseFiles(page, '+ Upload boulder photos', [mediaFile('png')]);
   await expect(dialog.getByLabel('Photo 1 name')).toHaveValue('Photo 4');
 });
 
@@ -57,7 +55,7 @@ test('rejects files that are not supported images, without saving anything', asy
   ];
   for (const [what, file, message] of attempts) {
     await test.step(what, async () => {
-      await chooseFiles(page, '+ Upload images', [file]);
+      await chooseFiles(page, '+ Upload boulder photos', [file]);
       await dialogError(page, 'Upload', message);
       await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
     });
@@ -69,7 +67,7 @@ test('rejects files that are not supported images, without saving anything', asy
 test('rejects blank names and names already used on the boulder', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix);
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
-  await chooseFiles(page, '+ Upload images', [mediaFile('png'), mediaFile('png')]);
+  await chooseFiles(page, '+ Upload boulder photos', [mediaFile('png'), mediaFile('png')]);
   const dialog = page.getByRole('dialog');
   // A name of only spaces passes the browser's required check but is refused.
   await dialog.getByLabel('Photo 1 name').fill('   ');
@@ -88,22 +86,42 @@ test('rejects blank names and names already used on the boulder', async () => {
   ).toEqual(['Seed photo']);
 });
 
-// The last check is a regression test: removing a photo used to leave its annotations in problems' photoAnnotations.
-test('removing a boulder photo also removes it from its problems', async () => {
+test('removing a boulder photo that a problem uses keeps it on the problem', async () => {
   const { location, boulder, problem, image } = await seedLocation(user.current.request, prefix);
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   await page.getByRole('button', { name: 'Remove image Seed photo', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('heading', { name: 'Remove image?', exact: true })).toBeVisible();
+  await expect(dialog).toContainText('It stays on Seed Problem with its markings.');
   const saved = page.waitForResponse(r => r.url().endsWith('/api/guide') && r.request().method() === 'PUT');
   await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
   expect((await saved).status(), 'Removal saved').toBe(200);
   await expect(page.getByRole('status').filter({ hasText: 'Image removed' })).toBeVisible();
   await expect(page.locator('.photo-grid')).toHaveCount(0);
-  // API/DB check: the photo is gone from the boulder and from the problem it was attached to, with its annotations.
+  // API/DB check: the photo left the boulder page but is still the problem's, with its annotations.
+  const current = await guide(page);
+  expect(find(current, image.id), 'API/DB: off the boulder page').toMatchObject({ onBoulderPage: false });
+  expect(find(current, problem.id).imageIds, 'API/DB: problem link kept').toEqual([image.id]);
+  expect(find(current, problem.id).photoAnnotations, "API/DB: the problem's annotations kept").toHaveProperty(image.id);
+});
+
+// The last check is a regression test: removing a photo used to leave its annotations in problems' photoAnnotations.
+test('removing a boulder photo no problem uses deletes it', async () => {
+  const { location, boulder, problem, image } = await seedLocation(user.current.request, prefix);
+  expect(
+    (await editGuide(user.current.request, g => (find(g, problem.id).imageIds = []))).status(),
+    'Detached the seeded photo'
+  ).toBe(200);
+  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+  await page.getByRole('button', { name: 'Remove image Seed photo', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('This cannot be undone.');
+  const saved = page.waitForResponse(r => r.url().endsWith('/api/guide') && r.request().method() === 'PUT');
+  await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
+  expect((await saved).status(), 'Removal saved').toBe(200);
+  await expect(page.locator('.photo-grid')).toHaveCount(0);
   const current = await guide(page);
   expect(find(current, image.id), 'API/DB: photo removed').toBeUndefined();
-  expect(find(current, problem.id).imageIds, 'API/DB: problem link removed').toEqual([]);
   expect(
     find(current, problem.id).photoAnnotations,
     "API/DB: the problem's annotations for the photo removed"
@@ -115,7 +133,12 @@ test('removing a boulder photo also removes it from its problems', async () => {
 test('photos uploaded together keep the order they were chosen in', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
-  await chooseFiles(page, '+ Upload images', [mediaFile('png'), mediaFile('jpg'), mediaFile('webp'), mediaFile('png')]);
+  await chooseFiles(page, '+ Upload boulder photos', [
+    mediaFile('png'),
+    mediaFile('jpg'),
+    mediaFile('webp'),
+    mediaFile('png'),
+  ]);
   await completeUpload(page);
   const order = ['Photo 1', 'Photo 2', 'Photo 3', 'Photo 4'];
   await expect(page.locator('.photo-grid .photo-card span')).toHaveText(order);
@@ -181,7 +204,7 @@ test('a batch with an unsupported file uploads nothing', async () => {
   ] as const) {
     await test.step(what, async () => {
       // The bad file comes last, after valid ones.
-      await chooseFiles(page, '+ Upload images', [mediaFile('png'), mediaFile('jpg'), bad]);
+      await chooseFiles(page, '+ Upload boulder photos', [mediaFile('png'), mediaFile('jpg'), bad]);
       await dialogError(page, 'Upload', message);
       await page.getByRole('dialog').getByRole('button', { name: 'Cancel', exact: true }).click();
     });
@@ -202,7 +225,7 @@ test('a photo of exactly 8 MB uploads', async () => {
     buffer: Buffer.concat([png, Buffer.alloc(8 * 1024 * 1024 - png.length)]),
   };
   expect(file.buffer.length).toBe(8 * 1024 * 1024);
-  await chooseFiles(page, '+ Upload images', [file]);
+  await chooseFiles(page, '+ Upload boulder photos', [file]);
   await completeUpload(page, { names: ['Exactly 8 MB'] });
   expect(
     find(await guide(page), boulder.id).images.map((i: any) => i.name),
@@ -223,7 +246,7 @@ test('a failed upload keeps the dialog open, saves nothing, and can be retried',
   ] as const) {
     await test.step(what, async () => {
       await page.route('**/api/images', fail, { times: 1 });
-      await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
+      await chooseFiles(page, '+ Upload boulder photos', [mediaFile('png')]);
       const dialog = page.getByRole('dialog');
       await dialog.getByLabel('Photo 1 name').fill('Retried photo');
       await dialog.getByRole('button', { name: 'Upload', exact: true }).click();
@@ -235,7 +258,7 @@ test('a failed upload keeps the dialog open, saves nothing, and can be retried',
     });
   }
   // With the connection back, the same upload succeeds.
-  await chooseFiles(page, '+ Upload images', [mediaFile('png')]);
+  await chooseFiles(page, '+ Upload boulder photos', [mediaFile('png')]);
   await completeUpload(page, { names: ['Retried photo'] });
   expect(
     find(await guide(page), boulder.id).images.map((i: any) => i.name),
@@ -246,7 +269,12 @@ test('a failed upload keeps the dialog open, saves nothing, and can be retried',
 // Regression: removing a photo used to delete only its database record, leaving the file in Storage, still counting
 // towards the uploader's 10 GB allowance and still reachable at its old link.
 test('removing a photo frees its storage, and its old link stops working', async () => {
-  const { location, boulder, image } = await seedLocation(user.current.request, prefix);
+  const { location, boulder, problem, image } = await seedLocation(user.current.request, prefix);
+  // A photo a problem uses only leaves the boulder page, so detach it first.
+  expect(
+    (await editGuide(user.current.request, g => (find(g, problem.id).imageIds = []))).status(),
+    'Detached the seeded photo'
+  ).toBe(200);
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   expect((await user.current.request.get(image.url)).status(), 'The photo is reachable while in the guide').toBe(200);
   const before = await usedBytes();
@@ -266,7 +294,7 @@ test('a batch with a disguised file stores nothing', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   const before = await usedBytes();
-  await chooseFiles(page, '+ Upload images', [
+  await chooseFiles(page, '+ Upload boulder photos', [
     mediaFile('png'),
     { name: 'fake.png', mimeType: 'image/png', buffer: Buffer.from('not really an image') },
   ]);
@@ -277,8 +305,12 @@ test('a batch with a disguised file stores nothing', async () => {
 });
 
 test('a video batch with a disguised file stores nothing', async () => {
-  const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
-  const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
+  const { location, boulder, problem } = await seedLocation(user.current.request, prefix, { media: false });
+  const page = await openPage(
+    user.current.context,
+    { location: location.id, boulder: boulder.id, problem: problem.id },
+    'V2 (5+) - Seed Problem'
+  );
   const before = await usedBytes();
   await chooseFiles(page, '+ Upload video', [
     mediaFile('mp4'),
@@ -302,7 +334,7 @@ test('uploads whose guide save fails are discarded', async () => {
         })
       : route.fallback();
   await page.route('**/api/guide', refuseSave);
-  await chooseFiles(page, '+ Upload images', [mediaFile('png'), mediaFile('jpg')]);
+  await chooseFiles(page, '+ Upload boulder photos', [mediaFile('png'), mediaFile('jpg')]);
   const dialog = page.getByRole('dialog');
   await dialog.getByRole('button', { name: 'Upload', exact: true }).click();
   await expect(dialog.getByRole('alert')).toHaveText(

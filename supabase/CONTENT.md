@@ -6,6 +6,8 @@ Locations, boulders, problems, media metadata, image annotations and attachment 
 
 Conflicts are per record. A save fails with HTTP 409 only when a record it changes has changed since the user loaded it, or when it removes a parent that has gained children since. Saves to different records succeed concurrently. The API compares each changed record with the latest copy, and `save_content()` also requires each updated or deleted row to still have the `version` that was read. This catches changes made between the API's read and its write, including direct table edits.
 
+Photos and videos belong to a boulder and are attached to problems through `problem_media`. A photo's `on_boulder_page` says whether it shows on the boulder page (a photo of the boulder) or only on the problems using it (a topo uploaded from a problem page). Any problem on the boulder can reuse any of its photos, with its own annotations in `problems.photo_annotations`. Videos are uploaded from problem pages only. When a change leaves a topo or video on no problem, the app deletes it if the user may.
+
 Contributors can create records beneath other contributors' locations and boulders, but can edit only their own records. Admins can edit all content. Removing a parent requires permission to remove its descendants.
 
 The application has no JSON fallback and does not read or write `data/guide.json`. Historical data imports and migration screens have been retired. Do not rerun old generated import SQL against the live project.
