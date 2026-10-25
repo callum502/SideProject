@@ -389,3 +389,25 @@ test('only admins (or browser tests) may read or save the whole guide at once', 
   assert.throws(() => fullGuideOption({ ...local, RENDER: 'true' }));
   assert.throws(() => fullGuideOption({ ...local, SUPABASE_URL: 'https://project.supabase.co' }));
 });
+
+test('built assets named by their contents are cached for a year; other files are checked each time', async () => {
+  const { mkdtemp, mkdir, writeFile, rm } = await import('node:fs/promises');
+  const os = await import('node:os');
+  const path = await import('node:path');
+  const distDir = await mkdtemp(path.join(os.tmpdir(), 'sideproj-dist-'));
+  await mkdir(path.join(distDir, 'assets'));
+  await writeFile(path.join(distDir, 'index.html'), '<!doctype html>');
+  await writeFile(path.join(distDir, 'assets', 'index-AbC123.js'), 'console.log(1)');
+  const { server } = await createGuideServer({ distDir, auth: fakeAuth(), storage: {}, contentStore: {} });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  try {
+    const cache = async route => (await fetch(base + route)).headers.get('cache-control');
+    assert.equal(await cache('/assets/index-AbC123.js'), 'public, max-age=31536000, immutable');
+    assert.equal(await cache('/'), 'no-cache');
+  } finally {
+    server.closeAllConnections();
+    await new Promise(r => server.close(r));
+    await rm(distDir, { recursive: true, force: true });
+  }
+});

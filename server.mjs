@@ -715,10 +715,13 @@ export async function createGuideServer({
               `<script>new EventSource('/api/events').onmessage=()=>location.reload()</script></body>`
             )
         );
+      // Vite names built files under /assets/ by their contents, so a changed file gets a new URL and browsers can
+      // keep these for a year. Other files (index.html, the favicon) keep their names, so are checked each time.
+      const hashed = !live && url.pathname.startsWith('/assets/');
       res.writeHead(200, {
         'Content-Type': types[path.extname(filename)] || 'application/octet-stream',
         'X-Content-Type-Options': 'nosniff',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': hashed ? 'public, max-age=31536000, immutable' : 'no-cache',
       });
       res.end(req.method === 'HEAD' ? undefined : bytes);
     } catch (e) {
