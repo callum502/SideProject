@@ -19,10 +19,26 @@ const mimeTypes = {
 // problem_media rows are links with no ID of their own, so they are keyed by the pair they join.
 const rowKey = (table, row) => (table === 'problem_media' ? `${row.problem_id}/${row.media_id}` : row.id);
 
+// Groups rows by `key`, keeping their order, so each parent finds its children without scanning every row.
+const groupBy = (rows, key) => {
+  const groups = new Map();
+  for (const row of rows) {
+    const id = row[key];
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(row);
+  }
+  return groups;
+};
+
 // Builds the nested guide the app uses (locations → boulders → problems, with their media and creators)
 // from the table rows returned by read_content.
 export function toGuide(snapshot) {
   const names = new Map(snapshot.profiles.map(p => [p.id, p.display_name]));
+  const bouldersOf = groupBy(snapshot.boulders, 'location_id');
+  const problemsOf = groupBy(snapshot.problems, 'boulder_id');
+  const locationMedia = groupBy(snapshot.media, 'location_id');
+  const boulderMedia = groupBy(snapshot.media, 'boulder_id');
+  const linksOf = groupBy(snapshot.problem_media, 'problem_id');
   const owner = row => ({
     createdBy: row.created_by,
     createdByName: row.created_by ? names.get(row.created_by) || 'Climber' : 'Deleted User',
@@ -47,35 +63,35 @@ export function toGuide(snapshot) {
       approach: l.approach_notes,
       links: l.additional_links || [],
       ...owner(l),
-      photos: snapshot.media.filter(m => m.location_id === l.id).map(media),
-      boulders: snapshot.boulders
-        .filter(b => b.location_id === l.id)
-        .map(b => ({
+      photos: (locationMedia.get(l.id) || []).map(media),
+      boulders: (bouldersOf.get(l.id) || []).map(b => {
+        const images = (boulderMedia.get(b.id) || []).filter(m => m.kind === 'image');
+        const videos = (boulderMedia.get(b.id) || []).filter(m => m.kind === 'video');
+        return {
           id: b.id,
           name: b.name,
           notes: b.finding_notes,
           otherNotes: b.other_notes || '',
           ...owner(b),
-          images: snapshot.media.filter(m => m.boulder_id === b.id && m.kind === 'image').map(media),
-          videos: snapshot.media.filter(m => m.boulder_id === b.id && m.kind === 'video').map(media),
-          problems: snapshot.problems
-            .filter(p => p.boulder_id === b.id)
-            .map(p => {
-              const attached = new Set(
-                snapshot.problem_media.filter(link => link.problem_id === p.id).map(link => link.media_id)
-              );
-              return {
-                id: p.id,
-                name: p.name,
-                grade: p.grade,
-                description: p.description,
-                photoAnnotations: p.photo_annotations || {},
-                ...owner(p),
-                imageIds: snapshot.media.filter(m => attached.has(m.id) && m.kind === 'image').map(m => m.id),
-                videoIds: snapshot.media.filter(m => attached.has(m.id) && m.kind === 'video').map(m => m.id),
-              };
-            }),
-        })),
+          images: images.map(media),
+          videos: videos.map(media),
+          // A problem's attachments always belong to its own boulder (problem_media's foreign keys), so they are
+          // listed in the boulder's media order.
+          problems: (problemsOf.get(b.id) || []).map(p => {
+            const attached = new Set((linksOf.get(p.id) || []).map(link => link.media_id));
+            return {
+              id: p.id,
+              name: p.name,
+              grade: p.grade,
+              description: p.description,
+              photoAnnotations: p.photo_annotations || {},
+              ...owner(p),
+              imageIds: images.filter(m => attached.has(m.id)).map(m => m.id),
+              videoIds: videos.filter(m => attached.has(m.id)).map(m => m.id),
+            };
+          }),
+        };
+      }),
     })),
   };
 }

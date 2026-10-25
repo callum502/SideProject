@@ -257,11 +257,10 @@ export async function createGuideServer({
         return res.end(req.method === 'HEAD' ? undefined : 'ok');
       }
       if (!deployment.allows(req.headers.host, req.headers.origin)) throw fail('Host or origin not allowed.', 403);
-      // API, media and sign-in callback requests count towards the rate limits in request-limits.mjs.
-      const limited =
-        url.pathname.startsWith('/api/') ||
-        url.pathname.startsWith('/media/') ||
-        url.pathname === '/auth/google/callback';
+      // API and sign-in callback requests count towards the rate limits in request-limits.mjs; media redirects have
+      // their own, larger limit, since one page can show many photos.
+      const limited = url.pathname.startsWith('/api/') || url.pathname === '/auth/google/callback';
+      if (url.pathname.startsWith('/media/')) requestLimits.media(clientAddress(req, deployment.renderProxy));
       if (limited) {
         requestLimits.before(clientAddress(req, deployment.renderProxy), url.pathname, req.method);
         releaseRequest = requestLimits.enter();
@@ -629,14 +628,15 @@ export async function createGuideServer({
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') throw fail('Method not allowed.', 405);
       if (url.pathname.startsWith('/api/')) throw fail('Not found.', 404);
-      // Media is served by Supabase Storage; /media/ URLs redirect there.
+      // Media is served by Supabase Storage; /media/ URLs redirect there. Uploads never overwrite a file, so a path
+      // always names the same file and browsers may cache the redirect instead of asking again on every view.
       if (url.pathname.startsWith('/media/')) {
         const ref = mediaReference(url.pathname);
         if (!ref) throw fail('Invalid media URL.', 404);
         const target = new URL(storage.publicUrl(ref.path));
         if (url.searchParams.has('download'))
           target.searchParams.set('download', url.searchParams.get('download').slice(0, 255));
-        res.writeHead(302, { Location: target.href, 'Cache-Control': 'no-cache' });
+        res.writeHead(302, { Location: target.href, 'Cache-Control': 'public, max-age=86400' });
         return res.end();
       }
       // Anything else is a file from the built front end; paths that resolve outside dist/ are refused.

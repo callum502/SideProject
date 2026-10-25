@@ -291,7 +291,7 @@ export function ProblemPage({
           {images.map(image => (
             <figure className="problem-photo" key={image.id}>
               <div className="photo-thumb">
-                <img src={image.url} alt={image.name} />
+                <img src={image.url} alt={image.name} loading="lazy" />
                 <Shapes items={problem.photoAnnotations?.[image.id] || []} />
               </div>
               <figcaption>
@@ -420,7 +420,7 @@ export function AttachMediaForm({ locationId, boulder, problem, kind, busy, erro
                         setSelected(old => (e.target.checked ? [...old, item.id] : old.filter(id => id !== item.id)))
                       }
                     />
-                    {photo && <img src={item.url} alt="" />}
+                    {photo && <img src={item.url} alt="" loading="lazy" />}
                     <span>
                       {item.name}
                       {others.length > 0 && (

@@ -7,6 +7,8 @@ export const REQUEST_LIMITS = {
   auth: { count: 20, window: 600000 },
   write: { count: 60, window: 60000 },
   upload: { count: 20, window: 60000 },
+  // /media/ requests are only redirects to Storage, but a page can show dozens of photos at once.
+  media: { count: 1200, window: 60000 },
 };
 const authPaths = new Set([
   '/api/login',
@@ -104,6 +106,10 @@ export function createRequestLimits({
     before(ip, path, method) {
       take('ip', ip);
       category(path, method, 'ip:' + ip);
+    },
+    // Media redirects count only towards their own per-address limit, not the API's.
+    media(ip) {
+      take('media', ip);
     },
     account(id, path, method) {
       take('account', id);

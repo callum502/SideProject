@@ -727,7 +727,7 @@ function App() {
                                 <div className="photo-item" key={img.id}>
                                   <div className="photo-card">
                                     <div className="photo-thumb">
-                                      <img src={img.url} alt={img.name} />
+                                      <img src={img.url} alt={img.name} loading="lazy" />
                                     </div>
                                     <div>
                                       <span>{img.name}</span>
@@ -816,7 +816,7 @@ function App() {
                                 {place.photos.map(photo => (
                                   <figure className="problem-photo" key={photo.id}>
                                     <div className="photo-thumb">
-                                      <img src={photo.url} alt={photo.caption || photo.name} />
+                                      <img src={photo.url} alt={photo.caption || photo.name} loading="lazy" />
                                     </div>
                                     <figcaption>
                                       <strong>{photo.name}</strong>
@@ -886,6 +886,7 @@ function App() {
                                       <img
                                         src={(b.images.find(image => image.onBoulderPage !== false) || b.images[0]).url}
                                         alt=""
+                                        loading="lazy"
                                       />
                                     ) : (
                                       <Icon name="mountain" />
