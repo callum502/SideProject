@@ -221,6 +221,21 @@ function validate(data) {
   }
 }
 
+// Browser tests read and edit the whole guide directly to set up and check their data, so their server sets
+// E2E_FULL_GUIDE=1. Allowed only outside production and against local Supabase; any other setup refuses to start.
+export function fullGuideOption(env) {
+  if (env.E2E_FULL_GUIDE !== '1') return false;
+  if (env.NODE_ENV === 'production' || env.RENDER === 'true')
+    throw new Error('E2E_FULL_GUIDE must not be set in production.');
+  let host;
+  try {
+    host = new URL(env.SUPABASE_URL).hostname;
+  } catch {}
+  if (!['localhost', '127.0.0.1', '[::1]'].includes(host))
+    throw new Error('E2E_FULL_GUIDE requires SUPABASE_URL to point to local Supabase.');
+  return true;
+}
+
 const body = readRequestBody;
 // Content types for the built front end served from dist/.
 const types = {
@@ -249,6 +264,8 @@ export async function createGuideServer({
   requestLimits = createRequestLimits(),
   // Signed-in sessions, keyed by the random sideproj_session cookie. Supabase tokens stay on the server.
   sessions = createSessionStore(),
+  // Lets anyone read and save the whole guide at once (GET /api/guide, PUT without a location); see fullGuideOption.
+  fullGuide = false,
 } = {}) {
   // Google sign-ins in progress (PKCE verifier and origin), keyed by the sideproj_oauth cookie.
   const oauthAttempts = new Map();
@@ -564,7 +581,13 @@ export async function createGuideServer({
       )
         throw fail('Log in to contribute.', 401);
       const readToken = user ? session.accessToken : undefined;
-      if (url.pathname === '/api/guide' && req.method === 'GET') return json(200, await contentStore.read(readToken));
+      // Reading or saving the whole guide at once costs as much as the whole site, so only admins (and browser tests,
+      // with fullGuide) may; the app works one location at a time.
+      const wholeGuide = fullGuide || user?.role === 'admin';
+      if (url.pathname === '/api/guide' && req.method === 'GET') {
+        if (!wholeGuide) throw fail('Not found.', 404);
+        return json(200, await contentStore.read(readToken));
+      }
       // The app loads the list of locations for search and the map, then each location as it is opened.
       if (url.pathname === '/api/locations' && req.method === 'GET')
         return json(200, await contentStore.summaries(readToken));
@@ -584,7 +607,11 @@ export async function createGuideServer({
         }
         if (!data || !Array.isArray(data.changes)) throw fail('Invalid changes.');
         // `location` limits the save to one location, and the reply to that location (none once it is removed).
-        if (data.location !== undefined && !(typeof data.location === 'string' && uuidPattern.test(data.location)))
+        if (
+          data.location === undefined
+            ? !wholeGuide
+            : !(typeof data.location === 'string' && uuidPattern.test(data.location))
+        )
           throw fail('Invalid location.');
         // Changes are applied to the latest guide; the merged result must pass the same checks as a full guide.
         return json(
@@ -720,7 +747,12 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const live = !process.argv.includes('--preview');
   const deployment = deploymentConfig();
   const env = { ...(await import('vite')).loadEnv('development', process.cwd(), ''), ...process.env };
-  const app = await createGuideServer({ live, deployment, requestLimits: createRequestLimits(testLimitOptions(env)) });
+  const app = await createGuideServer({
+    live,
+    deployment,
+    requestLimits: createRequestLimits(testLimitOptions(env)),
+    fullGuide: fullGuideOption(env),
+  });
   if (live) {
     const { build } = await import('vite');
     const watcher = await build({ root, resolve: { preserveSymlinks: true }, build: { watch: {}, minify: false } });

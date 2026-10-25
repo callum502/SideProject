@@ -112,7 +112,7 @@ test('HTTP rejects excess requests before Supabase and keeps health checks avail
   const { server } = await createGuideServer({
     auth: fakeAuth(),
     contentStore: {
-      read: async () => {
+      summaries: async () => {
         reads++;
         return { locations: [] };
       },
@@ -122,8 +122,8 @@ test('HTTP rejects excess requests before Supabase and keeps health checks avail
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port;
   try {
-    assert.equal((await fetch(base + '/api/guide')).status, 200);
-    const rejected = await fetch(base + '/api/guide', { headers: { 'X-Forwarded-For': '198.51.100.1' } });
+    assert.equal((await fetch(base + '/api/locations')).status, 200);
+    const rejected = await fetch(base + '/api/locations', { headers: { 'X-Forwarded-For': '198.51.100.1' } });
     assert.equal(rejected.status, 429);
     assert.equal(rejected.headers.get('retry-after'), '60');
     assert.equal(reads, 1);

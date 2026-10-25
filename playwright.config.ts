@@ -75,6 +75,8 @@ export default defineConfig({
       NODE_ENV: 'development',
       E2E_CONFIRM_CODE: process.env.E2E_CONFIRM_CODE,
       E2E_RELAX_LIMITS: '1',
+      // Test helpers read and edit the whole guide directly (see fullGuideOption in server.mjs).
+      E2E_FULL_GUIDE: '1',
     },
   },
 });

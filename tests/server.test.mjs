@@ -1,7 +1,7 @@
 import { duplicateMediaName } from '../media-names.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGuideServer } from '../server.mjs';
+import { createGuideServer, fullGuideOption } from '../server.mjs';
 import { applyChanges } from '../guide-changes.mjs';
 import { fakeAuth } from './fake-auth.mjs';
 import { deploymentConfig } from '../deployment.mjs';
@@ -83,7 +83,13 @@ test('cloud API requires login, forwards verified tokens, validates writes and i
       return next;
     },
   };
-  const { server } = await createGuideServer({ auth, contentStore, storage: {}, sessions: createMemorySessionStore() });
+  const { server } = await createGuideServer({
+    auth,
+    contentStore,
+    storage: {},
+    sessions: createMemorySessionStore(),
+    fullGuide: true,
+  });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port;
   const request = (route, method = 'GET', value, cookie, headers = {}) =>
@@ -261,8 +267,8 @@ test('locations load one at a time and saves can be limited to one location', as
       });
     assert.equal((await put({ changes: [], location: place.id })).status, 200);
     assert.equal(saved, place.id);
-    assert.equal((await put({ changes: [] })).status, 200);
-    assert.equal(saved, undefined);
+    // Without a location the save would cover the whole guide, which only admins may do.
+    assert.equal((await put({ changes: [] })).status, 400);
     assert.equal((await put({ changes: [], location: 'elsewhere' })).status, 400);
   } finally {
     server.closeAllConnections();
@@ -332,4 +338,54 @@ test('a save limited to one location refuses changes elsewhere, and checks new u
   const save = calls.find(c => c.name === 'save_content').body;
   assert.equal(save.target_location, target);
   assert.equal(save.operations.find(op => op.table === 'media').row.size_bytes, contents.length);
+});
+
+test('only admins (or browser tests) may read or save the whole guide at once', async () => {
+  const auth = fakeAuth();
+  const contentStore = {
+    async read() {
+      return { locations: [] };
+    },
+    async save() {
+      return { locations: [] };
+    },
+  };
+  const { server } = await createGuideServer({ auth, contentStore, storage: {}, sessions: createMemorySessionStore() });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  const login = async email =>
+    (
+      await fetch(base + '/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: 'test-password' }),
+      })
+    ).headers
+      .get('set-cookie')
+      .split(';')[0];
+  const read = cookie => fetch(base + '/api/guide', { headers: cookie ? { Cookie: cookie } : {} });
+  const saveAll = cookie =>
+    fetch(base + '/api/guide', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ changes: [] }),
+    });
+  try {
+    const contributor = await login('contributor@example.com');
+    const admin = await login('admin@example.com');
+    assert.equal((await read()).status, 404);
+    assert.equal((await read(contributor)).status, 404);
+    assert.equal((await saveAll(contributor)).status, 400);
+    assert.equal((await read(admin)).status, 200);
+    assert.equal((await saveAll(admin)).status, 200);
+  } finally {
+    server.closeAllConnections();
+    await new Promise(r => server.close(r));
+  }
+  const local = { E2E_FULL_GUIDE: '1', SUPABASE_URL: 'http://127.0.0.1:54321' };
+  assert.equal(fullGuideOption({}), false);
+  assert.equal(fullGuideOption(local), true);
+  assert.throws(() => fullGuideOption({ ...local, NODE_ENV: 'production' }));
+  assert.throws(() => fullGuideOption({ ...local, RENDER: 'true' }));
+  assert.throws(() => fullGuideOption({ ...local, SUPABASE_URL: 'https://project.supabase.co' }));
 });
