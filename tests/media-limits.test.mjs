@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { locationMediaCount, checkMediaCapacity, enforceMediaLimits } from '../media-limits.mjs';
+import { locationMediaCount, checkMediaCapacity, enforceMediaLimits } from '../shared/media-limits.mjs';
 
 test('combined location cap includes parking and all boulders, without counting problem links', () => {
   const location = {

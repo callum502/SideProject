@@ -67,7 +67,7 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 60000,
     // All workers share 127.0.0.1, so raise the per-IP rate limits for this local test server only
-    // (see request-limits.mjs).
+    // (see server/request-limits.mjs).
     env: {
       ...env,
       PORT: '5174',
@@ -75,7 +75,7 @@ export default defineConfig({
       NODE_ENV: 'development',
       E2E_CONFIRM_CODE: process.env.E2E_CONFIRM_CODE,
       E2E_RELAX_LIMITS: '1',
-      // Test helpers read and edit the whole guide directly (see fullGuideOption in server.mjs).
+      // Test helpers read and edit the whole guide directly (see fullGuideOption in server/routes/guide.mjs).
       E2E_FULL_GUIDE: '1',
     },
   },

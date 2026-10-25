@@ -4,9 +4,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import os from 'node:os';
 import path from 'node:path';
-import { createContentStore } from '../../content-store.mjs';
-import { createGuideServer } from '../../server.mjs';
-import { guideChanges } from '../../guide-changes.mjs';
+import { createContentStore } from '../../server/content-store.mjs';
+import { createGuideServer } from '../../server/app.mjs';
+import { createMemorySessionStore } from '../../server/session-store.mjs';
+import { guideChanges } from '../../shared/guide-changes.mjs';
 
 const a = '00000000-0000-4000-8000-000000000001',
   b = '00000000-0000-4000-8000-000000000002',
@@ -63,6 +64,8 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
       '20260913000400_profile_details.sql',
       '20261018000100_record_level_saves.sql',
       '20261019000100_stable_content_order.sql',
+      '20261024000100_boulder_page_photos.sql',
+      '20261025000300_location_reads.sql',
     ])
       await db.exec(await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8'));
     await db.exec(`
@@ -99,7 +102,14 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
         const result =
           name === 'read_content'
             ? await db.query('SELECT public.read_content() AS result')
-            : await db.query('SELECT public.save_content($1::jsonb) AS result', [JSON.stringify(values.operations)]);
+            : name === 'read_location_summaries'
+              ? await db.query('SELECT public.read_location_summaries() AS result')
+              : name === 'read_location'
+                ? await db.query('SELECT public.read_location($1::uuid) AS result', [values.target])
+                : await db.query('SELECT public.save_content($1::jsonb, $2::uuid) AS result', [
+                    JSON.stringify(values.operations),
+                    values.target_location ?? null,
+                  ]);
         await db.exec('COMMIT');
         return result.rows[0].result;
       } catch (error) {
@@ -107,9 +117,10 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
         throw error;
       }
     }
+    // Every stored file in these tests is an 8-byte PNG (its signature).
     const storage = {
-      async stat() {
-        return { size: 8, mime: 'image/png' };
+      async inspect() {
+        return { size: 8, mime: 'image/png', bytes: Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]) };
       },
     };
     const store = createContentStore({
@@ -236,7 +247,12 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
       },
       async logout() {},
     };
-    ({ server } = await createGuideServer({ contentStore: store, storage, auth }));
+    ({ server } = await createGuideServer({
+      contentStore: store,
+      storage,
+      auth,
+      sessions: createMemorySessionStore(),
+    }));
     await db.query(
       `INSERT INTO storage.objects(bucket_id,name,owner_id,metadata)
        VALUES ('sideproj-media',$1,$2,'{"size":8,"mimetype":"image/png"}')`,
@@ -391,7 +407,15 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
     // Exercise the real HTTP routes, not a JSON fallback.
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const base = 'http://127.0.0.1:' + server.address().port;
-    assert.deepEqual(await fetch(base + '/api/guide').then(r => r.json()), guide);
+    // The app reads one location at a time, through read_location.
+    const id = guide.locations[0].id;
+    const one = g => ({ locations: g.locations.filter(l => l.id === id) });
+    assert.deepEqual(await fetch(base + '/api/locations/' + id).then(r => r.json()), one(guide));
+    const summaries = await fetch(base + '/api/locations').then(r => r.json());
+    assert.deepEqual(
+      summaries.locations.map(l => l.id),
+      guide.locations.map(l => l.id)
+    );
     const login = await fetch(base + '/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -406,10 +430,17 @@ test('PostgreSQL content API round-trips nested data, enforces RLS and rolls bac
       });
     const httpEdit = structuredClone(guide);
     httpEdit.locations[0].boulders[0].notes = 'HTTP edit';
-    const response = await put({ changes: guideChanges(guide, httpEdit) });
+    const response = await put({ changes: guideChanges(guide, httpEdit), location: id });
     assert.equal(response.status, 200);
-    guide = await response.json();
+    // A save limited to one location replies with just that location, as read_location returns it.
+    const saved = await response.json();
+    assert.deepEqual(
+      saved.locations.map(l => l.id),
+      [id]
+    );
+    guide = { locations: guide.locations.map(l => (l.id === id ? saved.locations[0] : l)) };
     assert.equal(guide.locations[0].boulders[0].notes, 'HTTP edit');
+    assert.deepEqual(one(await store.read()), saved);
     assert.equal((await put(guide)).status, 400, 'whole-guide saves are no longer accepted');
     await assert.rejects(readFile(path.join(dataDir, 'guide.json')), 'database mode never creates a JSON guide');
     // Removing a parent conflicts when it has children the remover has not seen.

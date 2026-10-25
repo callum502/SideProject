@@ -1,4 +1,4 @@
-import { matchesType, SIGNATURE_BYTES } from '../media-signatures.mjs';
+import { matchesType, SIGNATURE_BYTES } from '../shared/media-signatures.mjs';
 
 // Calls the app's API and returns the parsed JSON reply. Every error that reaches the UI is readable: a dropped
 // connection or a non-JSON reply (such as a proxy's HTML error page while the server restarts) would otherwise show

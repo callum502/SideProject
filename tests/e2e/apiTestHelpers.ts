@@ -41,7 +41,7 @@
  */
 
 import { expect, type Page, type TestInfo } from '@playwright/test';
-import { guideChanges } from '../../guide-changes.mjs';
+import { guideChanges } from '../../shared/guide-changes.mjs';
 
 /**
  * Read the latest guide through the app API using the browser session.

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSessionStore } from '../session-store.mjs';
+import { createSessionStore } from '../server/session-store.mjs';
 
 const env = { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'test-key' };
 const session = (overrides = {}) => ({

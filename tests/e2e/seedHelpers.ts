@@ -25,7 +25,7 @@ import { mediaFile, MIME, type MediaType } from './media';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
-import { guideChanges } from '../../guide-changes.mjs';
+import { guideChanges } from '../../shared/guide-changes.mjs';
 import { adminRequest, deleteLocationsWithPrefix, deleteAccountsWithPrefix } from './apiTestHelpers';
 import { accountDetails, locationName } from './testHelpers';
 

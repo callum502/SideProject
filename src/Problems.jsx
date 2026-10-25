@@ -1,5 +1,6 @@
 import React from 'react';
 import { CreatorLink } from './PublicProfile';
+import { IMAGE_MAX_MB, VIDEO_MAX_MB } from '../shared/media-limits.mjs';
 
 const grades = [
   '4',
@@ -273,7 +274,7 @@ export function ProblemPage({
             upload={upload}
             uploadText={
               <>
-                Upload a new photo<small>JPEG, PNG, WebP · up to 8 MB each</small>
+                Upload a new photo<small>JPEG, PNG, WebP · up to {IMAGE_MAX_MB} MB each</small>
               </>
             }
             attach={() => attach('photo')}
@@ -320,7 +321,7 @@ export function ProblemPage({
       <div className="section-heading photos-heading">
         <div>
           <h3>Beta videos</h3>
-          <p>Steal beta to become a better climber. MP4, WebM, or MOV · up to 100 MB each</p>
+          <p>Steal beta to become a better climber. MP4, WebM, or MOV · up to {VIDEO_MAX_MB} MB each</p>
         </div>
         {(canEdit || guest) && (
           <MediaDropdown

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { guideChanges, applyChanges } from '../guide-changes.mjs';
+import { guideChanges, applyChanges } from '../shared/guide-changes.mjs';
 
 const problem = (id, extra = {}) => ({
   id,

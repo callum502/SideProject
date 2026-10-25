@@ -1,5 +1,6 @@
 import { loadEnv } from 'vite';
-import { BUCKET, mediaReference, mediaUrl, MAX_VIDEO_BYTES } from './media-reference.mjs';
+import { BUCKET, mediaReference, mediaUrl } from './media-reference.mjs';
+import { maxBytes, tooLargeMessage } from '../shared/media-limits.mjs';
 const fail = (message, status = 503) => Object.assign(new Error(message), { status });
 
 // Supabase Storage client for guide media. Requests carry the user's access token, so Storage policies apply.
@@ -109,8 +110,7 @@ export function createStorage({
     // A one-time URL the browser uploads the file to directly, so its bytes never pass through this server. Checked
     // against the allowance first; Storage refuses to overwrite an existing file and rechecks the allowance itself.
     async signUpload(path, size, mime, token) {
-      const limit = mime.startsWith('image/') ? 8 * 1024 * 1024 : MAX_VIDEO_BYTES;
-      if (size > limit) throw fail(`File is too large (${mime.startsWith('image/') ? '8' : '100'} MB maximum).`, 413);
+      if (size > maxBytes(mime)) throw fail(tooLargeMessage(mime), 413);
       objectPath(path);
       const allowance = await usage(token);
       if (allowance.usedBytes + size > allowance.limitBytes)

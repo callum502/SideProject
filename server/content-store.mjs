@@ -1,11 +1,11 @@
-import { enforceMediaLimits, MEDIA_LIMIT_MESSAGE } from './media-limits.mjs';
+import { enforceMediaLimits, MEDIA_LIMIT_MESSAGE, maxBytes, tooLargeMessage } from '../shared/media-limits.mjs';
 import { enforcePostLimits, POST_LIMITS, limitMessage } from './post-limits.mjs';
-import { mediaReference, mediaUrl, MAX_VIDEO_BYTES } from './media-reference.mjs';
-import { matchesType, SIGNATURE_BYTES } from './media-signatures.mjs';
+import { mediaReference, mediaUrl } from './media-reference.mjs';
+import { matchesType, SIGNATURE_BYTES } from '../shared/media-signatures.mjs';
 import { loadEnv } from 'vite';
 import { isDeepStrictEqual } from 'node:util';
 import { authorizeChanges } from './ownership.mjs';
-import { applyChanges, conflict } from './guide-changes.mjs';
+import { applyChanges, conflict } from '../shared/guide-changes.mjs';
 
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 const tables = ['locations', 'boulders', 'problems', 'media', 'problem_media'];
@@ -105,8 +105,7 @@ async function uploadedFile(storage, path, mime, token) {
   const info = await storage.inspect(path, token, SIGNATURE_BYTES);
   if (info.mime !== mime || !matchesType(mime, info.bytes))
     throw fail(`The file is not a supported ${image ? 'image' : 'video'}.`);
-  if (info.size > (image ? 8 * 1024 * 1024 : MAX_VIDEO_BYTES))
-    throw fail(`File is too large (${image ? '8' : '100'} MB maximum).`, 413);
+  if (info.size > maxBytes(mime)) throw fail(tooLargeMessage(mime), 413);
   return info.size;
 }
 

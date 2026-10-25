@@ -1,11 +1,11 @@
-import { duplicateMediaName } from '../media-names.mjs';
+import { duplicateMediaName } from '../shared/media-names.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createGuideServer, fullGuideOption } from '../server.mjs';
-import { applyChanges } from '../guide-changes.mjs';
+import { createGuideServer, fullGuideOption } from '../server/app.mjs';
+import { applyChanges } from '../shared/guide-changes.mjs';
 import { fakeAuth } from './fake-auth.mjs';
-import { deploymentConfig } from '../deployment.mjs';
-import { createMemorySessionStore } from '../session-store.mjs';
+import { deploymentConfig } from '../server/deployment.mjs';
+import { createMemorySessionStore } from '../server/session-store.mjs';
 import http from 'node:http';
 
 test('Render accepts configured HTTPS origins and sets secure cookies behind its proxy', async () => {
@@ -203,7 +203,7 @@ test('Google callback requires browser cookie, rejects replay and creates a serv
 });
 
 test('post limits count across locations and do not block edits at the limit', async () => {
-  const { enforcePostLimits } = await import('../post-limits.mjs');
+  const { enforcePostLimits } = await import('../server/post-limits.mjs');
   const make = count => ({
     locations: Array.from({ length: 25 }, (_, i) => ({
       id: 'l' + i,
@@ -277,7 +277,7 @@ test('locations load one at a time and saves can be limited to one location', as
 });
 
 test('a save limited to one location refuses changes elsewhere, and checks new uploads by their contents', async () => {
-  const { createContentStore } = await import('../content-store.mjs');
+  const { createContentStore } = await import('../server/content-store.mjs');
   const owner = '00000000-0000-4000-8000-000000000002';
   const target = '10000000-0000-4000-8000-000000000001';
   const row = {

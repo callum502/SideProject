@@ -2,6 +2,7 @@ import Avatar from './Avatar';
 import { useRef } from 'react';
 import BackLink from './BackLink';
 import { api, uploadFile, contentsMatch } from './api';
+import { IMAGE_MAX_MB } from '../shared/media-limits.mjs';
 import React, { useEffect, useState } from 'react';
 // The creator of a guide record, linked to their profile. Records from deleted accounts have no creator to link.
 export function CreatorLink({ item }) {
@@ -58,8 +59,8 @@ export default function PublicProfile({ id, user, onLogsChange }) {
     e.target.value = '';
     if (!file) return;
     setError('');
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 8 * 1024 * 1024) {
-      setError('Choose a JPEG, PNG or WebP image up to 8 MB.');
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > IMAGE_MAX_MB * 1024 * 1024) {
+      setError(`Choose a JPEG, PNG or WebP image up to ${IMAGE_MAX_MB} MB.`);
       return;
     }
     if (!(await contentsMatch(file, file.type))) {

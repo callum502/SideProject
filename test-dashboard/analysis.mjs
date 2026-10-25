@@ -100,7 +100,7 @@ export const RESULT_SCHEMA = {
   },
 };
 
-const INSTRUCTIONS = `You are analysing a failed Playwright end-to-end test for SideProj, a climbing guide web app (React front end in src/, Node server in server.mjs, Supabase back end). Tests live in tests/e2e/; shared UI helpers are in tests/e2e/testHelpers.ts and API/DB helpers in tests/e2e/apiTestHelpers.ts.
+const INSTRUCTIONS = `You are analysing a failed Playwright end-to-end test for SideProj, a climbing guide web app (React front end in src/, Node server in server/ (routes in server/routes/, started by server.mjs), code shared by both in shared/, Supabase back end). Tests live in tests/e2e/; shared UI helpers are in tests/e2e/testHelpers.ts and API/DB helpers in tests/e2e/apiTestHelpers.ts.
 
 Decide which one of these explains the failure:
 - ui_change: the app's UI changed on purpose (different text, labels, roles, structure or flow) and the test still expects the old UI. The fix belongs in the test.
@@ -216,9 +216,13 @@ export async function buildPrompt({ root, runsDir, run: testRun, test, attempt, 
     );
 
   // Recent app changes: the main clue for a UI change.
-  const log = await run('git', ['log', '-8', '--date=short', '--format=%h %ad %s', '--', 'src', 'server.mjs'], root);
-  const uncommitted = await run('git', ['diff', 'HEAD', '--', 'src', 'server.mjs'], root);
-  lines.push('\n## Recent commits to the app (src/, server.mjs)\n' + (log.trim() || 'none'));
+  const log = await run(
+    'git',
+    ['log', '-8', '--date=short', '--format=%h %ad %s', '--', 'src', 'server', 'shared', 'server.mjs'],
+    root
+  );
+  const uncommitted = await run('git', ['diff', 'HEAD', '--', 'src', 'server', 'shared', 'server.mjs'], root);
+  lines.push('\n## Recent commits to the app (src/, server/, shared/, server.mjs)\n' + (log.trim() || 'none'));
   lines.push(
     '\n## Uncommitted app changes\n' + (uncommitted.trim() ? '```diff\n' + clip(uncommitted, 20000) + '\n```' : 'none')
   );

@@ -1,6 +1,6 @@
 ﻿import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAuth, confirmBypassCode } from '../auth.mjs';
+import { createAuth, confirmBypassCode } from '../server/auth.mjs';
 
 const env = { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'public-test-key' };
 function fixture({ confirmed = true } = {}) {

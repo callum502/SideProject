@@ -7,10 +7,10 @@ import {
   readRequestBody,
   REQUEST_LIMITS,
   testLimitOptions,
-} from '../request-limits.mjs';
-import { createGuideServer } from '../server.mjs';
+} from '../server/request-limits.mjs';
+import { createGuideServer } from '../server/app.mjs';
 import { fakeAuth } from './fake-auth.mjs';
-import { createMemorySessionStore } from '../session-store.mjs';
+import { createMemorySessionStore } from '../server/session-store.mjs';
 
 test('rate windows, account and media limits, and bounded memory', () => {
   let time = 100000;
