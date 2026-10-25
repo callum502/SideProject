@@ -7,14 +7,16 @@ import { createStorage } from '../storage.mjs';
 import { mediaReference, MAX_VIDEO_BYTES } from '../media-reference.mjs';
 import { createGuideServer } from '../server.mjs';
 import { fakeAuth } from './fake-auth.mjs';
+import { createMemorySessionStore } from '../session-store.mjs';
+import { matchesType, SIGNATURE_BYTES } from '../media-signatures.mjs';
 const owner = '00000000-0000-4000-8000-000000000001';
 const filename = '10000000-0000-4000-8000-000000000001.png';
 const cloudPath = owner + '/' + filename;
 const env = { MEDIA_STORE: 'supabase', SUPABASE_URL: 'https://test.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'test-key' };
+// A fake Storage holding `objects` (path → { bytes, mime }): it signs upload URLs and serves ranged reads.
 function fixture() {
   const objects = new Map();
   const calls = [];
-  let corrupt = false;
   const storage = createStorage({
     env,
     fetchImpl: async (url, options) => {
@@ -22,32 +24,23 @@ function fixture() {
         return new Response(JSON.stringify({ usedBytes: 0, limitBytes: 10000000000 }));
       calls.push({ url, options });
       const key = url.split('sideproj-media/')[1];
-      if (options.method === 'POST') {
-        if (objects.has(key)) return new Response(JSON.stringify({ error: 'Duplicate' }), { status: 409 });
-        objects.set(key, { bytes: Buffer.from(options.body), mime: options.headers['Content-Type'] });
-        return new Response('{}');
-      }
+      if (url.includes('/object/upload/sign/'))
+        return new Response(JSON.stringify({ url: '/object/upload/sign/sideproj-media/' + key + '?token=t' }));
       const obj = objects.get(key);
       if (!obj) return new Response('{}', { status: 404 });
-      const bytes = corrupt ? Buffer.from('different bytes') : obj.bytes;
-      return new Response(options.method === 'HEAD' ? null : bytes, {
-        headers: { 'Content-Length': String(bytes.length), 'Content-Type': obj.mime },
+      const [, from, to] = options.headers.Range.match(/bytes=(\d+)-(\d+)/).map(Number);
+      return new Response(obj.bytes.subarray(from, to + 1), {
+        status: 206,
+        headers: { 'Content-Range': `bytes ${from}-${to}/${obj.bytes.length}`, 'Content-Type': obj.mime },
       });
     },
   });
-  return {
-    storage,
-    objects,
-    calls,
-    corrupt: () => {
-      corrupt = true;
-    },
-  };
+  return { storage, objects, calls };
 }
 
-test('uploads fail closed on quota checks and surface database quota rejection', async () => {
+test('signing an upload fails closed on quota checks and surfaces Storage quota rejection', async () => {
   for (const mode of ['full', 'missing', 'race']) {
-    let uploads = 0;
+    let signs = 0;
     const storage = createStorage({
       env,
       fetchImpl: async url => {
@@ -57,36 +50,56 @@ test('uploads fail closed on quota checks and surface database quota rejection',
             JSON.stringify({ usedBytes: mode === 'full' ? 10000000000 : 0, limitBytes: 10000000000 })
           );
         }
-        uploads++;
+        signs++;
         return new Response(JSON.stringify({ message: 'This upload would exceed your 10 GB upload allowance.' }), {
           status: 400,
         });
       },
     });
     await assert.rejects(
-      storage.upload(cloudPath, Buffer.from('bytes'), 'image/png', 'session'),
+      storage.signUpload(cloudPath, 5, 'image/png', 'session'),
       mode === 'missing' ? /migration/ : /10 GB/
     );
-    assert.equal(uploads, mode === 'race' ? 1 : 0);
+    assert.equal(signs, mode === 'race' ? 1 : 0);
   }
 });
-test('Storage uploads never overwrite existing objects and only accept safe cloud paths', async () => {
-  const f = fixture(),
-    bytes = Buffer.from('file bytes');
-  await f.storage.upload(cloudPath, bytes, 'image/png', 'session');
-  await assert.rejects(f.storage.upload(cloudPath, bytes, 'image/png', 'session'));
-  assert.equal(f.objects.size, 1);
+test('signed uploads never overwrite existing objects, enforce size limits, and only accept safe cloud paths', async () => {
+  const f = fixture();
+  const signed = await f.storage.signUpload(cloudPath, 10, 'image/png', 'session');
+  assert.equal(signed.url, '/media/' + cloudPath);
+  assert.equal(
+    signed.uploadUrl,
+    `${env.SUPABASE_URL}/storage/v1/object/upload/sign/sideproj-media/${cloudPath}?token=t`
+  );
   assert.equal(f.calls[0].options.headers['x-upsert'], 'false');
   assert.equal(f.calls[0].options.headers.Authorization, 'Bearer session');
-  assert.deepEqual(await f.storage.stat(cloudPath, 'session'), { size: bytes.length, mime: 'image/png' });
+  await assert.rejects(f.storage.signUpload('../' + cloudPath, 10, 'image/png', 'session'));
+  await assert.rejects(
+    f.storage.signUpload(cloudPath, 8 * 1024 * 1024 + 1, 'image/png', 'session'),
+    e => e.status === 413
+  );
+  await assert.rejects(
+    f.storage.signUpload(cloudPath, MAX_VIDEO_BYTES + 1, 'video/mp4', 'session'),
+    error => error.status === 413
+  );
   assert.equal(mediaReference('/media/../../secrets'), null);
   assert.equal(mediaReference('/uploads/' + filename), null);
   assert.equal(mediaReference('https://evil.example/file.png'), null);
   assert.equal(MAX_VIDEO_BYTES, 104857600);
-  await assert.rejects(
-    f.storage.upload(cloudPath, { length: MAX_VIDEO_BYTES + 1 }, 'video/mp4', 'session'),
-    error => error.status === 413
-  );
+});
+
+test('inspecting a stored file reads only its leading bytes, and contents must match the declared type', async () => {
+  const f = fixture();
+  const png = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(10000)]);
+  f.objects.set(cloudPath, { bytes: png, mime: 'image/png' });
+  const info = await f.storage.inspect(cloudPath, 'session', SIGNATURE_BYTES);
+  assert.deepEqual([info.size, info.mime, info.bytes.length], [png.length, 'image/png', SIGNATURE_BYTES]);
+  assert.equal(f.calls[0].options.headers.Range, 'bytes=0-4095');
+  assert.ok(matchesType('image/png', info.bytes));
+  assert.ok(!matchesType('image/jpeg', info.bytes));
+  assert.ok(!matchesType('image/png', Buffer.from('<html>not an image</html>')));
+  assert.ok(matchesType('video/mp4', Buffer.from('\0\0\0\x18ftypmp42\0\0\0\0')));
+  assert.ok(!matchesType('text/html', info.bytes));
 });
 
 test('HTTP cloud uploads do not write local files; retired migration endpoints are absent and playback redirects safely', async () => {
@@ -98,7 +111,12 @@ test('HTTP cloud uploads do not write local files; retired migration endpoints a
     auth.login = async value => ({ ...(await baseLogin(value)), accessToken: 'token' });
     const f = fixture();
     const contentStore = {};
-    ({ server } = await createGuideServer({ auth, storage: f.storage, contentStore }));
+    ({ server } = await createGuideServer({
+      auth,
+      storage: f.storage,
+      contentStore,
+      sessions: createMemorySessionStore(),
+    }));
     await new Promise(r => server.listen(0, '127.0.0.1', r));
     const base = 'http://127.0.0.1:' + server.address().port;
     assert.equal((await fetch(base + '/api/storage/migration')).status, 404);
@@ -112,14 +130,14 @@ test('HTTP cloud uploads do not write local files; retired migration endpoints a
     }
     const contributor = await login('contributor@example.com');
     assert.equal((await fetch(base + '/api/storage/migration', { headers: { Cookie: contributor } })).status, 404);
-    const bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
-    const response = await fetch(base + '/api/images', {
+    const response = await fetch(base + '/api/uploads', {
       method: 'POST',
-      headers: { Cookie: contributor, 'Content-Type': 'image/png' },
-      body: bytes,
+      headers: { Cookie: contributor, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'image/png', size: 8 }),
     });
     assert.equal(response.status, 201);
-    const { url } = await response.json();
+    const { url, uploadUrl } = await response.json();
+    assert.ok(uploadUrl.startsWith('https://test.supabase.co/storage/v1/object/upload/sign/sideproj-media/'));
     assert.ok(url.startsWith('/media/'));
     const redirect = await fetch(base + url, { redirect: 'manual' });
     assert.equal(redirect.status, 302);

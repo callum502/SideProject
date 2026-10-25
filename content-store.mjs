@@ -1,6 +1,7 @@
 import { enforceMediaLimits, MEDIA_LIMIT_MESSAGE } from './media-limits.mjs';
 import { enforcePostLimits, POST_LIMITS, limitMessage } from './post-limits.mjs';
-import { mediaReference, mediaUrl } from './media-reference.mjs';
+import { mediaReference, mediaUrl, MAX_VIDEO_BYTES } from './media-reference.mjs';
+import { matchesType, SIGNATURE_BYTES } from './media-signatures.mjs';
 import { loadEnv } from 'vite';
 import { isDeepStrictEqual } from 'node:util';
 import { authorizeChanges } from './ownership.mjs';
@@ -96,10 +97,24 @@ export function toGuide(snapshot) {
   };
 }
 
+// A new upload's size and type, read from Storage. Its type must match its extension and its contents, since the
+// browser uploads files to Storage directly and this server never sees them otherwise.
+async function uploadedFile(storage, path, mime, token) {
+  if (!storage) throw fail('Enable Supabase Storage before saving uploads.', 503);
+  const image = mime.startsWith('image/');
+  const info = await storage.inspect(path, token, SIGNATURE_BYTES);
+  if (info.mime !== mime || !matchesType(mime, info.bytes))
+    throw fail(`The file is not a supported ${image ? 'image' : 'video'}.`);
+  if (info.size > (image ? 8 * 1024 * 1024 : MAX_VIDEO_BYTES))
+    throw fail(`File is too large (${image ? '8' : '100'} MB maximum).`, 413);
+  return info.size;
+}
+
 // The reverse of toGuide: flattens the guide into table rows. A media file's size comes from its previous row,
-// or for a new upload from Storage, which also confirms the file's type matches its extension.
+// or for a new upload from Storage (see uploadedFile).
 export async function toRows(guide, previousMedia = [], storage = null, token) {
   const rows = Object.fromEntries(tables.map(table => [table, []]));
+  const uploads = [];
   for (const l of guide.locations) {
     if (!l.latitude.trim() || !l.longitude.trim()) throw fail('Latitude and longitude are required.');
     rows.locations.push({
@@ -133,15 +148,8 @@ export async function toRows(guide, previousMedia = [], storage = null, token) {
           const old = previousMedia.find(
             row => row.id === m.id && row.storage_bucket === ref.bucket && row.storage_path === storage_path
           );
-          let size = old?.size_bytes;
           const mime = mimeTypes[storage_path.split('.').pop()];
-          if (!size) {
-            if (!storage) throw fail('Enable Supabase Storage before saving uploads.', 503);
-            const info = await storage.stat(storage_path, token);
-            if (info.mime !== mime) throw fail('Uploaded file type does not match.');
-            size = info.size;
-          }
-          rows.media.push({
+          const row = {
             id: m.id,
             boulder_id: b.locationPhotos ? null : b.id,
             location_id: b.locationPhotos ? l.id : null,
@@ -151,11 +159,14 @@ export async function toRows(guide, previousMedia = [], storage = null, token) {
             storage_bucket: ref.bucket,
             storage_path,
             mime_type: mime,
-            size_bytes: size,
+            size_bytes: old?.size_bytes,
             annotations: kind === 'image' ? m.annotations : [],
             on_boulder_page: m.onBoulderPage !== false,
             created_by: m.createdBy,
-          });
+          };
+          rows.media.push(row);
+          if (!row.size_bytes)
+            uploads.push(uploadedFile(storage, storage_path, mime, token).then(size => (row.size_bytes = size)));
         }
       for (const p of b.problems || []) {
         rows.problems.push({
@@ -172,6 +183,7 @@ export async function toRows(guide, previousMedia = [], storage = null, token) {
       }
     }
   }
+  await Promise.all(uploads);
   return rows;
 }
 
@@ -244,21 +256,41 @@ export function createContentStore({
     return result;
   }
   return {
+    // The whole guide. The app loads one location at a time instead (summaries and readLocation).
     async read(token) {
       return toGuide(await rpc('read_content', {}, token));
     },
-    // `check` validates the merged guide before any permission checks or writes.
-    async save(changes, user, token, check = () => {}) {
-      const snapshot = await rpc('read_content', {}, token);
+    // Every location's ID, name and coordinates, for search and the map.
+    async summaries(token) {
+      const locations = await rpc('read_location_summaries', {}, token);
+      return {
+        locations: locations.map(l => ({ ...l, latitude: String(l.latitude), longitude: String(l.longitude) })),
+      };
+    },
+    // A guide holding just this location, or no locations if it doesn't exist.
+    async readLocation(id, token) {
+      return toGuide(await rpc('read_location', { target: id }, token));
+    },
+    // `check` validates the merged guide before any permission checks or writes. With `locationId`, the changes must
+    // all be within that location (or create or remove it); only it is read and returned.
+    async save(changes, user, token, check = () => {}, locationId = null) {
+      const snapshot = locationId
+        ? await rpc('read_location', { target: locationId }, token)
+        : await rpc('read_content', {}, token);
       const previous = toGuide(snapshot);
+      // A change under a location outside the snapshot has no parent here, so applyChanges reports a conflict.
       const incoming = applyChanges(previous, changes);
+      if (locationId && incoming.locations.some(l => l.id !== locationId))
+        throw fail('Save changes to one location at a time.');
       check(incoming, previous);
       authorizeChanges(previous, incoming, user);
       enforcePostLimits(previous, incoming, user.id);
       enforceMediaLimits(previous, incoming);
       const rows = await toRows(incoming, snapshot.media, storage, token);
       const operations = contentOperations(snapshot, rows);
-      const saved = toGuide(await rpc('save_content', { operations }, token));
+      const saved = toGuide(
+        await rpc('save_content', locationId ? { operations, target_location: locationId } : { operations }, token)
+      );
       // Delete the files of removed photos and videos, so they stop using storage and their links stop working.
       // The save has already succeeded, so a failure here only leaves the file behind (logged, not shown).
       const removed = operations

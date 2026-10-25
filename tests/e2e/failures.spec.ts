@@ -56,7 +56,7 @@ test("the server's own error messages are shown, such as being rate limited", as
 
 test('a guide that fails to load shows an error instead of an empty page', async () => {
   const page = await user.current.context.newPage();
-  await page.route('**/api/guide', route =>
+  await page.route('**/api/locations', route =>
     route.request().method() === 'GET'
       ? route.fulfill({
           status: 503,
@@ -140,7 +140,7 @@ test('a dropped connection while uploading a profile photo gets a readable messa
   const page = await user.current.context.newPage();
   await page.goto('/#user=' + user.current.account.id);
   await expect(page.getByRole('heading', { level: 1, name: user.current.account.name, exact: true })).toBeVisible();
-  await dropConnection(page, '/api/images');
+  await dropConnection(page, '/api/uploads');
   await page
     .locator('label', { hasText: 'Upload profile photo' })
     .locator('input[type="file"]')

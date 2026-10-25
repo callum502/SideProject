@@ -144,19 +144,43 @@ export async function editGuide(request: APIRequestContext, change: (guide: any)
 }
 
 /**
+ * Start an upload as the user: the app's API returns a one-time Storage URL for the file.
+ * @param request - API request client of the uploading user.
+ * @param type - MIME type the file is declared as.
+ * @param size - File size in bytes.
+ * @returns The API response; a 201 body has `uploadUrl` and the file's app media `url`.
+ */
+export function startUpload(request: APIRequestContext, type: string, size: number) {
+  return request.post('/api/uploads', { data: { type, size }, timeout: 10000 });
+}
+
+/**
+ * Upload a file as the user the way the app does: start the upload, then send the bytes straight to Storage.
+ * @param request - API request client of the uploading user.
+ * @param buffer - The file's bytes.
+ * @param type - MIME type the file is declared as.
+ * @returns The uploaded file's app media URL.
+ */
+export async function uploadBytes(request: APIRequestContext, buffer: Buffer, type: string) {
+  const started = await startUpload(request, type, buffer.length);
+  expect(started.status(), 'Upload started').toBe(201);
+  const { uploadUrl, url } = await started.json();
+  const sent = await request.put(uploadUrl, {
+    multipart: { cacheControl: '3600', file: { name: 'upload', mimeType: type, buffer } },
+    timeout: 30000,
+  });
+  expect(sent.status(), 'Storage accepted the file').toBe(200);
+  return url as string;
+}
+
+/**
  * Upload a 320×240 sample image as the user.
  * @param request - API request client of the uploading user.
  * @param type - Image type: png, jpg or webp.
  * @returns The uploaded file's app media URL.
  */
-export async function uploadImage(request: APIRequestContext, type: MediaType = 'png') {
-  const response = await request.post('/api/images', {
-    headers: { 'Content-Type': MIME[type] },
-    data: mediaFile(type).buffer,
-    timeout: 30000,
-  });
-  expect(response.status(), 'Image upload succeeded').toBe(201);
-  return (await response.json()).url as string;
+export function uploadImage(request: APIRequestContext, type: MediaType = 'png') {
+  return uploadBytes(request, mediaFile(type).buffer, MIME[type]);
 }
 
 /**
@@ -165,14 +189,8 @@ export async function uploadImage(request: APIRequestContext, type: MediaType = 
  * @param type - Video type: mp4, webm or mov.
  * @returns The uploaded file's app media URL.
  */
-export async function uploadVideo(request: APIRequestContext, type: MediaType = 'mp4') {
-  const response = await request.post('/api/videos', {
-    headers: { 'Content-Type': MIME[type] },
-    data: mediaFile(type).buffer,
-    timeout: 30000,
-  });
-  expect(response.status(), 'Video upload succeeded').toBe(201);
-  return (await response.json()).url as string;
+export function uploadVideo(request: APIRequestContext, type: MediaType = 'mp4') {
+  return uploadBytes(request, mediaFile(type).buffer, MIME[type]);
 }
 
 /**

@@ -80,30 +80,51 @@ export function createStorage({
       await check(r);
       return (await r.json().catch(() => [])).length;
     },
-    // Size and type of a stored file, read without downloading it.
-    async stat(path, token) {
-      const r = await request('object/authenticated/' + objectPath(path), token, { method: 'HEAD' });
-      await check(r);
-      const size = Number(r.headers.get('content-length'));
-      if (!Number.isSafeInteger(size) || size <= 0) throw fail('Could not verify the uploaded file size.');
-      return { size, mime: r.headers.get('content-type')?.split(';')[0] };
-    },
-    // Uploads are checked against the allowance first and never overwrite an existing file.
-    async upload(path, bytes, mime, token) {
-      const limit = mime.startsWith('image/') ? 8 * 1024 * 1024 : MAX_VIDEO_BYTES;
-      if (bytes.length > limit)
-        throw fail(`File is too large (${mime.startsWith('image/') ? '8' : '100'} MB maximum).`, 413);
-      objectPath(path);
-      const allowance = await usage(token);
-      if (allowance.usedBytes + bytes.length > allowance.limitBytes)
-        throw fail('This upload would exceed your 10 GB upload allowance.', 400);
-      const r = await request('object/' + objectPath(path), token, {
-        method: 'POST',
-        headers: { 'Content-Type': mime, 'x-upsert': 'false', 'Cache-Control': 'max-age=3600' },
-        body: bytes,
+    // Size, type and leading bytes of a stored file. Only the first `head` bytes are downloaded, so its type can be
+    // checked against its contents without fetching a whole video.
+    async inspect(path, token, head) {
+      const r = await request('object/authenticated/' + objectPath(path), token, {
+        headers: { Range: `bytes=0-${head - 1}` },
       });
       await check(r);
-      return { url: mediaUrl(BUCKET, path) };
+      // A ranged reply gives the full size after the slash in Content-Range; a whole-file reply in Content-Length.
+      const size = Number(r.headers.get('content-range')?.split('/')[1] ?? r.headers.get('content-length'));
+      if (!Number.isSafeInteger(size) || size <= 0) throw fail('Could not verify the uploaded file size.');
+      const chunks = [];
+      let read = 0;
+      const reader = r.body.getReader();
+      while (read < head) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        read += value.length;
+      }
+      await reader.cancel().catch(() => {});
+      return {
+        size,
+        mime: r.headers.get('content-type')?.split(';')[0],
+        bytes: Buffer.concat(chunks).subarray(0, head),
+      };
+    },
+    // A one-time URL the browser uploads the file to directly, so its bytes never pass through this server. Checked
+    // against the allowance first; Storage refuses to overwrite an existing file and rechecks the allowance itself.
+    async signUpload(path, size, mime, token) {
+      const limit = mime.startsWith('image/') ? 8 * 1024 * 1024 : MAX_VIDEO_BYTES;
+      if (size > limit) throw fail(`File is too large (${mime.startsWith('image/') ? '8' : '100'} MB maximum).`, 413);
+      objectPath(path);
+      const allowance = await usage(token);
+      if (allowance.usedBytes + size > allowance.limitBytes)
+        throw fail('This upload would exceed your 10 GB upload allowance.', 400);
+      const r = await request('object/upload/sign/' + objectPath(path), token, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-upsert': 'false' },
+        body: '{}',
+      });
+      await check(r);
+      const signed = await r.json().catch(() => null);
+      if (typeof signed?.url !== 'string' || !signed.url.startsWith('/object/upload/sign/'))
+        throw fail('Storage did not return an upload URL.');
+      return { uploadUrl: base + '/storage/v1' + signed.url, url: mediaUrl(BUCKET, path) };
     },
   };
 }

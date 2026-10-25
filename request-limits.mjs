@@ -19,7 +19,8 @@ const authPaths = new Set([
   '/api/auth/google',
   '/auth/google/callback',
 ]);
-export const isUpload = (path, method) => method === 'POST' && ['/api/images', '/api/videos'].includes(path);
+// Starting an upload; the file itself goes straight to Storage.
+export const isUpload = (path, method) => method === 'POST' && path === '/api/uploads';
 
 export function clientAddress(req, renderProxy = false) {
   // Render sets the first X-Forwarded-For entry to the client address. Trust
@@ -60,19 +61,11 @@ export function testLimitOptions(env) {
     rules: Object.fromEntries(
       Object.entries(REQUEST_LIMITS).map(([kind, rule]) => [kind, { ...rule, count: rule.count * 100 }])
     ),
-    maxUploads: 8,
   };
 }
 
-export function createRequestLimits({
-  now = Date.now,
-  rules = REQUEST_LIMITS,
-  maxKeys = 10000,
-  maxActive = 32,
-  maxUploads = 2,
-} = {}) {
-  const buckets = new Map(),
-    uploads = new Set();
+export function createRequestLimits({ now = Date.now, rules = REQUEST_LIMITS, maxKeys = 10000, maxActive = 32 } = {}) {
+  const buckets = new Map();
   let active = 0,
     swept = 0;
   function take(kind, key) {
@@ -123,19 +116,6 @@ export function createRequestLimits({
         if (!released) {
           released = true;
           active--;
-        }
-      };
-    },
-    upload(id) {
-      if (uploads.has(id))
-        throw reject('You already have an upload in progress. Please wait for it to finish.', 429, 5);
-      if (uploads.size >= maxUploads) throw reject('Uploads are busy. Please try again shortly.', 503, 5);
-      uploads.add(id);
-      let released = false;
-      return () => {
-        if (!released) {
-          released = true;
-          uploads.delete(id);
         }
       };
     },

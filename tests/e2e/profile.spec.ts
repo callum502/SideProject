@@ -5,6 +5,7 @@ import {
   openPage,
   seedLocation,
   uploadImage,
+  uploadBytes,
   createApiAccount,
   signIn,
   logProblem,
@@ -131,6 +132,14 @@ test("a profile photo's contents are checked, and a new photo replaces the old o
   await input.setInputFiles([{ name: 'me.png', mimeType: 'image/png', buffer: Buffer.from('not really an image') }]);
   await expect(page.getByRole('alert')).toHaveText('The file is not a supported image.');
   expect(await photoStatus(id), 'API: no photo saved').toBe(404);
+  // Skipping the app's check doesn't help: the server reads the stored file's contents first.
+  const fake = await uploadBytes(owner.current.request, Buffer.from('not really an image'), 'image/png');
+  const refused = await owner.current.request.post('/api/profile-photo', { data: { url: fake } });
+  expect({ status: refused.status(), error: (await refused.json()).error }, 'API: disguised photo refused').toEqual({
+    status: 400,
+    error: 'The file is not a supported image.',
+  });
+  expect(await photoStatus(id), 'API: still no photo saved').toBe(404);
   // A second photo replaces the first.
   const photoUrl = async () =>
     (await owner.current.request.get('/api/profile-photo?id=' + id, { maxRedirects: 0 })).headers().location;
@@ -348,11 +357,12 @@ test('replacing or removing a profile photo deletes the old file, unless the gui
   await input.setInputFiles([mediaFile('png')]);
   await expect.poll(photoFile).toMatch(/\.png$/);
   const second = (await photoFile())!;
-  expect(await reachable(first), 'The replaced photo file was deleted').toBe(false);
+  // The server deletes the old file just after saving the new photo, in the same request, so wait for it.
+  await expect.poll(() => reachable(first), { message: 'The replaced photo file was deleted' }).toBe(false);
   // Removing the photo deletes its file too, so storage is back where it started.
   await page.getByRole('button', { name: 'Remove profile photo', exact: true }).click();
   await expect.poll(() => photoStatus(id)).toBe(404);
-  expect(await reachable(second), 'The removed photo file was deleted').toBe(false);
+  await expect.poll(() => reachable(second), { message: 'The removed photo file was deleted' }).toBe(false);
   expect(await usedBytes(), 'Storage freed').toBe(before);
   // A guide photo used as the profile photo keeps its file when the profile photo changes.
   const { image } = await seedLocation(request, prefix);

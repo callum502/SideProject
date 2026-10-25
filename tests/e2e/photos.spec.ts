@@ -1,7 +1,7 @@
 import { test, expect } from './fixtures';
 import { chooseFiles, completeUpload, dialogError } from './testHelpers';
 import { guide, findRecord as find } from './apiTestHelpers';
-import { testUser, openPage, seedLocation, editGuide } from './seedHelpers';
+import { testUser, openPage, seedLocation, editGuide, uploadImage, uploadBytes } from './seedHelpers';
 import { mediaFile } from './media';
 
 const prefix = 'test_photos_loc_';
@@ -187,7 +187,7 @@ test('a batch with an unsupported file uploads nothing', async () => {
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
   let uploads = 0;
   page.on('request', request => {
-    if (request.url().endsWith('/api/images')) uploads++;
+    if (request.url().endsWith('/api/uploads')) uploads++;
   });
   const before = await usedBytes();
   for (const [what, bad, message] of [
@@ -245,7 +245,7 @@ test('a failed upload keeps the dialog open, saves nothing, and can be retried',
     ['the connection drops', (route: any) => route.abort('connectionreset')],
   ] as const) {
     await test.step(what, async () => {
-      await page.route('**/api/images', fail, { times: 1 });
+      await page.route('**/api/uploads', fail, { times: 1 });
       await chooseFiles(page, '+ Upload boulder photos', [mediaFile('png')]);
       const dialog = page.getByRole('dialog');
       await dialog.getByLabel('Photo 1 name').fill('Retried photo');
@@ -288,8 +288,8 @@ test('removing a photo frees its storage, and its old link stops working', async
   );
 });
 
-// Regression: only the server can tell a file named and typed as an image isn't one, and by then the earlier files in
-// the batch are stored. They used to stay, unused but counting towards the allowance; they are now discarded.
+// Regression: a file named and typed as an image that isn't one used to be found only after earlier files in
+// the batch were stored, leaving them unused but counting towards the allowance. Now nothing in the batch is stored.
 test('a batch with a disguised file stores nothing', async () => {
   const { location, boulder } = await seedLocation(user.current.request, prefix, { media: false });
   const page = await openPage(user.current.context, { location: location.id, boulder: boulder.id }, 'Seed Boulder');
@@ -300,8 +300,17 @@ test('a batch with a disguised file stores nothing', async () => {
   ]);
   await dialogError(page, 'Upload', 'The file is not a supported image.');
   expect(find(await guide(page), boulder.id).images, 'API/DB: no photos saved').toEqual([]);
-  // The earlier file is discarded just after the error is shown.
   await expect.poll(usedBytes, { message: 'No file was left stored', timeout: 5000 }).toBe(before);
+  // Skipping the app's check doesn't help: the server reads the stored file's contents before saving it.
+  const url = await uploadBytes(user.current.request, Buffer.from('not really an image'), 'image/png');
+  const save = await editGuide(user.current.request, g => {
+    find(g, boulder.id).images.push({ id: crypto.randomUUID(), name: 'Fake', caption: '', url, annotations: [] });
+  });
+  expect({ status: save.status(), error: (await save.json()).error }, 'API: disguised file refused').toEqual({
+    status: 400,
+    error: 'The file is not a supported image.',
+  });
+  expect(find(await guide(page), boulder.id).images, 'API/DB: still no photos saved').toEqual([]);
 });
 
 test('a video batch with a disguised file stores nothing', async () => {
@@ -356,14 +365,7 @@ test("discarding uploads only removes the user's own files that nothing uses", a
   const someoneElse = `/media/${crypto.randomUUID()}/${crypto.randomUUID()}.png`;
   expect((await discard([someoneElse])).status(), "Another user's upload refused").toBe(403);
   // An unused upload of the user's own is deleted.
-  const url = (
-    await (
-      await user.current.request.post('/api/images', {
-        headers: { 'Content-Type': 'image/png' },
-        data: mediaFile('png').buffer,
-      })
-    ).json()
-  ).url;
+  const url = await uploadImage(user.current.request);
   expect(await (await discard([url])).json(), 'Unused upload removed').toEqual({ removed: 1 });
   expect((await user.current.request.get(url)).status(), 'Its link no longer works').toBeGreaterThanOrEqual(400);
 });

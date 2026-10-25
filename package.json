@@ -7,7 +7,7 @@
     "dev": "node --preserve-symlinks --preserve-symlinks-main server.mjs",
     "build": "node --preserve-symlinks --preserve-symlinks-main build.mjs",
     "preview": "node --preserve-symlinks --preserve-symlinks-main server.mjs --preview",
-    "test": "node --preserve-symlinks --preserve-symlinks-main --test tests/server.test.mjs tests/guide-changes.test.mjs tests/supabase-auth.test.mjs tests/storage.test.mjs tests/media-limits.test.mjs tests/request-limits.test.mjs tests/navigation.test.mjs",
+    "test": "node --preserve-symlinks --preserve-symlinks-main --test tests/server.test.mjs tests/guide-changes.test.mjs tests/supabase-auth.test.mjs tests/storage.test.mjs tests/media-limits.test.mjs tests/request-limits.test.mjs tests/navigation.test.mjs tests/session-store.test.mjs",
     "test:e2e": "node --preserve-symlinks --preserve-symlinks-main node_modules/@playwright/test/cli.js test",
     "test:e2e:open": "node --preserve-symlinks --preserve-symlinks-main node_modules/@playwright/test/cli.js test --ui",
     "test:e2e:headed": "node --preserve-symlinks --preserve-symlinks-main node_modules/@playwright/test/cli.js test --headed",

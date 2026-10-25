@@ -16,6 +16,7 @@ import {
   closeTabs,
   editGuide,
   uploadImage,
+  startUpload,
   seedLocation,
   type TestAccount,
 } from './seedHelpers';
@@ -111,12 +112,9 @@ test('guest can browse but cannot contribute', async () => {
       find(g, seed.location.id).name = 'Guest edit';
     });
     expect(save.status(), 'Guest guide save is refused').toBe(401);
-    for (const [route, type] of [
-      ['/api/images', 'image/png'],
-      ['/api/videos', 'video/mp4'],
-    ]) {
-      const upload = await guest.request.post(route, { headers: { 'Content-Type': type }, data: Buffer.alloc(32) });
-      expect(upload.status(), 'Guest upload to ' + route + ' is refused').toBe(401);
+    for (const type of ['image/png', 'video/mp4']) {
+      const upload = await startUpload(guest.request, type, 32);
+      expect(upload.status(), 'Guest ' + type + ' upload is refused').toBe(401);
     }
   });
 });

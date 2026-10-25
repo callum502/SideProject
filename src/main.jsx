@@ -6,7 +6,7 @@ import CompleteProfile from './CompleteProfile';
 import { validLocationLinks } from '../location-links.mjs';
 import { duplicateMediaName, normalizeMediaName } from '../media-names.mjs';
 import { guideChanges } from '../guide-changes.mjs';
-import { api } from './api';
+import { api, uploadFile, contentsMatch } from './api';
 import React, { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
@@ -142,8 +142,12 @@ function App() {
     window.addEventListener('focus', refresh);
     return () => window.removeEventListener('focus', refresh);
   }, []);
+  // The guide as far as it is loaded: every location's name and coordinates (for search and the map), and in full
+  // (with `boulders`) each location that has been opened. `loaded` is whether the list of locations has arrived.
   const [db, setDb] = useState({ locations: [] }),
     [loaded, setLoaded] = useState(false);
+  // The opened location the server reported as not found.
+  const [missingId, setMissingId] = useState(null);
   const [locationId, setLocationId] = useState(null),
     [boulderId, setBoulderId] = useState(null);
   const [problemId, setProblemId] = useState(null);
@@ -151,17 +155,59 @@ function App() {
     [error, setError] = useState('');
   const [busy, setBusy] = useState(false),
     [toast, setToast] = useState('');
+  // Replaces one location with its copy from a guide the server sent, or removes it if the guide doesn't have it.
+  const putLocation = (id, guide) =>
+    setDb(current => {
+      const latest = guide.locations.find(l => l.id === id);
+      const index = current.locations.findIndex(l => l.id === id);
+      if (!latest) return { ...current, locations: current.locations.filter(l => l.id !== id) };
+      const locations = [...current.locations];
+      if (index < 0) locations.push(latest);
+      else locations[index] = latest;
+      return { ...current, locations };
+    });
+  // Loads the list of locations, keeping any already loaded in full.
+  const loadLocations = async () => {
+    const data = await api('/api/locations');
+    setDb(current => ({
+      ...current,
+      locations: data.locations.map(
+        summary => current.locations.find(l => l.id === summary.id && l.boulders) || summary
+      ),
+    }));
+    setLoaded(true);
+  };
   useEffect(() => {
-    api('/api/guide')
-      .then(data => {
-        setDb(data);
-        setLocationId(new URLSearchParams(location.hash.slice(1)).get('location'));
-        setBoulderId(new URLSearchParams(location.hash.slice(1)).get('boulder'));
-        setProblemId(new URLSearchParams(location.hash.slice(1)).get('problem'));
-        setLoaded(true);
-      })
-      .catch(e => setError(e.message));
+    const params = new URLSearchParams(location.hash.slice(1));
+    setLocationId(params.get('location'));
+    setBoulderId(params.get('boulder'));
+    setProblemId(params.get('problem'));
+    loadLocations().catch(e => setError(e.message));
   }, []);
+  // A location is loaded in full whenever it is opened, so it shows the latest changes.
+  useEffect(() => {
+    if (!locationId) return;
+    let current = true;
+    api('/api/locations/' + encodeURIComponent(locationId))
+      .then(guide => current && putLocation(locationId, guide))
+      .catch(e => {
+        if (!current) return;
+        if (e.status !== 404) return setError(e.message);
+        setMissingId(locationId);
+        putLocation(locationId, { locations: [] });
+      });
+    return () => {
+      current = false;
+    };
+  }, [locationId]);
+  // The latest copy of a location, read just before adding photos or videos to check its media limit.
+  const latestLocation = id =>
+    api('/api/locations/' + encodeURIComponent(id)).then(
+      guide => guide.locations[0],
+      e => {
+        throw e.status === 404 ? new Error('This location no longer exists.') : e;
+      }
+    );
   useEffect(() => {
     if (toast) {
       const t = setTimeout(() => setToast(''), 3500);
@@ -186,7 +232,7 @@ function App() {
     window.addEventListener('hashchange', navigate);
     return () => window.removeEventListener('hashchange', navigate);
   }, []);
-  const place = db.locations.find(l => l.id === locationId);
+  const place = db.locations.find(l => l.id === locationId && l.boulders);
   const boulder = place?.boulders.find(b => b.id === boulderId);
   const problem = boulder?.problems?.find(p => p.id === problemId);
   // Photos that show the boulder itself, as opposed to topos uploaded for one problem.
@@ -207,17 +253,18 @@ function App() {
       setError(e.message);
     }
   }
-  // Sends only the records that differ from the loaded guide; the server replies with the latest full guide.
-  async function save(next) {
+  // Sends only the records that differ from the loaded guide, all within the location `scope`; the server replies
+  // with that location's latest copy (none once it is removed).
+  async function save(next, scope) {
     setBusy(true);
     setError('');
     try {
       const result = await api('/api/guide', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ changes: guideChanges(db, next) }),
+        body: JSON.stringify({ changes: guideChanges(db, next), location: scope }),
       });
-      setDb(result);
+      putLocation(scope, result);
       setToast('Changes saved');
       return true;
     } catch (e) {
@@ -228,7 +275,7 @@ function App() {
     }
   }
   const updatePlace = async patch =>
-    save({ ...db, locations: db.locations.map(l => (l.id === place.id ? { ...l, ...patch } : l)) });
+    save({ ...db, locations: db.locations.map(l => (l.id === place.id ? { ...l, ...patch } : l)) }, place.id);
   const updateBoulder = async patch => {
     const next = { ...boulder, ...patch };
     const onBoulder = id => next.images.some(i => i.id === id);
@@ -287,7 +334,9 @@ function App() {
       }
       const item = { id: uid(), boulders: [], ...form, latitude, longitude };
       const ok =
-        modal === 'location' ? await save({ ...db, locations: [...db.locations, item] }) : await updatePlace(form);
+        modal === 'location'
+          ? await save({ ...db, locations: [...db.locations, item] }, item.id)
+          : await updatePlace(form);
       if (ok) {
         setModal(null);
         if (modal === 'location') choose(item.id);
@@ -348,13 +397,11 @@ function App() {
         if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type))
           throw new Error('Choose JPEG, PNG, or WebP images.');
         if (file.size > 8 * 1024 * 1024) throw new Error('Each image must be smaller than 8 MB.');
+        if (!(await contentsMatch(file, file.type))) throw new Error('The file is not a supported image.');
       }
-      const latest = await api('/api/guide');
-      const destination = latest.locations.find(item => item.id === place.id);
-      if (!destination) throw new Error('This location no longer exists.');
-      checkMediaCapacity(destination, files.length);
+      checkMediaCapacity(await latestLocation(place.id), files.length);
       for (const file of files) {
-        const result = await api('/api/images', { method: 'POST', headers: { 'Content-Type': file.type }, body: file });
+        const result = await uploadFile(file, file.type);
         images.push({
           id: uid(),
           name: names[images.length],
@@ -386,6 +433,8 @@ function App() {
       setBusy(false);
     }
   }
+  // Browsers may not give MOV files a type, so the extension decides.
+  const videoType = file => (/\.mov$/i.test(file.name) ? 'video/quicktime' : file.type);
   async function uploadNamedVideos(files, names) {
     setBusy(true);
     setError('');
@@ -395,17 +444,11 @@ function App() {
         if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(file.type) && !/\.mov$/i.test(file.name))
           throw new Error('Choose MP4, WebM, or MOV videos.');
         if (file.size > videoMaxMB * 1024 * 1024) throw new Error(`Each video must be smaller than ${videoMaxMB} MB.`);
+        if (!(await contentsMatch(file, videoType(file)))) throw new Error('The file is not a supported video.');
       }
-      const latest = await api('/api/guide');
-      const destination = latest.locations.find(item => item.id === place.id);
-      if (!destination) throw new Error('This location no longer exists.');
-      checkMediaCapacity(destination, files.length);
+      checkMediaCapacity(await latestLocation(place.id), files.length);
       for (const file of files) {
-        const result = await api('/api/videos', {
-          method: 'POST',
-          headers: { 'Content-Type': /\.mov$/i.test(file.name) ? 'video/quicktime' : file.type },
-          body: file,
-        });
+        const result = await uploadFile(file, videoType(file));
         videos.push({ id: uid(), name: names[videos.length], url: result.url });
       }
       const saved = await updateBoulder({
@@ -466,7 +509,7 @@ function App() {
             onComplete={async identity => {
               setUser(identity);
               try {
-                setDb(await api('/api/guide'));
+                await loadLocations();
               } catch (e) {
                 setError(e.message);
               }
@@ -483,7 +526,7 @@ function App() {
           <LoginPage
             onLogin={async identity => {
               setUser(identity);
-              setDb(await api('/api/guide'));
+              await loadLocations();
               location.hash = '#explore';
             }}
           />
@@ -518,8 +561,10 @@ function App() {
                   {!place ? (
                     <div className="welcome">
                       <PageNavigation place={place} boulder={boulder} problem={problem} problemId={problemId} />
-                      <h2>{loaded ? 'Location not found' : 'Loading location...'}</h2>
-                      {loaded && <p>This location may have been removed. Return to search to find another location.</p>}
+                      <h2>{missingId === locationId ? 'Location not found' : 'Loading location...'}</h2>
+                      {missingId === locationId && (
+                        <p>This location may have been removed. Return to search to find another location.</p>
+                      )}
                     </div>
                   ) : (
                     <>
@@ -1449,7 +1494,7 @@ function App() {
               disabled={busy}
               onClick={async () => {
                 const id = modal.removeLocation.id;
-                if (await save({ ...db, locations: db.locations.filter(location => location.id !== id) })) {
+                if (await save({ ...db, locations: db.locations.filter(location => location.id !== id) }, id)) {
                   setModal(null);
                   goHome();
                   setToast('Location removed');

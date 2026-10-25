@@ -1,10 +1,12 @@
-import { createRequestLimits, clientAddress, isUpload, readRequestBody, testLimitOptions } from './request-limits.mjs';
+import { createRequestLimits, clientAddress, readRequestBody, testLimitOptions } from './request-limits.mjs';
 import { validLocationLinks } from './location-links.mjs';
 import { duplicateMediaName } from './media-names.mjs';
 import { createStorage } from './storage.mjs';
-import { mediaReference, MAX_VIDEO_BYTES } from './media-reference.mjs';
+import { mediaReference } from './media-reference.mjs';
+import { matchesType, SIGNATURE_BYTES } from './media-signatures.mjs';
 import { createContentStore } from './content-store.mjs';
 import { createAuth } from './auth.mjs';
+import { createSessionStore } from './session-store.mjs';
 import { deploymentConfig } from './deployment.mjs';
 import http from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -13,6 +15,16 @@ import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// The file extension each upload type is stored with.
+const uploadExtensions = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+  'video/quicktime': 'mov',
+};
 // Errors carrying a status are sent to the client with their message; any other error becomes a generic 500.
 const fail = (message, status = 400) => Object.assign(new Error(message), { status });
 // A string of at most `max` characters; when required, it must not be blank.
@@ -235,15 +247,15 @@ export async function createGuideServer({
   contentStore = createContentStore({ storage }),
   deployment = deploymentConfig(),
   requestLimits = createRequestLimits(),
-} = {}) {
   // Signed-in sessions, keyed by the random sideproj_session cookie. Supabase tokens stay on the server.
-  const sessions = new Map();
+  sessions = createSessionStore(),
+} = {}) {
   // Google sign-ins in progress (PKCE verifier and origin), keyed by the sideproj_oauth cookie.
   const oauthAttempts = new Map();
   // Open live-reload event streams (dev server only).
   const clients = new Set();
   const server = http.createServer(async (req, res) => {
-    let releaseRequest, releaseUpload;
+    let releaseRequest;
     const json = (status, value) => {
       if (status >= 400 && !req.complete) res.setHeader('Connection', 'close');
       res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
@@ -313,10 +325,8 @@ export async function createGuideServer({
             throw fail('Google sign-in expired or was cancelled.', 401);
           const nextSession = await auth.exchangeGoogle(code, attempt.verifier);
           const previous = cookieValue('sideproj_session');
-          if (previous) sessions.delete(previous);
-          for (const [key, value] of sessions) if (value.cookieExpires <= Date.now()) sessions.delete(key);
-          const nextToken = randomUUID();
-          sessions.set(nextToken, { ...nextSession, cookieExpires: Date.now() + 86400000 });
+          if (previous) await sessions.remove(previous);
+          const nextToken = await sessions.create({ ...nextSession, cookieExpires: Date.now() + 86400000 });
           res.setHeader('Set-Cookie', [
             cleared,
             'sideproj_session=' +
@@ -331,23 +341,26 @@ export async function createGuideServer({
           return res.end();
         }
       }
-      const token = (req.headers.cookie || '')
-        .split(';')
-        .map(c => c.trim())
-        .find(c => c.startsWith('sideproj_session='))
-        ?.slice('sideproj_session='.length);
-      const session = sessions.get(token);
+      const token = cookieValue('sideproj_session');
+      // Only API requests use the session, so pages and files need no session lookup.
+      let session = url.pathname.startsWith('/api/') ? await sessions.get(token) : undefined;
       let user = null;
       // The account ID comes from our server session, never from request input.
-      if (session && session.cookieExpires > Date.now() && limited)
-        requestLimits.account(session.user.id, url.pathname, req.method);
-      if (session && session.cookieExpires <= Date.now()) sessions.delete(token);
-      else if (session && url.pathname.startsWith('/api/') && url.pathname !== '/api/logout') {
+      if (session) requestLimits.account(session.user.id, url.pathname, req.method);
+      if (session && url.pathname !== '/api/logout') {
         try {
-          user = await auth.resolve(session);
+          // Before refreshing tokens that are about to expire, pick up any another server already refreshed.
+          if (session.expires < Date.now() + 30000 && !session.refreshing)
+            session = await sessions.get(token, { fresh: true });
+          if (session) {
+            const accessToken = session.accessToken;
+            user = await auth.resolve(session);
+            if (session.accessToken !== accessToken) await sessions.update(token, session);
+          }
         } catch (error) {
           if (error.status !== 401) throw error;
-          sessions.delete(token);
+          await sessions.remove(token);
+          session = undefined;
         }
       }
       if (url.pathname === '/api/account' && req.method === 'DELETE') {
@@ -361,7 +374,8 @@ export async function createGuideServer({
         }
         if (values?.confirmation !== 'DELETE') throw fail('Type DELETE to confirm.');
         await auth.deleteAccount(session);
-        for (const [key, value] of sessions) if (value.user?.id === user.id) sessions.delete(key);
+        // The account's saved sessions are deleted with it; this drops the ones cached by this server.
+        await sessions.removeUser(user.id);
         res.setHeader(
           'Set-Cookie',
           'sideproj_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' + deployment.secureCookie
@@ -391,6 +405,14 @@ export async function createGuideServer({
         const ref = typeof values?.url === 'string' ? mediaReference(values.url) : null;
         if (values?.url !== null && (!ref || !/\.(jpg|png|webp)$/.test(ref.path) || ref.path.split('/')[0] !== user.id))
           throw fail('Choose an image uploaded by your account.', 400);
+        // The browser uploaded the file straight to Storage, so check here that it really is an image.
+        if (ref) {
+          const info = await storage.inspect(ref.path, session.accessToken, SIGNATURE_BYTES);
+          const expected = { jpg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }[ref.path.split('.').pop()];
+          if (info.mime !== expected || !matchesType(expected, info.bytes))
+            throw fail('The file is not a supported image.');
+          if (info.size > 8 * 1024 * 1024) throw fail('File is too large (8 MB maximum).', 413);
+        }
         const previous = await auth.profilePhoto(user.id).catch(() => null);
         await auth.setProfilePhoto(ref?.path || null, session);
         // A replaced or removed photo's file would otherwise stay stored, using the allowance. Storage keeps it if
@@ -403,8 +425,7 @@ export async function createGuideServer({
       }
       if (url.pathname === '/api/public-profile' && req.method === 'GET') {
         const id = url.searchParams.get('id');
-        if (!id || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id))
-          throw fail('Profile not found.', 404);
+        if (!id || !uuidPattern.test(id)) throw fail('Profile not found.', 404);
         const profile = await auth.publicProfile(id);
         if (!profile) throw fail('Profile not found.', 404);
         return json(200, { ...profile, hasPhoto: !!(await auth.profilePhoto(id)) });
@@ -429,8 +450,7 @@ export async function createGuideServer({
           throw fail('Enter a display name.');
         if (
           !['list', 'search', 'suggest'].includes(values.action) &&
-          (typeof values.target !== 'string' ||
-            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(values.target))
+          (typeof values.target !== 'string' || !uuidPattern.test(values.target))
         )
           throw fail('Choose a valid account.');
         try {
@@ -455,7 +475,7 @@ export async function createGuideServer({
             !values ||
             typeof values.completed !== 'boolean' ||
             typeof values.problemId !== 'string' ||
-            !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(values.problemId)
+            !uuidPattern.test(values.problemId)
           )
             throw fail('Invalid log entry.');
         }
@@ -506,10 +526,8 @@ export async function createGuideServer({
         }
         const nextSession = await auth.login(values);
         const identity = nextSession.user;
-        if (token) sessions.delete(token);
-        for (const [key, value] of sessions) if (value.cookieExpires <= Date.now()) sessions.delete(key);
-        const nextToken = randomUUID();
-        sessions.set(nextToken, { ...nextSession, cookieExpires: Date.now() + 86400000 });
+        if (token) await sessions.remove(token);
+        const nextToken = await sessions.create({ ...nextSession, cookieExpires: Date.now() + 86400000 });
         res.setHeader(
           'Set-Cookie',
           'sideproj_session=' +
@@ -520,7 +538,11 @@ export async function createGuideServer({
         return json(200, { user: identity });
       }
       if (url.pathname === '/api/logout' && req.method === 'POST') {
-        sessions.delete(token);
+        // The cookie is cleared even if the saved session can't be deleted right now; Supabase's own logout below
+        // still revokes its tokens, so it can't be used again.
+        await sessions
+          .remove(token)
+          .catch(error => console.error('Could not delete the saved session:', error.message));
         res.setHeader(
           'Set-Cookie',
           'sideproj_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' + deployment.secureCookie
@@ -531,18 +553,27 @@ export async function createGuideServer({
       }
       if (
         user?.profileComplete === false &&
-        ['/api/guide', '/api/images', '/api/videos'].includes(url.pathname) &&
+        ['/api/guide', '/api/uploads'].includes(url.pathname) &&
         ['PUT', 'POST', 'DELETE'].includes(req.method)
       )
         throw fail('Complete your profile before contributing.', 403);
       if (
-        ['/api/guide', '/api/images', '/api/videos'].includes(url.pathname) &&
+        ['/api/guide', '/api/uploads'].includes(url.pathname) &&
         ['PUT', 'POST', 'DELETE'].includes(req.method) &&
         !user
       )
         throw fail('Log in to contribute.', 401);
-      if (url.pathname === '/api/guide' && req.method === 'GET')
-        return json(200, await contentStore.read(user ? session.accessToken : undefined));
+      const readToken = user ? session.accessToken : undefined;
+      if (url.pathname === '/api/guide' && req.method === 'GET') return json(200, await contentStore.read(readToken));
+      // The app loads the list of locations for search and the map, then each location as it is opened.
+      if (url.pathname === '/api/locations' && req.method === 'GET')
+        return json(200, await contentStore.summaries(readToken));
+      if (url.pathname.startsWith('/api/locations/') && req.method === 'GET') {
+        const id = url.pathname.slice('/api/locations/'.length);
+        const guide = uuidPattern.test(id) ? await contentStore.readLocation(id, readToken) : { locations: [] };
+        if (!guide.locations.length) throw fail('Location not found.', 404);
+        return json(200, guide);
+      }
       if (url.pathname === '/api/guide' && req.method === 'PUT') {
         let data;
         try {
@@ -552,17 +583,48 @@ export async function createGuideServer({
           throw fail('Invalid JSON.');
         }
         if (!data || !Array.isArray(data.changes)) throw fail('Invalid changes.');
+        // `location` limits the save to one location, and the reply to that location (none once it is removed).
+        if (data.location !== undefined && !(typeof data.location === 'string' && uuidPattern.test(data.location)))
+          throw fail('Invalid location.');
         // Changes are applied to the latest guide; the merged result must pass the same checks as a full guide.
         return json(
           200,
-          await contentStore.save(data.changes, user, session.accessToken, (next, current) => {
-            validate(next);
-            validateContentLengths(next, current);
-            validateAnnotationTargets(next, current);
-          })
+          await contentStore.save(
+            data.changes,
+            user,
+            session.accessToken,
+            (next, current) => {
+              validate(next);
+              validateContentLengths(next, current);
+              validateAnnotationTargets(next, current);
+            },
+            data.location
+          )
         );
       }
-      if (isUpload(url.pathname, req.method)) releaseUpload = requestLimits.upload(user.id);
+      // Starts an upload: the browser then sends the file straight to Storage at the returned uploadUrl, so its bytes
+      // never pass through this server. Its contents are checked when a save first uses it (content-store.mjs).
+      if (url.pathname === '/api/uploads' && req.method === 'POST') {
+        let values;
+        try {
+          values = JSON.parse((await body(req, 1024)).toString());
+        } catch {
+          throw fail('Invalid upload.');
+        }
+        const extension = uploadExtensions[values?.type];
+        if (!extension)
+          throw fail(
+            String(values?.type).startsWith('video/')
+              ? 'Choose MP4, WebM, or MOV videos.'
+              : 'Choose JPEG, PNG, or WebP images.'
+          );
+        if (!Number.isSafeInteger(values.size) || values.size <= 0) throw fail('Invalid upload.');
+        const filename = `${randomUUID()}.${extension}`;
+        return json(
+          201,
+          await storage.signUpload(user.id + '/' + filename, values.size, values.type, session.accessToken)
+        );
+      }
       // Delete the user's own uploads from a batch that didn't save, so they don't use up the storage allowance.
       // Storage only deletes files nothing uses (sideproj_remove_unused), so a file already in the guide is kept.
       if (url.pathname === '/api/uploads/discard' && req.method === 'POST') {
@@ -579,41 +641,6 @@ export async function createGuideServer({
         if (paths.some(p => !p || p.split('/')[0] !== user.id))
           throw fail('You can only discard your own uploads.', 403);
         return json(200, { removed: await storage.remove(paths, session.accessToken) });
-      }
-      // Uploads: the file's leading bytes must match the declared type before it is stored.
-      if (url.pathname === '/api/images' && req.method === 'POST') {
-        const mime = req.headers['content-type'];
-        if (!['image/jpeg', 'image/png', 'image/webp'].includes(mime)) throw fail('Choose JPEG, PNG, or WebP images.');
-        const bytes = await body(req, 8 * 1024 * 1024, { totalMs: 300000 });
-        const png = bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]));
-        const jpg = bytes[0] === 255 && bytes[1] === 216 && bytes[2] === 255;
-        const webp = bytes.toString('ascii', 0, 4) === 'RIFF' && bytes.toString('ascii', 8, 12) === 'WEBP';
-        if (!((mime === 'image/png' && png) || (mime === 'image/jpeg' && jpg) || (mime === 'image/webp' && webp)))
-          throw fail('The file is not a supported image.');
-        const filename = `${randomUUID()}.${png ? 'png' : jpg ? 'jpg' : 'webp'}`;
-        return json(201, await storage.upload(user.id + '/' + filename, bytes, mime, session.accessToken));
-      }
-      if (url.pathname === '/api/videos' && req.method === 'POST') {
-        const mime = req.headers['content-type'];
-        if (!['video/mp4', 'video/webm', 'video/quicktime'].includes(mime))
-          throw fail('Choose MP4, WebM, or MOV videos.');
-        const limit = MAX_VIDEO_BYTES;
-        if (Number(req.headers['content-length']) > limit)
-          throw fail('Each video must be smaller than ' + limit / 1024 / 1024 + ' MB.', 413);
-        const bytes = await body(req, limit, { totalMs: 300000 });
-        const mp4 = bytes.length >= 16 && bytes.toString('ascii', 4, 8) === 'ftyp';
-        const mov =
-          bytes.length >= 16 &&
-          (mp4 || ['moov', 'mdat', 'wide', 'free', 'skip'].includes(bytes.toString('ascii', 4, 8)));
-        const webm =
-          bytes.length >= 16 &&
-          bytes.subarray(0, 4).equals(Buffer.from([0x1a, 0x45, 0xdf, 0xa3])) &&
-          bytes.subarray(0, 4096).includes(Buffer.from('webm'));
-        if (!((mime === 'video/mp4' && mp4) || (mime === 'video/webm' && webm) || (mime === 'video/quicktime' && mov)))
-          throw fail('The file is not a supported video.');
-        const extension = { 'video/mp4': 'mp4', 'video/quicktime': 'mov' }[mime] || 'webm';
-        const filename = `${randomUUID()}.${extension}`;
-        return json(201, await storage.upload(user.id + '/' + filename, bytes, mime, session.accessToken));
       }
       if (url.pathname === '/api/events' && live) {
         res.writeHead(200, {
@@ -674,7 +701,6 @@ export async function createGuideServer({
       else res.end();
       if (!e.status && e.name !== 'AbortError' && e.code !== 'ERR_STREAM_PREMATURE_CLOSE') console.error(e);
     } finally {
-      releaseUpload?.();
       releaseRequest?.();
     }
   });

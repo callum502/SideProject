@@ -5,6 +5,7 @@ import { createGuideServer } from '../server.mjs';
 import { applyChanges } from '../guide-changes.mjs';
 import { fakeAuth } from './fake-auth.mjs';
 import { deploymentConfig } from '../deployment.mjs';
+import { createMemorySessionStore } from '../session-store.mjs';
 import http from 'node:http';
 
 test('Render accepts configured HTTPS origins and sets secure cookies behind its proxy', async () => {
@@ -17,7 +18,13 @@ test('Render accepts configured HTTPS origins and sets secure cookies behind its
   assert.equal(deploymentConfig({}).host, '127.0.0.1');
   assert.throws(() => deploymentConfig({ NODE_ENV: 'production' }));
   assert.throws(() => deploymentConfig({ APP_ORIGINS: 'http://sideproj.rocks' }));
-  const { server } = await createGuideServer({ deployment, auth: fakeAuth(), storage: {}, contentStore: {} });
+  const { server } = await createGuideServer({
+    deployment,
+    auth: fakeAuth(),
+    storage: {},
+    contentStore: {},
+    sessions: createMemorySessionStore(),
+  });
   await new Promise(r => server.listen(0, deployment.host, r));
   const request = (route, host, origin, method = 'GET', value) =>
     new Promise((resolve, reject) => {
@@ -76,7 +83,7 @@ test('cloud API requires login, forwards verified tokens, validates writes and i
       return next;
     },
   };
-  const { server } = await createGuideServer({ auth, contentStore, storage: {} });
+  const { server } = await createGuideServer({ auth, contentStore, storage: {}, sessions: createMemorySessionStore() });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port;
   const request = (route, method = 'GET', value, cookie, headers = {}) =>
@@ -88,7 +95,7 @@ test('cloud API requires login, forwards verified tokens, validates writes and i
   try {
     assert.deepEqual(await request('/api/guide').then(r => r.json()), { locations: [] });
     assert.equal((await request('/api/guide', 'PUT', { changes: [] })).status, 401);
-    assert.equal((await request('/api/images', 'POST', {})).status, 401);
+    assert.equal((await request('/api/uploads', 'POST', { type: 'image/png', size: 8 })).status, 401);
     assert.equal((await request('/api/login', 'POST', { email: 'admin@example.com', password: 'wrong' })).status, 401);
     const response = await request('/api/login', 'POST', {
       email: 'contributor@example.com',
@@ -149,7 +156,12 @@ test('Google callback requires browser cookie, rejects replay and creates a serv
     assert.ok(verifier.length >= 43);
     return { user: auth.users.Contributor, accessToken: 'private-token' };
   };
-  const { server } = await createGuideServer({ auth, storage: {}, contentStore: {} });
+  const { server } = await createGuideServer({
+    auth,
+    storage: {},
+    contentStore: {},
+    sessions: createMemorySessionStore(),
+  });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port;
   try {
@@ -209,4 +221,115 @@ test('post limits count across locations and do not block edits at the limit', a
       problems: [{ id: 'p' + i, createdBy: 'me' }],
     });
   assert.throws(() => enforcePostLimits(old, probs, 'me'), /maximum 250 problems/);
+});
+
+test('locations load one at a time and saves can be limited to one location', async () => {
+  const auth = fakeAuth();
+  const place = { id: '10000000-0000-4000-8000-000000000001', name: 'Crag', boulders: [] };
+  let saved;
+  const contentStore = {
+    async summaries() {
+      return { locations: [{ id: place.id, name: place.name, latitude: '1', longitude: '2' }] };
+    },
+    async readLocation(id) {
+      return { locations: id === place.id ? [place] : [] };
+    },
+    async save(changes, user, token, check, locationId) {
+      saved = locationId;
+      return { locations: [place] };
+    },
+  };
+  const { server } = await createGuideServer({ auth, contentStore, storage: {}, sessions: createMemorySessionStore() });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  try {
+    assert.equal((await (await fetch(base + '/api/locations')).json()).locations[0].name, 'Crag');
+    assert.deepEqual(await (await fetch(base + '/api/locations/' + place.id)).json(), { locations: [place] });
+    for (const id of ['20000000-0000-4000-8000-000000000002', 'not-a-uuid'])
+      assert.equal((await fetch(base + '/api/locations/' + id)).status, 404);
+    const login = await fetch(base + '/api/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'contributor@example.com', password: 'test-password' }),
+    });
+    const cookie = login.headers.get('set-cookie').split(';')[0];
+    const put = value =>
+      fetch(base + '/api/guide', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Cookie: cookie },
+        body: JSON.stringify(value),
+      });
+    assert.equal((await put({ changes: [], location: place.id })).status, 200);
+    assert.equal(saved, place.id);
+    assert.equal((await put({ changes: [] })).status, 200);
+    assert.equal(saved, undefined);
+    assert.equal((await put({ changes: [], location: 'elsewhere' })).status, 400);
+  } finally {
+    server.closeAllConnections();
+    await new Promise(r => server.close(r));
+  }
+});
+
+test('a save limited to one location refuses changes elsewhere, and checks new uploads by their contents', async () => {
+  const { createContentStore } = await import('../content-store.mjs');
+  const owner = '00000000-0000-4000-8000-000000000002';
+  const target = '10000000-0000-4000-8000-000000000001';
+  const row = {
+    id: target,
+    name: 'Crag',
+    latitude: 1,
+    longitude: 2,
+    approach_notes: 'Walk',
+    additional_links: [],
+    created_by: owner,
+    version: 1,
+  };
+  const snapshot = { locations: [row], boulders: [], problems: [], media: [], problem_media: [], profiles: [] };
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    const name = url.split('/rpc/')[1];
+    calls.push({ name, body: JSON.parse(options.body) });
+    return new Response(JSON.stringify(snapshot));
+  };
+  let contents = Buffer.from('not an image at all');
+  const storage = {
+    async inspect(path, token, head) {
+      return { size: contents.length, mime: 'image/png', bytes: contents.subarray(0, head) };
+    },
+  };
+  const store = createContentStore({
+    env: { SUPABASE_URL: 'https://test.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'key' },
+    fetchImpl,
+    storage,
+  });
+  const user = { id: owner, name: 'Me', role: 'contributor' };
+  const base = { name: 'Crag', latitude: '1', longitude: '2', approach: 'Walk', links: [], createdBy: owner };
+  const other = { action: 'put', type: 'location', id: '20000000-0000-4000-8000-000000000002', parentId: null };
+  await assert.rejects(
+    store.save([{ ...other, base: null, value: base }], user, 'token', () => {}, target),
+    /one location at a time/
+  );
+  assert.deepEqual(
+    calls.map(c => c.name),
+    ['read_location']
+  );
+  const photo = {
+    id: '30000000-0000-4000-8000-000000000003',
+    name: 'Parking',
+    caption: '',
+    url: `/media/${owner}/40000000-0000-4000-8000-000000000004.png`,
+    annotations: [],
+    createdBy: owner,
+  };
+  const addPhoto = [{ action: 'put', type: 'photo', id: photo.id, parentId: target, base: null, value: photo }];
+  await assert.rejects(
+    store.save(addPhoto, user, 'token', () => {}, target),
+    /not a supported image/
+  );
+  contents = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), Buffer.alloc(100)]);
+  calls.length = 0;
+  await store.save(addPhoto, user, 'token', () => {}, target);
+  const save = calls.find(c => c.name === 'save_content').body;
+  assert.equal(save.target_location, target);
+  assert.equal(save.operations.find(op => op.table === 'media').row.size_bytes, contents.length);
 });

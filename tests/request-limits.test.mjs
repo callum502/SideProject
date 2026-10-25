@@ -10,8 +10,9 @@ import {
 } from '../request-limits.mjs';
 import { createGuideServer } from '../server.mjs';
 import { fakeAuth } from './fake-auth.mjs';
+import { createMemorySessionStore } from '../session-store.mjs';
 
-test('rate windows, account limits, bounded memory, and upload slots', () => {
+test('rate windows, account and media limits, and bounded memory', () => {
   let time = 100000;
   const rules = Object.fromEntries(Object.entries(REQUEST_LIMITS).map(([k, v]) => [k, { ...v, count: 2 }]));
   const limiter = createRequestLimits({ now: () => time, rules });
@@ -29,18 +30,13 @@ test('rate windows, account limits, bounded memory, and upload slots', () => {
     () => limiter.account('user', '/api/guide', 'GET'),
     e => e.status === 429
   );
-  const one = limiter.upload('a');
-  assert.throws(() => limiter.upload('a'), /already have an upload/);
-  const two = limiter.upload('b');
+  // Media redirects have their own limit, apart from the API's.
+  limiter.media('a');
+  limiter.media('a');
   assert.throws(
-    () => limiter.upload('c'),
-    e => e.status === 503
+    () => limiter.media('a'),
+    e => e.status === 429
   );
-  one();
-  one();
-  const three = limiter.upload('c');
-  two();
-  three();
   const bounded = createRequestLimits({ maxKeys: 1 });
   bounded.before('a', '/api/guide', 'GET');
   assert.throws(
@@ -138,43 +134,45 @@ test('HTTP rejects excess requests before Supabase and keeps health checks avail
   }
 });
 
-test('HTTP upload slots stay held through Storage and are released after failure', async () => {
-  let finish, started;
-  const begun = new Promise(r => (started = r));
+test("uploads are signed into the user's own folder, and the file never passes through the server", async () => {
+  const signed = [];
   const storage = {
-    upload: () => {
-      started();
-      return new Promise((resolve, reject) => {
-        finish = () => reject(Object.assign(new Error('Storage failed'), { status: 503 }));
-      });
+    async signUpload(path, size, mime) {
+      signed.push({ path, size, mime });
+      return { uploadUrl: 'https://test.supabase.co/storage/v1/object/upload/sign/x?token=t', url: '/media/' + path };
     },
   };
-  const { server } = await createGuideServer({ auth: fakeAuth(), storage, contentStore: {} });
+  const auth = fakeAuth();
+  const { server } = await createGuideServer({ auth, storage, contentStore: {}, sessions: createMemorySessionStore() });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port;
-  const bytes = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const start = (value, cookie) =>
+    fetch(base + '/api/uploads', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(cookie ? { Cookie: cookie } : {}) },
+      body: JSON.stringify(value),
+    });
   try {
+    assert.equal((await start({ type: 'image/png', size: 10 })).status, 401);
     const login = await fetch(base + '/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: 'contributor@example.com', password: 'test-password' }),
     });
     const cookie = login.headers.get('set-cookie').split(';')[0];
-    const upload = () =>
-      fetch(base + '/api/images', {
-        method: 'POST',
-        headers: { Cookie: cookie, 'Content-Type': 'image/png' },
-        body: bytes,
-      });
-    const first = upload();
-    await begun;
-    assert.equal((await upload()).status, 429);
-    finish();
-    assert.equal((await first).status, 503);
-    storage.upload = async () => ({ url: '/media/example.png' });
-    assert.equal((await upload()).status, 201);
+    const response = await start({ type: 'video/quicktime', size: 1000 }, cookie);
+    assert.equal(response.status, 201);
+    assert.match((await response.json()).uploadUrl, /^https:\/\/test\.supabase\.co\//);
+    assert.match(signed[0].path, new RegExp('^' + auth.users.Contributor.id + '/[0-9a-f-]{36}\\.mov$'));
+    assert.deepEqual([signed[0].size, signed[0].mime], [1000, 'video/quicktime']);
+    for (const value of [
+      { type: 'text/html', size: 10 },
+      { type: 'image/png', size: -1 },
+      { type: 'image/png', size: 1.5 },
+    ])
+      assert.equal((await start(value, cookie)).status, 400);
+    assert.equal(signed.length, 1);
   } finally {
-    finish?.();
     server.closeAllConnections();
     await new Promise(r => server.close(r));
   }

@@ -1,7 +1,17 @@
 import { test, expect } from './fixtures';
 import { guide, findRecord as find } from './apiTestHelpers';
 import { locationName, chooseFiles, completeUpload, dialogError } from './testHelpers';
-import { testUser, openPage, seedLocation, editGuide, uploadImage, runSql, uuid, type User } from './seedHelpers';
+import {
+  testUser,
+  openPage,
+  seedLocation,
+  editGuide,
+  uploadImage,
+  startUpload,
+  runSql,
+  uuid,
+  type User,
+} from './seedHelpers';
 import { mediaFile } from './media';
 
 // Each limit test uses its own account, so filling one user's allowance doesn't affect the other tests.
@@ -176,10 +186,7 @@ test('uploads stop at the 10 GB storage allowance', async () => {
   try {
     const message = 'This upload would exceed your 10 GB upload allowance.';
     // The API refuses the upload...
-    const response = await user.request.post('/api/images', {
-      headers: { 'Content-Type': 'image/png' },
-      data: mediaFile('png').buffer,
-    });
+    const response = await startUpload(user.request, 'image/png', mediaFile('png').buffer.length);
     expect({ status: response.status(), error: (await response.json()).error }, 'API: upload refused').toEqual({
       status: 400,
       error: message,

@@ -1,7 +1,7 @@
 import Avatar from './Avatar';
 import { useRef } from 'react';
 import BackLink from './BackLink';
-import { api } from './api';
+import { api, uploadFile, contentsMatch } from './api';
 import React, { useEffect, useState } from 'react';
 // The creator of a guide record, linked to their profile. Records from deleted accounts have no creator to link.
 export function CreatorLink({ item }) {
@@ -62,16 +62,14 @@ export default function PublicProfile({ id, user, onLogsChange }) {
       setError('Choose a JPEG, PNG or WebP image up to 8 MB.');
       return;
     }
+    if (!(await contentsMatch(file, file.type))) {
+      setError('The file is not a supported image.');
+      return;
+    }
     setUploading(true);
     let uploaded = null;
     try {
-      uploaded = (
-        await api(
-          '/api/images',
-          { method: 'POST', headers: { 'Content-Type': file.type }, body: file },
-          'Upload failed.'
-        )
-      ).url;
+      uploaded = (await uploadFile(file, file.type)).url;
       await api(
         '/api/profile-photo',
         { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url: uploaded }) },
